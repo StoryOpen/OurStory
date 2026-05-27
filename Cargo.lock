@@ -7082,6 +7082,7 @@ name = "wz"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "image",
  "serde",
  "serde_json",
  "wz_reader 0.0.20 (registry+https://github.com/rust-lang/crates.io-index)",

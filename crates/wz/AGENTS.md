@@ -182,7 +182,7 @@ Npc/
 
 ## Important: .img Parsing
 
-`.img` nodes are "lazy" — their children are not loaded until `parse_node()` is called. The library's `resolve_path()` and `get_children()` do this automatically, but any direct access to `node.read().unwrap().children` on an unparsed `.img` node will return empty.
+`.img` nodes are "lazy" — their children are not loaded until `parse_node()` is called. The library's `resolve_path()`, `get_children()`, `get_node_value_detail()`, `schema_tree()`, and `resolve_link_target()` all handle this automatically, but any direct access to `node.read().unwrap().children` on an unparsed `.img` node will return empty.
 
 Use:
 ```rust
@@ -219,6 +219,28 @@ let tree = collect_tree(&node, 3, 0); // TreeNode { info, children }
 
 // Walk all
 walk_nodes(&node, true, |n| { /* called for every node */ });
+
+// --- New in v0.2 ---
+
+// Get value type name for a node
+let typ = value_type_name(&node); // "int", "string", "vector", "png", etc.
+
+// Get detailed value (scalar, PNG with sub-properties, sound metadata, etc.)
+if let Some(val) = get_node_value_detail(&node) {
+    // val is a serde_json::Value — raw number/string for scalars,
+    // or for PNG: {"type":"png","width":27,"height":32,"properties":{"origin":{"x":19,"y":32},...}}
+}
+
+// Resolve UOL / _inlink / _outlink references
+if let Some(target) = resolve_link_target(&node) {
+    let info = get_node_info(&target);
+}
+
+// Export PNG or sound to disk
+export_node(&node, Path::new("./output"))?;
+
+// Build a schema tree showing field names, types, and examples
+let schema = schema_tree(&node, 2); // recursive, depth-limited
 ```
 
 ## CLI Usage
@@ -236,8 +258,9 @@ cargo run -p wz -- list "Map/Map/Map1"
 # Tree view
 cargo run -p wz -- tree "Character/00002000.img" -d 2
 
-# Detailed info
+# Detailed info (shows PNG dimensions & sub-properties for sprites)
 cargo run -p wz -- info "String/Eqp.img/Eqp/Cap/1003043"
+cargo run -p wz -- info "Character/00002000.img/walk1/0/body"
 
 # JSON output (for pipelines / MCP)
 cargo run -p wz -- info --json "Mob/0130100.img/info"
@@ -248,11 +271,30 @@ cargo run -p wz -- dump "Map/Map/Map1/100000000.img/info"
 # Search by name
 cargo run -p wz -- search "Henesys"
 cargo run -p wz -- search --json "100000000"
+
+# --- New commands ---
+
+# Get raw value (scalar, string, vector, or PNG metadata)
+cargo run -p wz -- get "Mob/0130100.img/info/level"        # → 4
+cargo run -p wz -- get "String/Eqp.img/Eqp/Cap/1003043/name"  # → "순록의 뿔"
+cargo run -p wz -- get --json "Character/00002000.img/walk1/0/body/origin"  # → {"x":19,"y":32}
+
+# Resolve UOL / _inlink / _outlink to target node
+cargo run -p wz -- resolve "some/link/node"
+cargo run -p wz -- resolve --json "some/link/node"
+
+# Export PNG or sound to a directory
+cargo run -p wz -- export "Character/00002000.img/walk1/0/body" -o ./sprites
+cargo run -p wz -- export "Sound/Bgm00/FloralLife" -o ./sounds
+
+# Show schema (field names, types, example values) at a path
+cargo run -p wz -- schema "Mob/0130100.img/info" -d 2
+cargo run -p wz -- schema --json "Character/00002000.img/walk1/0"
 ```
 
 ## wz_reader Version
 
-Using `wz_reader = "0.0.20"` with `json` feature enabled (for serde serialization). The crate uses `Arc<RwLock<WzNode>>` internally — thread-safe, shared tree navigation. Key types re-exported by `wz_reader`:
+Using `wz_reader = "0.0.20"` with `json` feature enabled (for serde serialization). Also depends on `image = "0.25"` with `png` feature for PNG export. The crate uses `Arc<RwLock<WzNode>>` internally — thread-safe, shared tree navigation. Key types re-exported by `wz_reader`:
 
 | Type | Description |
 |------|-------------|

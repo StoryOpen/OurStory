@@ -116,6 +116,170 @@ fn object_type_name(obj: &wz_reader::WzObjectType) -> String {
     }
 }
 
+pub fn value_type_name(node: &WzNodeArc) -> String {
+    let guard = node.read().unwrap();
+    if guard.try_as_int().is_some() { return "int".into(); }
+    if guard.try_as_short().is_some() { return "short".into(); }
+    if guard.try_as_long().is_some() { return "long".into(); }
+    if guard.try_as_float().is_some() { return "float".into(); }
+    if guard.try_as_double().is_some() { return "double".into(); }
+    if guard.try_as_string().is_some() { return "string".into(); }
+    if guard.try_as_vector2d().is_some() { return "vector".into(); }
+    if guard.try_as_png().is_some() { return "png".into(); }
+    if guard.try_as_sound().is_some() { return "sound".into(); }
+    if guard.try_as_lua().is_some() { return "lua".into(); }
+    if guard.try_as_video().is_some() { return "video".into(); }
+    if guard.try_as_uol().is_some() { return "uol".into(); }
+    "unknown".into()
+}
+
+pub fn get_node_value_detail(node: &WzNodeArc) -> Option<serde_json::Value> {
+    let guard = node.read().ok()?;
+    if let Some(v) = guard.try_as_int() { return Some(serde_json::json!(v)); }
+    if let Some(v) = guard.try_as_short() { return Some(serde_json::json!(v)); }
+    if let Some(v) = guard.try_as_long() { return Some(serde_json::json!(v)); }
+    if let Some(v) = guard.try_as_float() { return Some(serde_json::json!(v)); }
+    if let Some(v) = guard.try_as_double() { return Some(serde_json::json!(v)); }
+    if let Some(v) = guard.try_as_string() {
+        if let Ok(s) = v.get_string() { return Some(serde_json::json!(s)); }
+    }
+    if let Some(v) = guard.try_as_vector2d() {
+        return Some(serde_json::json!({"x": v.0, "y": v.1}));
+    }
+    let png_meta = guard.try_as_png().map(|p| (p.width, p.height));
+    drop(guard);
+    if let Some((w, h)) = png_meta {
+        let mut props = serde_json::Map::new();
+        for (name, child) in get_children(node) {
+            if let Some(val) = get_node_value_detail(&child) {
+                props.insert(name, val);
+            }
+        }
+        return Some(serde_json::json!({
+            "type": "png",
+            "width": w,
+            "height": h,
+            "properties": props,
+        }));
+    }
+    let guard = node.read().ok()?;
+    if let Some(snd) = guard.try_as_sound() {
+        return Some(serde_json::json!({
+            "type": "sound",
+            "duration": snd.duration,
+            "format": format!("{:?}", snd.sound_type),
+        }));
+    }
+    if let Some(lua) = guard.try_as_lua() {
+        if let Ok(script) = lua.extract_lua() {
+            return Some(serde_json::json!({"type": "lua", "content": script}));
+        }
+    }
+    if guard.try_as_video().is_some() {
+        return Some(serde_json::json!({"type": "video"}));
+    }
+    if guard.try_as_uol().is_some() {
+        drop(guard);
+        if let Some(target) = resolve_link_target(node) {
+            return get_node_value_detail(&target);
+        }
+    }
+    None
+}
+
+pub fn resolve_link_target(node: &WzNodeArc) -> Option<WzNodeArc> {
+    let guard = node.read().ok()?;
+    if let Some(uol_str) = guard.try_as_uol() {
+        let path = uol_str.get_string().ok()?;
+        drop(guard);
+        let parent = node.read().ok()?.parent.upgrade()?;
+        let target = parent.read().ok()?.at_path_relative(&path)?;
+        if target.read().ok().map_or(false, |g| matches!(&g.object_type, wz_reader::WzObjectType::Image(_))) {
+            parse_node(&target).ok()?;
+        }
+        return Some(target);
+    }
+    if let Some(inlink) = guard.children.get("_inlink") {
+        let path = inlink.read().ok()?.try_as_string()?.get_string().ok()?;
+        drop(guard);
+        return wz_reader::util::node_util::resolve_inlink(&path, node);
+    }
+    if let Some(outlink) = guard.children.get("_outlink") {
+        let path = outlink.read().ok()?.try_as_string()?.get_string().ok()?;
+        drop(guard);
+        return wz_reader::util::node_util::resolve_outlink(&path, node, true);
+    }
+    None
+}
+
+pub fn export_node(node: &WzNodeArc, output_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all(output_dir)?;
+    let name = node.read()
+        .map_err(|e| format!("lock error: {e}"))?
+        .name
+        .to_string();
+    if let Ok(img) = wz_reader::property::get_image(node) {
+        let path = output_dir.join(format!("{name}.png"));
+        img.save(&path)?;
+        println!("Exported {name}.png");
+        return Ok(());
+    }
+    {
+        let guard = node.read().map_err(|e| format!("lock error: {e}"))?;
+        if let Some(sound) = guard.try_as_sound() {
+            let path = output_dir.join(&name);
+            sound.save(path)?;
+            println!("Exported {name}");
+            return Ok(());
+        }
+    }
+    if let Some(target) = resolve_link_target(node) {
+        return export_node(&target, output_dir);
+    }
+    Err("node is not a PNG or sound, and has no resolvable link".into())
+}
+
+pub fn schema_tree(node: &WzNodeArc, depth: usize) -> serde_json::Value {
+    fn build(node: &WzNodeArc, depth: usize) -> serde_json::Value {
+        let guard = node.read().unwrap();
+        let mut map = serde_json::Map::new();
+        map.insert("type".into(), serde_json::json!(object_type_name(&guard.object_type)));
+        let vt = {
+            if guard.try_as_int().is_some() { Some("int") }
+            else if guard.try_as_short().is_some() { Some("short") }
+            else if guard.try_as_long().is_some() { Some("long") }
+            else if guard.try_as_float().is_some() { Some("float") }
+            else if guard.try_as_double().is_some() { Some("double") }
+            else if guard.try_as_string().is_some() { Some("string") }
+            else if guard.try_as_vector2d().is_some() { Some("vector") }
+            else if guard.try_as_png().is_some() { Some("png") }
+            else if guard.try_as_sound().is_some() { Some("sound") }
+            else { None }
+        };
+        if let Some(vt) = vt {
+            map.insert("value_type".into(), serde_json::json!(vt));
+        }
+        if depth > 0 {
+            let children_count = guard.children.len();
+            drop(guard);
+            let children: serde_json::Map<_, _> = get_children(node)
+                .into_iter()
+                .map(|(name, child)| (name, build(&child, depth - 1)))
+                .collect();
+            if !children.is_empty() {
+                map.insert("children".into(), serde_json::Value::Object(children));
+            } else {
+                map.insert("children".into(), serde_json::json!(children_count));
+            }
+        }
+        serde_json::Value::Object(map)
+    }
+    serde_json::json!({
+        "path": get_node_info(node).full_path,
+        "schema": build(node, depth)
+    })
+}
+
 fn extract_value(node: &wz_reader::node::WzNode) -> Option<serde_json::Value> {
     if let Some(v) = node.try_as_int() {
         return Some(serde_json::json!(v));

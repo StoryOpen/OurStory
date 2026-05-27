@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use wz::*;
+use wz_reader::WzNodeCast;
 
 const WZ_DIR: &str = "./wz";
 
@@ -59,6 +60,41 @@ enum Commands {
         /// Maximum results
         #[arg(short, long, default_value = "20")]
         max: usize,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Extract the raw value of a node
+    Get {
+        /// Path to the node
+        path: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Resolve a UOL, _inlink, or _outlink reference to its target node
+    Resolve {
+        /// Path to a link node
+        path: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Export a PNG or sound node to a file in a directory
+    Export {
+        /// Path to a PNG or sound node
+        path: String,
+        /// Output directory
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Show the expected structure (child names and types) at a path
+    Schema {
+        /// Path to a structural node
+        path: String,
+        /// Recursion depth
+        #[arg(short, long, default_value = "2")]
+        depth: usize,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -146,6 +182,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("  - {cname}");
                     }
                 }
+                // Show PNG dimensions if applicable
+                if let Some(val) = get_node_value_detail(&node) {
+                    if let Some(obj) = val.as_object() {
+                        if obj.get("type").and_then(|t| t.as_str()) == Some("png") {
+                            let w = obj.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let h = obj.get("height").and_then(|v| v.as_u64()).unwrap_or(0);
+                            println!("\nPNG: {}x{}", w, h);
+                            if let Some(props) = obj.get("properties").and_then(|p| p.as_object()) {
+                                if !props.is_empty() {
+                                    println!("Properties:");
+                                    for (k, v) in props {
+                                        println!("  {} = {}", k, serde_json::to_string(v).unwrap_or_default());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         Commands::Dump { path, depth } => {
@@ -153,6 +207,84 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let max_depth = if *depth == 0 { usize::MAX } else { *depth };
             let tree = collect_tree(&node, max_depth, 0);
             println!("{}", serde_json::to_string_pretty(&tree)?);
+        }
+        Commands::Get { path, json } => {
+            let node = resolve_path(&base, path).ok_or("path not found")?;
+            if let Some(val) = get_node_value_detail(&node) {
+                if *json {
+                    println!("{}", serde_json::to_string_pretty(&val)?);
+                } else {
+                    print_value(&val);
+                }
+            } else {
+                println!("(no value)");
+            }
+        }
+        Commands::Resolve { path, json } => {
+            let node = resolve_path(&base, path).ok_or("path not found")?;
+            let guard = node.read().unwrap();
+            let link_info = {
+                if guard.try_as_uol().is_some() {
+                    let p = guard.try_as_uol()
+                        .and_then(|s| s.get_string().ok())
+                        .unwrap_or_default();
+                    ("UOL", p)
+                } else if let Some(inlink) = guard.children.get("_inlink") {
+                    let p = inlink.read().ok()
+                        .and_then(|g| g.try_as_string().and_then(|s| s.get_string().ok()))
+                        .unwrap_or_default();
+                    ("_inlink", p)
+                } else if let Some(outlink) = guard.children.get("_outlink") {
+                    let p = outlink.read().ok()
+                        .and_then(|g| g.try_as_string().and_then(|s| s.get_string().ok()))
+                        .unwrap_or_default();
+                    ("_outlink", p)
+                } else {
+                    ("", String::new())
+                }
+            };
+            drop(guard);
+            if *json {
+                let result = match link_info {
+                    ("", _) => serde_json::json!({"link_type": null, "link_path": null, "target": null}),
+                    (link_type, link_path) => {
+                        serde_json::json!({
+                            "link_type": link_type,
+                            "link_path": link_path,
+                            "target": resolve_link_target(&node).as_ref().map(|t| get_node_info(t)),
+                        })
+                    }
+                };
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                match link_info {
+                    ("", _) => println!("not a link node"),
+                    (link_type, link_path) => {
+                        let target = resolve_link_target(&node);
+                        println!("Link type: {link_type}");
+                        println!("Link path: {link_path}");
+                        if let Some(t) = target {
+                            let info = get_node_info(&t);
+                            println!("Target: {} [{}]", info.full_path, info.object_type);
+                        } else {
+                            println!("Target: (unresolved)");
+                        }
+                    }
+                }
+            }
+        }
+        Commands::Export { path, output } => {
+            let node = resolve_path(&base, path).ok_or("path not found")?;
+            export_node(&node, output)?;
+        }
+        Commands::Schema { path, depth, json } => {
+            let node = resolve_path(&base, path).ok_or("path not found")?;
+            let schema = schema_tree(&node, *depth);
+            if *json {
+                println!("{}", serde_json::to_string_pretty(&schema)?);
+            } else {
+                print_schema(&schema, 0);
+            }
         }
         Commands::Search {
             query,
@@ -188,6 +320,90 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn print_value(val: &serde_json::Value) {
+    match val {
+        serde_json::Value::String(s) => println!("{s}"),
+        serde_json::Value::Number(n) => println!("{n}"),
+        serde_json::Value::Bool(b) => println!("{b}"),
+        serde_json::Value::Array(a) => println!("{:?}", a),
+        serde_json::Value::Object(o) => {
+            if o.get("type").and_then(|t| t.as_str()) == Some("png") {
+                let w = o.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
+                let h = o.get("height").and_then(|v| v.as_u64()).unwrap_or(0);
+                println!("PNG {w}x{h}");
+                if let Some(props) = o.get("properties").and_then(|p| p.as_object()) {
+                    for (k, v) in props {
+                        print!("  {k}: ");
+                        print_value_inline(v);
+                    }
+                }
+            } else if o.get("type").and_then(|t| t.as_str()) == Some("sound") {
+                let dur = o.get("duration").and_then(|v| v.as_u64()).unwrap_or(0);
+                let fmt = o.get("format").and_then(|v| v.as_str()).unwrap_or("?");
+                println!("Sound [{fmt}] {dur}ms");
+            } else if o.get("type").and_then(|t| t.as_str()) == Some("lua") {
+                println!("<Lua script>");
+            } else {
+                println!("{}", serde_json::to_string_pretty(val).unwrap_or_default());
+            }
+        }
+        serde_json::Value::Null => println!("null"),
+    }
+}
+
+fn print_value_inline(val: &serde_json::Value) {
+    match val {
+        serde_json::Value::String(s) => println!("\"{s}\""),
+        serde_json::Value::Number(n) => println!("{n}"),
+        serde_json::Value::Bool(b) => println!("{b}"),
+        serde_json::Value::Array(a) => println!("{a:?}"),
+        _ => println!("{}", serde_json::to_string(val).unwrap_or_default()),
+    }
+}
+
+fn print_schema(val: &serde_json::Value, indent: usize) {
+    if let Some(obj) = val.as_object() {
+        if let Some(path) = obj.get("path").and_then(|v| v.as_str()) {
+            println!("{}{}/", "  ".repeat(indent), path);
+        }
+        if let Some(schema) = obj.get("schema") {
+            print_schema_node(schema, indent + 1);
+        }
+    }
+}
+
+fn print_schema_node(val: &serde_json::Value, indent: usize) {
+    let prefix = "  ".repeat(indent);
+    if let Some(obj) = val.as_object() {
+        let typ = obj.get("type").and_then(|v| v.as_str()).unwrap_or("?");
+        let vt = obj.get("value_type").and_then(|v| v.as_str());
+        if let Some(vt) = vt {
+            print!("{prefix}[{typ}] ({vt})");
+        } else {
+            print!("{prefix}[{typ}]");
+        }
+        if let Some(ch) = obj.get("children") {
+            match ch {
+                serde_json::Value::Object(children) => {
+                    if children.is_empty() {
+                        println!();
+                    } else {
+                        println!();
+                        for (name, child) in children {
+                            print!("{}  {name}: ", prefix);
+                            print_schema_node(child, indent + 1);
+                        }
+                    }
+                }
+                serde_json::Value::Number(n) => println!(" ({n} children)"),
+                _ => println!(),
+            }
+        } else {
+            println!();
+        }
+    }
 }
 
 fn print_tree_node(node: &TreeNode, indent: usize) {
