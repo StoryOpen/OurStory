@@ -10,13 +10,14 @@ use thiserror::Error;
 use crate::wz;
 
 #[derive(Asset, TypePath, Debug)]
+#[allow(dead_code)]
 pub(crate) struct WzMapTileAsset {
     origin: Vec2,
     z: i32,
     image: Image,
 }
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub(crate) struct WzMapTileLoader;
 
 
@@ -38,7 +39,7 @@ impl AssetLoader for WzMapTileLoader {
     ) -> Result<Self::Asset, Self::Error> {
         let path = load_context.path();
         let base: crate::wz::Node = wz::resolve_base().unwrap();
-        let tile = base.at_path(path.to_str().unwrap()).unwrap();
+        let tile = base.at_path(&path.to_string()).unwrap();
         let origin : Vec2 = tile.at_path("origin").unwrap().try_into().unwrap();
         let z : i32 = tile.at_path("z").unwrap().try_into().unwrap();
         let image: DynamicImage = tile.try_into().unwrap();

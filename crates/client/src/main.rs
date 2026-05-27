@@ -2,21 +2,16 @@ mod wz;
 mod wz_asset_loader;
 
 use bevy::asset::RenderAssetUsages;
-use bevy::color::{color_difference::EuclideanDistance, palettes::css};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::sprite::Anchor;
-use bevy::text::cosmic_text::SwashContent::Color;
 use bevy::{
-    color::palettes::css::GOLD,
-    input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
+    input::mouse::AccumulatedMouseMotion,
     prelude::*,
 };
-use image::{DynamicImage, GenericImageView};
-use indexmap::map::MutableKeys;
-use std::ops::Neg;
+use image::DynamicImage;
 use wz::Node as MyWzNode;
 use wz_asset_loader::{WzMapTileAsset, WzMapTileLoader};
-use wz_reader::{WzNode, WzNodeArc, WzNodeCast, version};
+use wz_reader::WzNodeCast;
 
 fn main() {
     App::new()
@@ -33,10 +28,10 @@ fn main() {
 
 fn draw_map(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    _asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    _meshes: ResMut<Assets<Mesh>>,
+    _materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let base: MyWzNode = wz::resolve_base().unwrap();
     let map = base.at_path("Map/Map/Map1/100000000.img").unwrap();
@@ -49,7 +44,7 @@ fn draw_map(
             let tile_set: String = layer.at_path("info/tS").unwrap().try_into().unwrap();
 
             let mut children = tiles.children();
-            children.sort_by(|x1, x2, x3, x4| {
+            children.sort_by(|x1, _x2, x3, _x4| {
                 x1.as_str()
                     .parse::<i32>()
                     .unwrap()
@@ -84,11 +79,8 @@ fn draw_map(
                 let handle = images.add(image.clone());
 
                 commands.spawn((
-                    Sprite {
-                        image: handle,
-                        anchor: Anchor::TopLeft,
-                        ..default()
-                    },
+                    Sprite::from_image(handle),
+                    Anchor::TOP_LEFT,
                     Transform::from_xyz(x - tile_origin.x, (-y) + tile_origin.y, 0.0),
                 ));
             }
@@ -131,11 +123,8 @@ fn draw_map(
                 let handle = images.add(image.clone());
 
                 commands.spawn((
-                    Sprite {
-                        image: handle,
-                        anchor: Anchor::TopLeft,
-                        ..default()
-                    },
+                    Sprite::from_image(handle),
+                    Anchor::TOP_LEFT,
                     Transform::from_xyz(x - obj_origin.x, (-y) + obj_origin.y, 0.0),
                 ));
             }
@@ -211,12 +200,12 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
         Text::new("world"),
         TextFont {
             // This font is loaded and will be used instead of the default font.
-            font_size: 15.0,
+            font_size: FontSize::Px(15.0),
             ..default()
         },
         TextShadow::default(),
         // Set the justification of the Text
-        TextLayout::new_with_justify(JustifyText::Center),
+        TextLayout::justify(Justify::Center),
         // Set the style of the Node itself.
         Node {
             position_type: PositionType::Absolute,
@@ -231,12 +220,12 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
         Text::new("screen"),
         TextFont {
             // This font is loaded and will be used instead of the default font.
-            font_size: 15.0,
+            font_size: FontSize::Px(15.0),
             ..default()
         },
         TextShadow::default(),
         // Set the justification of the Text
-        TextLayout::new_with_justify(JustifyText::Center),
+        TextLayout::justify(Justify::Center),
         // Set the style of the Node itself.
         Node {
             position_type: PositionType::Absolute,
