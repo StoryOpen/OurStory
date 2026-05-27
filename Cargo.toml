@@ -1,4 +1,4 @@
 [workspace]
 resolver = "2"
-members = ["crates/client"]
+members = ["crates/client", "crates/wz"]
 exclude = ["third_party/bevy"]
