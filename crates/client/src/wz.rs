@@ -1,13 +1,27 @@
 use image::DynamicImage;
 use bevy::prelude::*;
 use indexmap::{Equivalent, IndexMap};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::num::ParseIntError;
-use std::sync::{Arc, Mutex, OnceLock};
-use wz_reader::node::Error;
+use std::sync::Arc;
+use thiserror::Error;
 use wz_reader::{property::Vector2D, WzNodeArc};
 use wz_reader::{WzNodeCast, WzNodeName};
+
+#[derive(Debug, Error)]
+pub enum NodeError {
+    #[error("node not found")]
+    NodeNotFound,
+    #[error("parse error: {0}")]
+    WzError(#[from] wz_reader::node::Error),
+    #[error("lock poisoned")]
+    LockPoisoned,
+    #[error("type mismatch: expected {0}")]
+    TypeMismatch(&'static str),
+    #[error("value error: {0}")]
+    ValueError(String),
+}
 
 pub fn resolve_base() -> Result<Node, std::io::Error> {
     let wz_node = wz_reader::util::resolve_base("./wz/Base.wz", None)?;
@@ -52,92 +66,82 @@ impl NodeName {
 }
 
 impl Node {
-    pub fn at_path(&self, path: &str) -> Result<Node, Error> {
+    pub fn at_path(&self, path: &str) -> Result<Node, NodeError> {
         if path.is_empty() {
-            return Err(Error::NodeNotFound);
+            return Err(NodeError::NodeNotFound);
         }
 
-        let paths = path.split("/").collect::<Vec<_>>();
+        let segments: Vec<&str> = path.split('/').collect();
 
-        if paths.len() == 1 && !path.ends_with(".img") {
+        if segments.len() == 1 && !path.ends_with(".img") {
             return Ok(self.get(path));
         }
 
-        let mut paths = paths
-            .into_iter()
-            .fold(VecDeque::from(["".to_string()]), |mut paths, v| {
-                let last = paths.back_mut().unwrap();
-                if !last.is_empty() {
-                    *last += "/";
-                }
-                *last += v;
-                if v.ends_with(".img") {
-                    paths.push_back("".to_string());
-                }
-                paths
-            });
+        let mut current = {
+            let guard = self.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
+            guard.at(segments[0]).ok_or(NodeError::NodeNotFound)?
+        };
 
-        if paths.back().unwrap() == "" {
-            paths.pop_back();
-        }
-
-        let Self { wz_node } = self;
-        let first = paths.pop_front().unwrap();
-        let mut current = wz_node
-            .read()
-            .unwrap()
-            .at_path(&first)
-            .ok_or(Error::NodeNotFound)?;
-        if first.ends_with(".img") {
+        if segments[0].ends_with(".img") {
             wz_reader::util::node_util::parse_node(&current)?;
         }
-        for path in paths {
-            let node = current
-                .read()
-                .unwrap()
-                .at_path(&path)
-                .ok_or(Error::NodeNotFound)?;
-            if path.ends_with(".img") {
-                wz_reader::util::node_util::parse_node(&node)?;
+
+        for &segment in &segments[1..] {
+            current = {
+                let guard = current.read().map_err(|_| NodeError::LockPoisoned)?;
+                guard.at(segment).ok_or(NodeError::NodeNotFound)?
+            };
+
+            if segment.ends_with(".img") {
+                wz_reader::util::node_util::parse_node(&current)?;
             }
-            current = node;
         }
 
         Ok(current.into())
     }
+
     pub fn get(&self, name: &str) -> Node {
-        self.try_get(name).unwrap()
+        self.try_get(name).expect("child not found")
     }
+
     pub fn try_get(&self, name: &str) -> Option<Node> {
-        let node = self.wz_node.read().unwrap();
-        let node: Node = node.children.get(name)?.clone().into();
+        let guard = self.wz_node.read().expect("lock poisoned");
+        let node: Node = guard.children.get(name)?.clone().into();
         Some(node)
     }
+
     pub fn children(&self) -> IndexMap<NodeName, Node> {
-        let node = self.wz_node.read().unwrap();
-        node.children
+        let guard = self.wz_node.read().expect("lock poisoned");
+        guard.children
             .iter()
             .map(|(k, v)| (k.clone().into(), v.clone().into()))
             .collect()
     }
+
+    pub fn try_parse(&self) -> Result<&Self, NodeError> {
+        wz_reader::util::node_util::parse_node(&self.wz_node)?;
+        Ok(self)
+    }
+
     pub fn parse(&self) -> &Self {
-        wz_reader::util::node_util::parse_node(&self.wz_node).unwrap();
-        self
+        self.try_parse().expect("parse failed")
     }
+
     pub fn has(&self, name: &str) -> bool {
-        self.wz_node.read().unwrap().children.contains_key(name)
+        self.wz_node.read().expect("lock poisoned").children.contains_key(name)
     }
+
     pub fn path(&self) -> String {
-        self.wz_node.read().unwrap().get_full_path().to_string()
+        self.wz_node.read().expect("lock poisoned").get_full_path().to_string()
     }
 }
 
 impl TryFrom<Node> for Vec2 {
-    type Error = ();
+    type Error = NodeError;
 
     fn try_from(node: Node) -> Result<Self, Self::Error> {
-        let node = node.wz_node.read().unwrap();
-        let Vector2D(x, y) = node.try_as_vector2d().ok_or(())?;
+        let guard = node.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
+        let Vector2D(x, y) = guard.try_as_vector2d().ok_or(NodeError::TypeMismatch("Vec2"))?;
         Ok(Vec2 {
             x: *x as f32,
             y: *y as f32,
@@ -146,80 +150,64 @@ impl TryFrom<Node> for Vec2 {
 }
 
 impl TryFrom<Node> for i32 {
-    type Error = ();
+    type Error = NodeError;
 
     fn try_from(node: Node) -> Result<Self, Self::Error> {
-        let v = node.wz_node.read().unwrap();
-        v.try_as_int()
+        let guard = node.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
+        guard.try_as_int()
             .copied()
-            .or_else(|| v.try_as_string()?.get_string().ok()?.parse().ok())
-            .ok_or(())
+            .or_else(|| guard.try_as_string()?.get_string().ok()?.parse().ok())
+            .ok_or(NodeError::TypeMismatch("i32"))
     }
 }
 
 impl TryFrom<Node> for f32 {
-    type Error = ();
+    type Error = NodeError;
 
     fn try_from(node: Node) -> Result<Self, Self::Error> {
+        {
+            let guard = node.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
+            if let Some(v) = guard.try_as_float() {
+                return Ok(*v);
+            }
+        }
         let value: i32 = node.try_into()?;
         Ok(value as f32)
     }
 }
 
 impl TryFrom<Node> for String {
-    type Error = ();
+    type Error = NodeError;
 
     fn try_from(node: Node) -> Result<Self, Self::Error> {
-        node.wz_node
-            .read()
-            .unwrap()
-            .try_as_string()
-            .ok_or(())?
-            .get_string()
-            .or(Err(()))
+        let guard = node.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
+        let wz_string = guard.try_as_string().ok_or(NodeError::TypeMismatch("String"))?;
+        wz_string.get_string().map_err(|_| NodeError::ValueError("failed to decode string".into()))
     }
 }
 
 impl TryFrom<Node> for DynamicImage {
-    type Error = ();
+    type Error = NodeError;
 
     fn try_from(node: Node) -> Result<Self, Self::Error> {
-        node.wz_node
-            .read()
-            .unwrap()
-            .try_as_png()
-            .ok_or(())?
-            .extract_png()
-            .or(Err(()))
+        let guard = node.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
+        let png = guard.try_as_png().ok_or(NodeError::TypeMismatch("PNG image"))?;
+        png.extract_png().map_err(|_| NodeError::ValueError("failed to extract PNG".into()))
     }
 }
 
 impl TryFrom<Node> for Arc<DynamicImage> {
-    type Error = ();
+    type Error = NodeError;
 
     fn try_from(node: Node) -> Result<Self, Self::Error> {
-        static CACHE: OnceLock<Mutex<HashMap<String, Arc<DynamicImage>>>> = OnceLock::new();
-        let path = node.wz_node.read().unwrap().get_full_path();
-        let value = CACHE
-            .get_or_init(|| Mutex::new(HashMap::new()))
-            .lock()
-            .unwrap()
-            .entry(path)
-            .or_insert_with(|| Arc::new(node.try_into().unwrap()))
-            .clone();
-
-        Ok(value)
+        let image: DynamicImage = node.try_into()?;
+        Ok(Arc::new(image))
     }
 }
 
-// impl Into<Arc<DynamicImage>> for Node {
-//     fn into(self) -> Arc<DynamicImage> {
-//         self.try_into().unwrap()
-//     }
-// }
-
 impl TryFrom<Node> for bool {
-    type Error = ();
+    type Error = NodeError;
+
     fn try_from(node: Node) -> Result<Self, Self::Error> {
         let value: i32 = node.try_into()?;
         Ok(value != 0)
@@ -227,7 +215,7 @@ impl TryFrom<Node> for bool {
 }
 
 impl<T: TryFrom<Node>> TryFrom<Node> for Vec<T> {
-    type Error = ();
+    type Error = NodeError;
 
     fn try_from(value: Node) -> Result<Self, Self::Error> {
         Ok(value
@@ -253,7 +241,7 @@ impl From<NodeName> for String {
 }
 
 impl<T: TryFrom<Node>, K: TryFrom<NodeName>> TryFrom<Node> for Vec<(K, T)> {
-    type Error = ();
+    type Error = NodeError;
 
     fn try_from(value: Node) -> Result<Self, Self::Error> {
         Ok(value
@@ -265,7 +253,7 @@ impl<T: TryFrom<Node>, K: TryFrom<NodeName>> TryFrom<Node> for Vec<(K, T)> {
 }
 
 impl<T: TryFrom<Node>, K: TryFrom<NodeName> + Hash + Eq> TryFrom<Node> for HashMap<K, T> {
-    type Error = ();
+    type Error = NodeError;
 
     fn try_from(value: Node) -> Result<Self, Self::Error> {
         Ok(value
@@ -277,7 +265,7 @@ impl<T: TryFrom<Node>, K: TryFrom<NodeName> + Hash + Eq> TryFrom<Node> for HashM
 }
 
 impl<T: TryFrom<Node>, K: TryFrom<NodeName> + Hash + Eq> TryFrom<Node> for IndexMap<K, T> {
-    type Error = ();
+    type Error = NodeError;
 
     fn try_from(value: Node) -> Result<Self, Self::Error> {
         Ok(value

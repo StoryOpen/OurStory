@@ -1,5 +1,6 @@
 mod wz;
 mod wz_asset_loader;
+mod wz_asset_source;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
@@ -11,30 +12,34 @@ use bevy::{
 use image::DynamicImage;
 use wz::Node as MyWzNode;
 use wz_asset_loader::{WzMapTileAsset, WzMapTileLoader};
-use wz_reader::WzNodeCast;
+use wz_asset_source::WzAssetSourcePlugin;
 
 fn main() {
     App::new()
+        .add_plugins(WzAssetSourcePlugin)
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_linear()))
         .init_asset::<WzMapTileAsset>()
         .init_asset_loader::<WzMapTileLoader>()
-        .add_systems(Startup, setup) // Add a system to run at startup
-        .add_systems(Startup, draw_grid) // Add a system to run at startup
+        .add_systems(Startup, setup)
+        .add_systems(Startup, draw_grid)
+        .add_systems(Startup, discover_tiles)
+        .add_systems(Update, spawn_loaded)
         .add_systems(Update, drag_camera)
         .add_systems(Update, write_coords)
-        .add_systems(Startup, draw_map)
         .run();
 }
 
-fn draw_map(
-    mut commands: Commands,
-    _asset_server: Res<AssetServer>,
-    mut images: ResMut<Assets<Image>>,
-    _meshes: ResMut<Assets<Mesh>>,
-    _materials: ResMut<Assets<ColorMaterial>>,
-) {
+#[derive(Component)]
+struct PendingSpawn {
+    x: f32,
+    y: f32,
+    handle: Handle<WzMapTileAsset>,
+}
+
+fn discover_tiles(mut commands: Commands, asset_server: Res<AssetServer>) {
     let base: MyWzNode = wz::resolve_base().unwrap();
     let map = base.at_path("Map/Map/Map1/100000000.img").unwrap();
+
     for i in 0..8 {
         let layer = map.at_path(&i.to_string()).unwrap();
         if let Ok(tiles) = layer.at_path("tile") {
@@ -55,34 +60,9 @@ fn draw_map(
                 let index: i32 = tile_node.at_path("no").unwrap().try_into().unwrap();
                 let x: f32 = tile_node.at_path("x").unwrap().try_into().unwrap();
                 let y: f32 = tile_node.at_path("y").unwrap().try_into().unwrap();
-                let tile_image_path = format!("Map/Tile/{}.img/{}/{}", tile_set, variant, index);
-                let tile_asset = base.at_path(&tile_image_path).unwrap();
-                let tile_origin: Vec2 = tile_asset.at_path("origin").unwrap().try_into().unwrap();
-
-                let tile_image: DynamicImage =
-                    base.at_path(&tile_image_path).unwrap().try_into().unwrap();
-
-                let image = Image::new(
-                    // 2D image of size 256x256
-                    Extent3d {
-                        width: tile_image.width(),
-                        height: tile_image.height(),
-                        depth_or_array_layers: 1,
-                    },
-                    TextureDimension::D2,
-                    // Initialize it with a beige color
-                    tile_image.into_bytes(),
-                    // Use the same encoding as the color we set
-                    TextureFormat::Rgba8UnormSrgb,
-                    RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-                );
-                let handle = images.add(image.clone());
-
-                commands.spawn((
-                    Sprite::from_image(handle),
-                    Anchor::TOP_LEFT,
-                    Transform::from_xyz(x - tile_origin.x, (-y) + tile_origin.y, 0.0),
-                ));
+                let asset_path = format!("wz://Map/Tile/{}.img/{}/{}.map_tile", tile_set, variant, index);
+                let handle = asset_server.load::<WzMapTileAsset>(&asset_path);
+                commands.spawn(PendingSpawn { x, y, handle });
             }
         }
 
@@ -90,49 +70,42 @@ fn draw_map(
             if objs.children().len() == 0 {
                 continue;
             }
-
-
             for (_, obj_node) in objs.children() {
                 let obj_set: String = obj_node.at_path("oS").unwrap().try_into().unwrap();
                 let layer0: String = obj_node.at_path("l0").unwrap().try_into().unwrap();
-                let layer1 :String = obj_node.at_path("l1").unwrap().try_into().unwrap();
-                let layer2 :String = obj_node.at_path("l2").unwrap().try_into().unwrap();
-                let x :f32 = obj_node.at_path("x").unwrap().try_into().unwrap();
-                let y :f32 = obj_node.at_path("y").unwrap().try_into().unwrap();
-                let obj_image_path = format!("Map/Obj/{}.img/{}/{}/{}/0", obj_set, layer0, layer1, layer2 );
-                let obj_asset = base.at_path(&obj_image_path).unwrap();
-                let obj_origin: Vec2 = obj_asset.at_path("origin").unwrap().try_into().unwrap();
-
-                let obj_image: DynamicImage =
-                    base.at_path(&obj_image_path).unwrap().try_into().unwrap();
-
-                let image = Image::new(
-                    // 2D image of size 256x256
-                    Extent3d {
-                        width: obj_image.width(),
-                        height: obj_image.height(),
-                        depth_or_array_layers: 1,
-                    },
-                    TextureDimension::D2,
-                    // Initialize it with a beige color
-                    obj_image.into_bytes(),
-                    // Use the same encoding as the color we set
-                    TextureFormat::Rgba8Unorm,
-                    RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-                );
-                let handle = images.add(image.clone());
-
-                commands.spawn((
-                    Sprite::from_image(handle),
-                    Anchor::TOP_LEFT,
-                    Transform::from_xyz(x - obj_origin.x, (-y) + obj_origin.y, 0.0),
-                ));
+                let layer1: String = obj_node.at_path("l1").unwrap().try_into().unwrap();
+                let layer2: String = obj_node.at_path("l2").unwrap().try_into().unwrap();
+                let x: f32 = obj_node.at_path("x").unwrap().try_into().unwrap();
+                let y: f32 = obj_node.at_path("y").unwrap().try_into().unwrap();
+                let asset_path = format!("wz://Map/Obj/{}.img/{}/{}/{}/0.map_tile", obj_set, layer0, layer1, layer2);
+                let handle = asset_server.load::<WzMapTileAsset>(&asset_path);
+                commands.spawn(PendingSpawn { x, y, handle });
             }
         }
     }
-
-
 }
+
+fn spawn_loaded(
+    mut commands: Commands,
+    pending: Query<(Entity, &PendingSpawn)>,
+    assets: Res<Assets<WzMapTileAsset>>,
+) {
+    for (entity, spawn) in &pending {
+        if let Some(asset) = assets.get(&spawn.handle) {
+            commands.entity(entity).insert((
+                Sprite::from_image(asset.image.clone()),
+                Anchor::TOP_LEFT,
+                Transform::from_xyz(
+                    spawn.x - asset.origin.x,
+                    (-spawn.y) + asset.origin.y,
+                    asset.z as f32,
+                ),
+            ));
+            commands.entity(entity).remove::<PendingSpawn>();
+        }
+    }
+}
+
 fn draw_grid(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -190,7 +163,6 @@ struct ScreenCoordinate;
 fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let base: MyWzNode = wz::resolve_base().unwrap();
 
-    // let body = node.read().unwrap().at_path_parsed("BasicEff.img/AranGetSkill/0");
     let body = base.at_path("Character/00002000.img/walk1/0/body").unwrap();
     let image: DynamicImage = body.try_into().unwrap();
 
@@ -199,14 +171,11 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.spawn((
         Text::new("world"),
         TextFont {
-            // This font is loaded and will be used instead of the default font.
             font_size: FontSize::Px(15.0),
             ..default()
         },
         TextShadow::default(),
-        // Set the justification of the Text
         TextLayout::justify(Justify::Center),
-        // Set the style of the Node itself.
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(5.0),
@@ -219,14 +188,11 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.spawn((
         Text::new("screen"),
         TextFont {
-            // This font is loaded and will be used instead of the default font.
             font_size: FontSize::Px(15.0),
             ..default()
         },
         TextShadow::default(),
-        // Set the justification of the Text
         TextLayout::justify(Justify::Center),
-        // Set the style of the Node itself.
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(25.0),
@@ -236,28 +202,19 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
         ScreenCoordinate,
     ));
 
-    // Create an image that we are going to draw into
     let image = Image::new(
-        // 2D image of size 256x256
         Extent3d {
             width: image.width(),
             height: image.height(),
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        // Initialize it with a beige color
         image.into_bytes(),
-        // Use the same encoding as the color we set
         TextureFormat::Rgba8Unorm,
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
 
     let handle = images.add(image);
-    // Add it to Bevy's assets, so it can be used for rendering
-    // this will give us a handle we can use
-    // (to display it in a sprite, or as part of UI, etc.)
-
-    // Create a sprite entity using our image
     commands.spawn(Sprite::from_image(handle));
 }
 
@@ -277,16 +234,12 @@ fn drag_camera(
 fn write_coords(
     mut world_coordinate: Query<&mut Text, With<WorldCoordinate>>,
     mut screen_coordinate: Query<&mut Text, (With<ScreenCoordinate>, Without<WorldCoordinate>)>,
-    // query to get the window (so we can read the current cursor position)
     window: Query<&Window>,
-    // query to get camera transform
     camera: Query<(&Camera, &GlobalTransform)>,
 ) {
     let (camera, camera_transform) = camera.single().unwrap();
     let window = window.single().unwrap();
 
-    // check if the cursor is inside the window and get its position
-    // then, ask bevy to convert into world coordinates, and truncate to discard Z
     if let Some(world_position) = window
         .cursor_position()
         .map(|cursor| camera.viewport_to_world(camera_transform, cursor))

@@ -12,9 +12,9 @@ use crate::wz;
 #[derive(Asset, TypePath, Debug)]
 #[allow(dead_code)]
 pub(crate) struct WzMapTileAsset {
-    origin: Vec2,
-    z: i32,
-    image: Image,
+    pub origin: Vec2,
+    pub z: i32,
+    pub image: Handle<Image>,
 }
 
 #[derive(Default, TypePath)]
@@ -37,31 +37,31 @@ impl AssetLoader for WzMapTileLoader {
         _settings: &(),
         load_context: &mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
-        let path = load_context.path();
-        let base: crate::wz::Node = wz::resolve_base().unwrap();
-        let tile = base.at_path(&path.to_string()).unwrap();
+        let path = load_context.path().path().to_string_lossy();
+        let wz_path = path.strip_suffix(".map_tile").unwrap_or(&path);
+        let base = wz::resolve_base().unwrap();
+        let tile = base.at_path(wz_path).unwrap();
         let origin : Vec2 = tile.at_path("origin").unwrap().try_into().unwrap();
         let z : i32 = tile.at_path("z").unwrap().try_into().unwrap();
-        let image: DynamicImage = tile.try_into().unwrap();
+        let dynamic_image: DynamicImage = tile.try_into().unwrap();
         let image = Image::new(
-            // 2D image of size 256x256
             Extent3d {
-                width: image.width(),
-                height: image.height(),
+                width: dynamic_image.width(),
+                height: dynamic_image.height(),
                 depth_or_array_layers: 1,
             },
             TextureDimension::D2,
-            // Initialize it with a beige color
-            image.into_bytes(),
-            // Use the same encoding as the color we set
+            dynamic_image.into_bytes(),
             TextureFormat::Rgba8Unorm,
             RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
         );
 
+        let image_handle = load_context.add_labeled_asset("image", image);
+
         Ok(WzMapTileAsset{
             origin,
             z,
-            image,
+            image: image_handle,
         })
     }
 
