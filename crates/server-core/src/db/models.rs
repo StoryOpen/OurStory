@@ -1,0 +1,32 @@
+pub struct Account {
+    pub id: i32,
+    pub username: String,
+    pub password_hash: String,
+    pub logged_in: i32,
+    pub banned: bool,
+}
+
+pub struct CharacterRow {
+    pub id: i32,
+    pub account_id: i32,
+    pub world_id: i32,
+    pub name: String,
+    pub level: i16,
+    pub job: i32,
+    pub str: i16,
+    pub dex: i16,
+    pub luk: i16,
+    pub int: i16,
+    pub hp: i32,
+    pub mp: i32,
+    pub max_hp: i32,
+    pub max_mp: i32,
+    pub exp: i64,
+    pub meso: i64,
+    pub map_id: i32,
+    pub spawn_point: i32,
+    pub gender: i32,
+    pub skin_color: i32,
+    pub face: i32,
+    pub hair: i32,
+}
