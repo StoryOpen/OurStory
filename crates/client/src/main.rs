@@ -1,3 +1,4 @@
+mod character;
 mod map;
 mod wz;
 
@@ -7,17 +8,16 @@ const SCREEN_X: DiagnosticPath = DiagnosticPath::const_new("screen/x");
 const SCREEN_Y: DiagnosticPath = DiagnosticPath::const_new("screen/y");
 
 use bevy::{
-    asset::RenderAssetUsages,
     input::mouse::AccumulatedMouseMotion,
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use bevy::diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, FrameTimeDiagnosticsPlugin, RegisterDiagnostic};
 use bevy::dev_tools::diagnostics_overlay::{
     DiagnosticsOverlay, DiagnosticsOverlayItem, DiagnosticsOverlayPlugin, DiagnosticsOverlayStatistic,
 };
-use image::DynamicImage;
 use wz::asset_source::WzAssetSourcePlugin;
+
+use character::{CharacterPlugin, components::CharacterConfig, events::SpawnCharacter, types::EquipSlot};
 
 fn main() {
     App::new()
@@ -30,6 +30,7 @@ fn main() {
         .register_diagnostic(Diagnostic::new(SCREEN_X).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
         .register_diagnostic(Diagnostic::new(SCREEN_Y).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
         .add_plugins(map::MapPlugin::default())
+        .add_plugins(CharacterPlugin)
         .add_systems(Startup, setup)
         .add_systems(Startup, draw_grid)
         .add_systems(Update, drag_camera)
@@ -83,7 +84,29 @@ fn draw_grid(
     }
 }
 
-fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+fn setup(mut commands: Commands) {
+    commands.spawn(Camera2d);
+    commands.trigger(SpawnCharacter {
+        transform: Transform::from_xyz(0.0, 0.0, 0.0),
+        config: CharacterConfig {
+            skin_suffix: 2000,
+            hair_id: 31200,
+            face_id: 21405,
+            equipment: vec![
+                (EquipSlot::Cap, 01002419),
+                (EquipSlot::Coat, 01042013),
+                (EquipSlot::Pants, 01060135),
+                (EquipSlot::Shoes, 01072306),
+                (EquipSlot::Glove, 01082178),
+                (EquipSlot::Weapon, 01452000),
+                (EquipSlot::Shield, 01092027),
+                (EquipSlot::Cape, 01102149),
+            ],
+        },
+        action: "stand1".into(),
+        face_expression: "default".into(),
+    });
+
     commands.spawn(DiagnosticsOverlay {
         title: "Debug".into(),
         diagnostic_overlay_items: vec![

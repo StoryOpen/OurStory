@@ -93,11 +93,11 @@ Map/
 
 ```
 Character/
-  $jobID.img/            — e.g. 00002000.img (Dual Blade)
+  $frameType.img/        — e.g. 00002000.img (islot="Bd" body frame)
     info/                — { cash, islot, vslot }
     walk1/               — animation action
       0/                 — frame 0
-        body             — PNG sprite subnode (with origin/head/臂等 children)
+        body             — PNG sprite subnode (with origin/group/z/map sub-props)
         arm              — PNG sprite subnode
         head             — PNG sprite
         face             — int animation property
@@ -106,6 +106,12 @@ Character/
     jump/                — jumping frames
     ...                  — many actions (skills, movement, emotes, etc.)
 ```
+
+Body frame types (18 total, named by type ID, NOT job IDs):
+- `00002000.img` to `00002011.img` — islot/vslot = "Bd" (9 variants)
+- `00012000.img` to `00012011.img` — islot/vslot = "Hd" (9 variants)
+
+Equipment items live in category directories (Cap/, Coat/, Weapon/, etc.) and have the same action/frame structure as body frames, plus additional `info` fields (reqLevel, reqJob, reqSTR/DEX, icon). Each item has `islot`/`vslot` that determines which body parts it overlays.
 
 ### Mob.wz structure
 
