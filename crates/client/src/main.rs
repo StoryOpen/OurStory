@@ -1,5 +1,6 @@
 mod character;
 mod map;
+mod mob;
 mod wz;
 
 const WORLD_X: DiagnosticPath = DiagnosticPath::const_new("world/x");
@@ -31,10 +32,12 @@ fn main() {
         .register_diagnostic(Diagnostic::new(SCREEN_Y).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
         .add_plugins(map::MapPlugin::default())
         .add_plugins(CharacterPlugin)
+        .add_plugins(mob::MobPlugin::default())
         .add_systems(Startup, setup)
         .add_systems(Startup, draw_grid)
         .add_systems(Update, drag_camera)
         .add_systems(Update, write_coords)
+        .add_systems(Update, debug_cycle_actions)
         .run();
 }
 
@@ -44,7 +47,10 @@ fn draw_grid(
     window: Query<&Window>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let win = window.single().unwrap();
+    let win = match window.iter().next() {
+        Some(w) => w,
+        None => return,
+    };
     let height = win.height();
     let width = win.width();
 
@@ -84,6 +90,29 @@ fn draw_grid(
     }
 }
 
+fn debug_cycle_actions(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+) {
+    let actions = ["stand", "move", "hit1", "die1"];
+    for (i, action) in actions.iter().enumerate() {
+        let key = match i {
+            0 => KeyCode::Digit1,
+            1 => KeyCode::Digit2,
+            2 => KeyCode::Digit3,
+            3 => KeyCode::Digit4,
+            _ => continue,
+        };
+        if keys.just_pressed(key) {
+            commands.trigger(mob::events::SwitchMobAction {
+                mob_id: 100100,
+                action: action.to_string(),
+            });
+            bevy::log::info!("switch Snail to {action}");
+        }
+    }
+}
+
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     commands.trigger(SpawnCharacter {
@@ -106,7 +135,7 @@ fn setup(mut commands: Commands) {
         action: "stand1".into(),
         face_expression: "default".into(),
     });
-
+    commands.trigger(mob::events::SpawnMob { mob_id: 100100, x: 0.0, y: 0.0, z: 100 });
     commands.spawn(DiagnosticsOverlay {
         title: "Debug".into(),
         diagnostic_overlay_items: vec![
@@ -146,11 +175,14 @@ fn drag_camera(
     accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
     mut camera: Query<&mut Transform, With<Camera>>,
 ) {
-    if accumulated_mouse_motion.delta != Vec2::ZERO && mouse_button_input.pressed(MouseButton::Left)
-    {
-        let delta = accumulated_mouse_motion.delta;
-        camera.single_mut().unwrap().translation += (delta * Vec2::new(-1.0, 1.0)).extend(0.0);
+    if accumulated_mouse_motion.delta == Vec2::ZERO || !mouse_button_input.pressed(MouseButton::Left) {
+        return;
     }
+    let mut camera_transform = match camera.iter_mut().next() {
+        Some(t) => t,
+        None => return,
+    };
+    camera_transform.translation += (accumulated_mouse_motion.delta * Vec2::new(-1.0, 1.0)).extend(0.0);
 }
 
 fn write_coords(
@@ -158,8 +190,12 @@ fn write_coords(
     camera: Query<(&Camera, &GlobalTransform)>,
     mut diagnostics: Diagnostics,
 ) {
-    let (camera, camera_transform) = camera.single().unwrap();
-    let window = window.single().unwrap();
+    let Some((camera, camera_transform)) = camera.iter().next() else {
+        return;
+    };
+    let Some(window) = window.iter().next() else {
+        return;
+    };
 
     if let Some(world_position) = window
         .cursor_position()

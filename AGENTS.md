@@ -20,6 +20,23 @@ A Rust workspace for MapleStory game tooling.
 - **MapHandle trait** — maps run in-process by default (`LocalMapHandle`). For high-population content (boss fights), a `RemoteMapHandle` impl forwards to a standalone map process.
 - **Deployment** — one binary, four roles. Dev uses `--role channel` with all layers in-process. Prod can split Login, World, Channel(s), and standalone Map instances as needed.
 
+## Coordinate System
+
+All entities in the WZ system (maps, mobs, NPCs, characters, etc.) share the same coordinate convention:
+
+- **WZ X**: increases to the right (same as Bevy X)
+- **WZ Y**: increases **downward** (opposite of Bevy Y, which increases upward)
+- **origin**: a `Vector2D` pivot point within a sprite, relative to its top-left corner
+
+When converting from WZ coordinates to Bevy world coordinates:
+
+```
+bevy_x = wz_x - origin.x
+bevy_y = -wz_y + origin.y
+```
+
+This formula applies to map tiles, map objects (obj), mob sprites, NPC sprites, character sprites — every entity type. The origin is always subtracted from the WZ position, and WZ Y is negated for Bevy's Y-up convention.
+
 ## Client — Character Rendering (`crates/client/src/character/`)
 
 The character module composites MapleStory character sprites (body, head, hair, face, equipment) with animation and correct z-ordering.
