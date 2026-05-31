@@ -1,3 +1,6 @@
+pub mod asset_loader;
+pub mod asset_source;
+
 use image::DynamicImage;
 use bevy::prelude::*;
 use indexmap::{Equivalent, IndexMap};
@@ -26,6 +29,14 @@ pub enum NodeError {
 pub fn resolve_base() -> Result<Node, std::io::Error> {
     let wz_node = wz_reader::util::resolve_base("./wz/Base.wz", None)?;
     Ok(wz_node.into())
+}
+
+static WZ_BASE: std::sync::OnceLock<Node> = std::sync::OnceLock::new();
+
+/// Returns a cached WZ base node. First call resolves and caches it;
+/// subsequent calls are instant (atomic load).
+pub fn get_cached_base() -> &'static Node {
+    WZ_BASE.get_or_init(|| resolve_base().expect("resolve_base failed"))
 }
 
 #[derive(Clone)]
@@ -74,7 +85,7 @@ impl Node {
         let segments: Vec<&str> = path.split('/').collect();
 
         if segments.len() == 1 && !path.ends_with(".img") {
-            return Ok(self.get(path));
+            return Ok(self.try_get(path).ok_or(NodeError::NodeNotFound)?);
         }
 
         let mut current = {
