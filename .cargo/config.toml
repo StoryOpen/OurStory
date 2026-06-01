@@ -1,0 +1,9 @@
+# For faster linking, install mold (Linux) and uncomment:
+#   sudo dnf install mold   # Fedora
+#   sudo apt install mold   # Ubuntu
+#   sudo pacman -S mold     # Arch
+# Then change linker to "gcc" and add -fuse-ld=mold to rustflags.
+
+[target.x86_64-unknown-linux-gnu]
+linker = "gcc"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
