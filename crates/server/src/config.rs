@@ -46,7 +46,7 @@ impl Config {
                 exp_rate: 1.0,
                 meso_rate: 1.0,
             }],
-            db_url: "sqlite://./data.db".into(),
+            db_url: "postgres://localhost/ourstory".into(),
         })
     }
 }
