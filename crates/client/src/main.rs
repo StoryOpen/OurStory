@@ -1,6 +1,7 @@
 mod character;
 mod map;
 mod mob;
+mod ui;
 mod wz;
 
 const WORLD_X: DiagnosticPath = DiagnosticPath::const_new("world/x");
@@ -33,6 +34,7 @@ fn main() {
         .add_plugins(map::MapPlugin::default())
         .add_plugins(CharacterPlugin)
         .add_plugins(mob::MobPlugin::default())
+        .add_plugins(ui::UiPlugin)
         .add_systems(Startup, setup)
         .add_systems(Startup, draw_grid)
         .add_systems(Update, drag_camera)
