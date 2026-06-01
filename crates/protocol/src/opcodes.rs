@@ -14,6 +14,10 @@ pub enum RecvOpcode {
     Attack = 0x000B,
     NpcTalk = 0x000C,
     ShopAction = 0x000D,
+    NpcQuest = 0x000E,
+    QuestStart = 0x000F,
+    QuestComplete = 0x0010,
+    QuestForfeit = 0x0011,
 }
 
 impl RecvOpcode {
@@ -32,6 +36,10 @@ impl RecvOpcode {
             0x000B => Self::Attack,
             0x000C => Self::NpcTalk,
             0x000D => Self::ShopAction,
+            0x000E => Self::NpcQuest,
+            0x000F => Self::QuestStart,
+            0x0010 => Self::QuestComplete,
+            0x0011 => Self::QuestForfeit,
             _ => return None,
         })
     }
@@ -58,4 +66,10 @@ pub enum SendOpcode {
     Chat = 0x1010,
     Buff = 0x1011,
     SkillEffect = 0x1012,
+    NpcQuestList = 0x1013,
+    QuestStarted = 0x1014,
+    QuestCompleted = 0x1015,
+    QuestProgress = 0x1016,
+    QuestForfeited = 0x1017,
+    QuestSync = 0x1018,
 }

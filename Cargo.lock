@@ -3773,6 +3773,8 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "wz",
+ "wz_reader 0.0.20 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

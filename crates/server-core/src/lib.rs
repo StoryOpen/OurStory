@@ -3,4 +3,5 @@ pub mod db;
 pub mod login;
 pub mod map;
 pub mod player;
+pub mod quest;
 pub mod world;

@@ -1,5 +1,6 @@
 use protocol::types::{Job, MapId, PlayerId, Position, WorldId};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct Player {
@@ -18,6 +19,15 @@ pub struct Player {
     pub world_id: WorldId,
     pub buffs: Vec<Buff>,
     pub mount: Option<Mount>,
+    pub active_quests: Vec<ActiveQuest>,
+    pub completed_quests: HashSet<u32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ActiveQuest {
+    pub quest_id: u32,
+    pub kill_counts: HashMap<u32, u32>,
+    pub started_at: std::time::Instant,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

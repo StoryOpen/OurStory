@@ -1,4 +1,4 @@
-use crate::types::Position;
+use crate::types::{ItemGrant, ObjectiveInfo, Position, QuestDialog};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -48,4 +48,76 @@ pub enum MoveKind {
     Stand,
     Sit,
     Fly,
+}
+
+// === Quest packets ===
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NpcQuestRequest {
+    pub npc_id: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NpcQuestList {
+    pub npc_id: u32,
+    pub startable: Vec<u32>,
+    pub completable: Vec<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuestStartRequest {
+    pub quest_id: u32,
+    pub accept: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuestStarted {
+    pub quest_id: u32,
+    pub objectives: Vec<ObjectiveInfo>,
+    pub dialog: QuestDialog,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuestCompleteRequest {
+    pub quest_id: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuestCompleted {
+    pub quest_id: u32,
+    pub exp: u32,
+    pub items: Vec<ItemGrant>,
+    pub next_quest: Option<u32>,
+    pub dialog: QuestDialog,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuestProgress {
+    pub quest_id: u32,
+    pub objective_idx: u32,
+    pub current: u32,
+    pub target: u32,
+    pub completable: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuestForfeitRequest {
+    pub quest_id: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuestForfeited {
+    pub quest_id: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ActiveQuestState {
+    pub quest_id: u32,
+    pub objectives: Vec<ObjectiveInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuestSync {
+    pub active: Vec<ActiveQuestState>,
+    pub completed_count: u32,
 }

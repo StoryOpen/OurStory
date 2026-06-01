@@ -3,6 +3,7 @@ use sqlx::PgPool;
 use sqlx::Row;
 
 use protocol::types::{Job, MapId, PlayerId, Position, WorldId};
+use std::collections::HashSet;
 
 use crate::player::Player;
 
@@ -65,6 +66,8 @@ impl super::Database for PostgresDb {
             world_id: WorldId(row.get("world_id")),
             buffs: Vec::new(),
             mount: None,
+            active_quests: Vec::new(),
+            completed_quests: HashSet::new(),
         })
     }
 
