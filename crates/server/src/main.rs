@@ -1,4 +1,6 @@
 mod config;
+mod events;
+mod handlers;
 mod net;
 
 use clap::Parser;

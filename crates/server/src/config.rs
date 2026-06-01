@@ -8,7 +8,9 @@ pub struct WorldConfig {
     pub id: i32,
     pub name: String,
     pub channels: Vec<ChannelConfig>,
+    #[allow(dead_code)]
     pub exp_rate: f64,
+    #[allow(dead_code)]
     pub meso_rate: f64,
 }
 
@@ -17,6 +19,7 @@ pub struct ChannelConfig {
     pub port: u16,
 }
 
+#[allow(dead_code)]
 pub struct MapConfig {
     pub map_id: i32,
     pub channel_port: u16,

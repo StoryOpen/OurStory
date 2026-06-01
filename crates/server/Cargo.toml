@@ -7,6 +7,10 @@ edition = "2024"
 server-core = { path = "../server-core" }
 protocol = { path = "../protocol" }
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "macros", "migrate"] }
+bytes = "1"
+futures = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
