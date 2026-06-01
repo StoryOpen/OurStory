@@ -1,6 +1,7 @@
 mod character;
 mod map;
 mod mob;
+mod physics;
 mod ui;
 mod wz;
 
@@ -20,6 +21,7 @@ use bevy::dev_tools::diagnostics_overlay::{
 use wz::asset_source::WzAssetSourcePlugin;
 
 use character::{CharacterPlugin, components::CharacterConfig, events::SpawnCharacter, types::EquipSlot};
+use wz::get_cached_base;
 
 fn main() {
     App::new()
@@ -35,6 +37,7 @@ fn main() {
         .add_plugins(CharacterPlugin)
         .add_plugins(mob::MobPlugin::default())
         .add_plugins(ui::UiPlugin)
+        .insert_resource(physics::load_physics(get_cached_base()))
         .add_systems(Startup, setup)
         .add_systems(Startup, draw_grid)
         .add_systems(Update, drag_camera)
