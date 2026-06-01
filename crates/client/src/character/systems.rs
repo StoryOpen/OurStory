@@ -7,6 +7,47 @@ use crate::character::loader::{self, WzSpriteCache};
 use crate::character::types::*;
 use crate::wz::get_cached_base;
 
+fn resolve_equipment(
+    base: &crate::wz::Node,
+    equipment: &[(EquipSlot, u32)],
+) -> Vec<EquipmentEntry> {
+    equipment
+        .iter()
+        .map(|(slot, item_id)| {
+            let item_path = format!("Character/{}/{:08}.img", slot.dir_name(), item_id);
+            let vslot = base
+                .at_path(&item_path)
+                .map(|n| load_vslot(&n))
+                .unwrap_or_default();
+            EquipmentEntry {
+                slot: *slot,
+                item_id: *item_id,
+                vslot,
+            }
+        })
+        .collect()
+}
+
+fn apply_vslot_filter(
+    actions: HashMap<String, Vec<FrameData>>,
+    face_expressions: HashMap<String, Vec<FrameData>>,
+    equipment: &[EquipmentEntry],
+) -> (HashMap<String, Vec<FrameData>>, HashMap<String, Vec<FrameData>>) {
+    let filter_frame = |frame: FrameData| FrameData {
+        parts: filter_hidden_sprites(frame.parts, equipment),
+        delay: frame.delay,
+    };
+    let actions = actions
+        .into_iter()
+        .map(|(name, frames)| (name, frames.into_iter().map(filter_frame).collect()))
+        .collect();
+    let face_expressions = face_expressions
+        .into_iter()
+        .map(|(name, frames)| (name, frames.into_iter().map(filter_frame).collect()))
+        .collect();
+    (actions, face_expressions)
+}
+
 fn build_part_entity(
     commands: &mut Commands,
     layer: &SpriteLayer,
@@ -41,12 +82,11 @@ pub fn spawn_character(
     mut commands: Commands,
     mut cache: ResMut<WzSpriteCache>,
     mut images: ResMut<Assets<Image>>,
-    mut zmap: Local<Option<ZMap>>,
+    zmap: Res<ZMap>,
+    slot_map: Res<SlotMap>,
 ) {
     let ev = trigger.event();
     let base = get_cached_base();
-
-    let zmap = zmap.get_or_insert_with(|| load_zmap(base));
 
     let loaded = loader::preload_character_frames(
         base,
@@ -54,15 +94,21 @@ pub fn spawn_character(
         Some(ev.config.hair_id),
         Some(ev.config.face_id),
         &ev.config.equipment,
-        zmap,
+        &zmap,
+        &slot_map,
         &mut cache,
         &mut images,
     );
 
-    let face_face_frames = loaded.face_expressions.get(&ev.face_expression).cloned().unwrap_or_default();
-    let face_delay = face_face_frames.first().map(|f| f.delay).unwrap_or(2000);
+    let equipment_entries = resolve_equipment(base, &ev.config.equipment);
+    let (actions, face_expressions) = apply_vslot_filter(
+        loaded.actions,
+        loaded.face_expressions,
+        &equipment_entries,
+    );
 
-    let actions = loaded.actions;
+    let face_face_frames = face_expressions.get(&ev.face_expression).cloned().unwrap_or_default();
+    let face_delay = face_face_frames.first().map(|f| f.delay).unwrap_or(2000);
     let first_frames = actions.get(&ev.action);
     let parts = first_frames
         .and_then(|frames| frames.first())
@@ -85,6 +131,7 @@ pub fn spawn_character(
     let root = commands.spawn((
         CharacterRoot,
         ev.config.clone(),
+        CharacterEquipment { entries: equipment_entries },
         CharacterAnimation {
             action: ev.action.clone(),
             frame_idx: 0,
@@ -93,7 +140,7 @@ pub fn spawn_character(
             face_frame_idx: 0,
             face_timer: Timer::from_seconds(face_delay as f32 / 1000.0, TimerMode::Repeating),
         },
-        CharacterFrameData { actions, face_expressions: loaded.face_expressions },
+        CharacterFrameData { actions, face_expressions },
         PartEntities { map: HashMap::new() },
         ev.transform,
     )).id();

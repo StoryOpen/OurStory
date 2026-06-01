@@ -45,7 +45,9 @@ impl WzSpriteCache {
 fn load_part(
     node: &Node,
     part_name: &str,
+    source: PartSource,
     zmap: &ZMap,
+    slot_map: &SlotMap,
     cache: &mut WzSpriteCache,
     images: &mut Assets<Image>,
 ) -> Option<SpriteLayer> {
@@ -69,7 +71,15 @@ fn load_part(
     }
     }
 
-    Some(SpriteLayer { image, origin, map, z, layer_name: part_name.to_string() })
+    Some(SpriteLayer {
+        image,
+        origin,
+        map,
+        z,
+        layer_name: part_name.to_string(),
+        slot: slot_map.slot_for(&z_str).map(String::from),
+        source,
+    })
 }
 
 fn load_frame(
@@ -80,6 +90,7 @@ fn load_frame(
     equip_configs: &[(EquipSlot, u32)],
     hair_id: Option<u32>,
     zmap: &ZMap,
+    slot_map: &SlotMap,
     frame_idx: u32,
     cache: &mut WzSpriteCache,
     images: &mut Assets<Image>,
@@ -90,17 +101,17 @@ fn load_frame(
     let delay: i32 = frame_node.at_path("delay").ok().and_then(|n| n.try_into().ok()).unwrap_or(100);
     let mut parts = Vec::new();
 
-    if let Some(layer) = load_part(&frame_node, "body", zmap, cache, images) {
+    if let Some(layer) = load_part(&frame_node, "body", PartSource::Body, zmap, slot_map, cache, images) {
         parts.push(layer);
     }
-    if let Some(layer) = load_part(&frame_node, "arm", zmap, cache, images) {
+    if let Some(layer) = load_part(&frame_node, "arm", PartSource::Body, zmap, slot_map, cache, images) {
         parts.push(layer);
     }
 
     if let Some(head_path) = head_action_path {
         let head_frame_path = format!("{}/{}", head_path, frame_idx);
         if let Ok(head_frame) = base.at_path(&head_frame_path) {
-            if let Some(layer) = load_part(&head_frame, "head", zmap, cache, images) {
+            if let Some(layer) = load_part(&head_frame, "head", PartSource::Head, zmap, slot_map, cache, images) {
                 parts.push(layer);
             }
         }
@@ -110,7 +121,7 @@ fn load_frame(
         let hair_path = format!("Character/Hair/{:08}.img/{}/{}", hid, action_name, frame_idx);
         if let Ok(hair_node) = base.at_path(&hair_path) {
             for part_name in &["hair", "hairBelowBody", "hairOverHead"] {
-                if let Some(layer) = load_part(&hair_node, part_name, zmap, cache, images) {
+                if let Some(layer) = load_part(&hair_node, part_name, PartSource::Hair, zmap, slot_map, cache, images) {
                     parts.push(layer);
                 }
             }
@@ -122,7 +133,7 @@ fn load_frame(
         let item_action_path = format!("{}/{}/{}", item_path, action_name, frame_idx);
         if let Ok(item_frame) = base.at_path(&item_action_path) {
             for part_name in slot.part_names() {
-                if let Some(layer) = load_part(&item_frame, part_name, zmap, cache, images) {
+                if let Some(layer) = load_part(&item_frame, part_name, PartSource::Equipment(*slot), zmap, slot_map, cache, images) {
                     parts.push(layer);
                 }
             }
@@ -136,6 +147,7 @@ fn preload_face_expressions(
     base: &Node,
     face_id: u32,
     zmap: &ZMap,
+    slot_map: &SlotMap,
     cache: &mut WzSpriteCache,
     images: &mut Assets<Image>,
 ) -> HashMap<String, Vec<FrameData>> {
@@ -161,7 +173,7 @@ fn preload_face_expressions(
         let mut frames = Vec::new();
 
         if child_keys.iter().any(|k| k == "face") {
-            if let Some(layer) = load_part(&expr_node, "face", zmap, cache, images) {
+            if let Some(layer) = load_part(&expr_node, "face", PartSource::Face, zmap, slot_map, cache, images) {
                 frames.push(FrameData { parts: vec![layer], delay: 2000 });
             }
         } else if child_keys.iter().any(|k| k.parse::<u32>().is_ok()) {
@@ -171,7 +183,7 @@ fn preload_face_expressions(
                         if let Ok(delay_node) = frame_node.at_path("delay") {
                             let delay: Result<i32, _> = delay_node.try_into();
                             if let Ok(delay) = delay {
-                                if let Some(layer) = load_part(&frame_node, "face", zmap, cache, images) {
+                                if let Some(layer) = load_part(&frame_node, "face", PartSource::Face, zmap, slot_map, cache, images) {
                                     frames.push(FrameData { parts: vec![layer], delay: delay as u32 });
                                 }
                             }
@@ -201,6 +213,7 @@ pub fn preload_character_frames(
     face_id: Option<u32>,
     equipment: &[(EquipSlot, u32)],
     zmap: &ZMap,
+    slot_map: &SlotMap,
     cache: &mut WzSpriteCache,
     images: &mut Assets<Image>,
 ) -> LoadedCharacterData {
@@ -250,6 +263,7 @@ pub fn preload_character_frames(
                 equipment,
                 hair_id,
                 zmap,
+                slot_map,
                 frame_idx,
                 cache,
                 images,
@@ -264,7 +278,7 @@ pub fn preload_character_frames(
     }
 
     let face_expressions = face_id
-        .map(|fid| preload_face_expressions(base, fid, zmap, cache, images))
+        .map(|fid| preload_face_expressions(base, fid, zmap, slot_map, cache, images))
         .unwrap_or_default();
 
     LoadedCharacterData { actions, face_expressions }

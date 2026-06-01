@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use bevy::prelude::*;
 
-use crate::character::types::FrameData;
+use crate::character::types::{EquipmentEntry, FrameData};
 
 #[derive(Component)]
 pub struct CharacterRoot;
@@ -12,6 +12,15 @@ pub struct CharacterConfig {
     pub hair_id: u32,
     pub face_id: u32,
     pub equipment: Vec<(crate::character::types::EquipSlot, u32)>,
+}
+
+/// Resolved equipment entries with vslot data, populated at spawn. Kept on
+/// the entity so vslot-based sprite suppression can be recomputed when
+/// equipment changes, and so other systems (stats, tooltip) can read slot
+/// ownership without re-parsing the WZ.
+#[derive(Component, Clone)]
+pub struct CharacterEquipment {
+    pub entries: Vec<EquipmentEntry>,
 }
 
 #[derive(Component)]
