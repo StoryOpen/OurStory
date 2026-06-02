@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 protocol = { path = "../protocol" }
-wz = { path = "../wz" }
+wz-cli = { path = "../wz-cli" }
 wz_reader = { version = "0.0.20", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

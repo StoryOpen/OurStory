@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use wz::*;
+use wz_cli::*;
 use wz_reader::WzNodeCast;
 
 const WZ_DIR: &str = "./wz";

@@ -1,4 +1,4 @@
-# WZ Crate — MapleStory WZ File Probe
+# wz-cli — MapleStory WZ File Probe
 
 ## Overview
 
@@ -192,7 +192,7 @@ Npc/
 
 Use:
 ```rust
-wz::parse_node(&node)?;  // explicit parse
+wz_cli::parse_node(&node)?;  // explicit parse
 // or just use get_children() / resolve_path() which handle it
 ```
 
@@ -207,7 +207,7 @@ Paths use `/` as separator, relative to `Base.wz` root:
 
 ```rust
 use std::path::Path;
-use wz::*;
+use wz_cli::*;
 
 let base = load_base(Path::new("./wz"))?;
 
@@ -253,49 +253,49 @@ let schema = schema_tree(&node, 2); // recursive, depth-limited
 
 ```sh
 # Run from workspace root (wz/ dir must exist relative to CWD)
-cargo run -p wz -- <command>
+cargo run -p wz-cli -- <command>
 
 # List root
-cargo run -p wz -- list
+cargo run -p wz-cli -- list
 
 # List a path
-cargo run -p wz -- list "Map/Map/Map1"
+cargo run -p wz-cli -- list "Map/Map/Map1"
 
 # Tree view
-cargo run -p wz -- tree "Character/00002000.img" -d 2
+cargo run -p wz-cli -- tree "Character/00002000.img" -d 2
 
 # Detailed info (shows PNG dimensions & sub-properties for sprites)
-cargo run -p wz -- info "String/Eqp.img/Eqp/Cap/1003043"
-cargo run -p wz -- info "Character/00002000.img/walk1/0/body"
+cargo run -p wz-cli -- info "String/Eqp.img/Eqp/Cap/1003043"
+cargo run -p wz-cli -- info "Character/00002000.img/walk1/0/body"
 
 # JSON output (for pipelines / MCP)
-cargo run -p wz -- info --json "Mob/0130100.img/info"
+cargo run -p wz-cli -- info --json "Mob/0130100.img/info"
 
 # Full JSON dump
-cargo run -p wz -- dump "Map/Map/Map1/100000000.img/info"
+cargo run -p wz-cli -- dump "Map/Map/Map1/100000000.img/info"
 
 # Search by name
-cargo run -p wz -- search "Henesys"
-cargo run -p wz -- search --json "100000000"
+cargo run -p wz-cli -- search "Henesys"
+cargo run -p wz-cli -- search --json "100000000"
 
 # --- New commands ---
 
 # Get raw value (scalar, string, vector, or PNG metadata)
-cargo run -p wz -- get "Mob/0130100.img/info/level"        # → 4
-cargo run -p wz -- get "String/Eqp.img/Eqp/Cap/1003043/name"  # → "순록의 뿔"
-cargo run -p wz -- get --json "Character/00002000.img/walk1/0/body/origin"  # → {"x":19,"y":32}
+cargo run -p wz-cli -- get "Mob/0130100.img/info/level"        # → 4
+cargo run -p wz-cli -- get "String/Eqp.img/Eqp/Cap/1003043/name"  # → "순록의 뿔"
+cargo run -p wz-cli -- get --json "Character/00002000.img/walk1/0/body/origin"  # → {"x":19,"y":32}
 
 # Resolve UOL / _inlink / _outlink to target node
-cargo run -p wz -- resolve "some/link/node"
-cargo run -p wz -- resolve --json "some/link/node"
+cargo run -p wz-cli -- resolve "some/link/node"
+cargo run -p wz-cli -- resolve --json "some/link/node"
 
 # Export PNG or sound to a directory
-cargo run -p wz -- export "Character/00002000.img/walk1/0/body" -o ./sprites
-cargo run -p wz -- export "Sound/Bgm00/FloralLife" -o ./sounds
+cargo run -p wz-cli -- export "Character/00002000.img/walk1/0/body" -o ./sprites
+cargo run -p wz-cli -- export "Sound/Bgm00/FloralLife" -o ./sounds
 
 # Show schema (field names, types, example values) at a path
-cargo run -p wz -- schema "Mob/0130100.img/info" -d 2
-cargo run -p wz -- schema --json "Character/00002000.img/walk1/0"
+cargo run -p wz-cli -- schema "Mob/0130100.img/info" -d 2
+cargo run -p wz-cli -- schema --json "Character/00002000.img/walk1/0"
 ```
 
 ## wz_reader Version
