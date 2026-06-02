@@ -38,7 +38,7 @@ pub fn tick_mob_animations(
         if let Some(part) = frame.parts.first() {
             sprite.image = part.image_handle.clone();
             transform.translation.x = animator.base_x - part.origin.x;
-            transform.translation.y = -animator.base_y + part.origin.y;
+            transform.translation.y = animator.base_y - part.origin.y;
         }
     }
 }
@@ -118,7 +118,7 @@ pub fn handle_switch_action(
         sprite.image = part.image_handle.clone();
         transform.translation = Vec3::new(
             animator.base_x - part.origin.x,
-            -animator.base_y + part.origin.y,
+            animator.base_y - part.origin.y,
             transform.translation.z,
         );
     }
@@ -166,7 +166,7 @@ fn spawn_one(commands: &mut Commands, ev: &SpawnMob, asset: &WzMobAsset) {
         Anchor::TOP_LEFT,
         Transform::from_xyz(
             ev.x - part.origin.x,
-            -ev.y + part.origin.y,
+            ev.y - part.origin.y,
             ev.z as f32,
         ),
     ));

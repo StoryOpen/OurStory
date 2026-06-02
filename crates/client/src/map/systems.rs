@@ -91,7 +91,7 @@ pub fn spawn_map(
         let e = commands.spawn((
             Sprite::from_image(s.image.clone()),
             Anchor::TOP_LEFT,
-            Transform::from_xyz(s.x - s.origin.x, (-s.y) + s.origin.y, s.z as f32),
+            Transform::from_xyz(s.x - s.origin.x, s.y - s.origin.y, s.z as f32),
         )).id();
         sprites.push(e);
     }
@@ -112,6 +112,6 @@ fn spawn_background(b: &BackgroundData, commands: &mut Commands) -> Entity {
     commands.spawn((
         Sprite::from_image(b.image.clone()),
         Anchor::TOP_LEFT,
-        Transform::from_xyz(b.x - b.origin.x, (-b.y) + b.origin.y, z as f32),
+        Transform::from_xyz(b.x - b.origin.x, b.y - b.origin.y, z as f32),
     )).id()
 }

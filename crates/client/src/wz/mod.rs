@@ -145,8 +145,31 @@ impl Node {
     pub fn path(&self) -> String {
         self.wz_node.read().expect("lock poisoned").get_full_path().to_string()
     }
+
+    /// Reads scalar `x` and `y` children and returns a Bevy-space `Vec2`
+    /// (Y negated from WZ). Returns `NodeFound` if either child is missing.
+    pub fn read_pos(&self) -> Result<Vec2, NodeError> {
+        let x: f32 = self.at_path("x")?.try_into()?;
+        let y: f32 = self.at_path("y")?.try_into()?;
+        Ok(Vec2 { x, y: -y })
+    }
+
+    /// Reads scalar `x{n}` and `y{n}` children (e.g. `x1`/`y1`, `x2`/`y2`
+    /// for footholds and areas) and returns a Bevy-space `Vec2`.
+    pub fn read_pos_n(&self, n: u8) -> Result<Vec2, NodeError> {
+        let x: f32 = self.at_path(&format!("x{n}"))?.try_into()?;
+        let y: f32 = self.at_path(&format!("y{n}"))?.try_into()?;
+        Ok(Vec2 { x, y: -y })
+    }
 }
 
+/// Reads a WZ `Vector2D` and returns it in Bevy-space coordinates.
+///
+/// WZ stores 2D pixel coordinates with Y increasing downward. Bevy uses
+/// Y-up. Every `Vector2D` in MapleStory WZ data is a pixel coordinate
+/// (origins, connection points, etc.), so this impl applies the WZ\u2192Bevy
+/// Y negation at the boundary. All downstream consumers receive Bevy-space
+/// values.
 impl TryFrom<Node> for Vec2 {
     type Error = NodeError;
 
@@ -155,7 +178,7 @@ impl TryFrom<Node> for Vec2 {
         let Vector2D(x, y) = guard.try_as_vector2d().ok_or(NodeError::TypeMismatch("Vec2"))?;
         Ok(Vec2 {
             x: *x as f32,
-            y: *y as f32,
+            y: -(*y as f32),
         })
     }
 }

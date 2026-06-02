@@ -4,7 +4,7 @@ A Rust workspace for MapleStory game tooling.
 
 ## Crates
 
-- **`wz`** (`crates/wz/`) — CLI tool and library for probing MapleStory `.wz` asset files. Use this to explore the WZ tree structure (maps, sprites, items, sounds, strings, etc.), search nodes by name, dump subtrees as JSON, and understand the game data taxonomy. Forms the data layer for higher-level tooling.
+- **`wz-cli`** (`crates/wz-cli/`) — CLI tool and library for probing MapleStory `.wz` asset files. Use this to explore the WZ tree structure (maps, sprites, items, sounds, strings, etc.), search nodes by name, dump subtrees as JSON, and understand the game data taxonomy. Forms the data layer for higher-level tooling.
 - **`client`** (`crates/client/`) — Bevy-based game client that renders maps and sprites from WZ assets.
 
 ## Server Crates
@@ -22,20 +22,36 @@ A Rust workspace for MapleStory game tooling.
 
 ## Coordinate System
 
-All entities in the WZ system (maps, mobs, NPCs, characters, etc.) share the same coordinate convention:
+WZ stores 2D pixel coordinates with Y increasing downward; Bevy uses Y-up.
+All WZ\u2192Bevy conversion happens at the `crates/client/src/wz/` boundary:
 
-- **WZ X**: increases to the right (same as Bevy X)
-- **WZ Y**: increases **downward** (opposite of Bevy Y, which increases upward)
-- **origin**: a `Vector2D` pivot point within a sprite, relative to its top-left corner
+- `TryFrom<Node> for Vec2` reads WZ `Vector2D` values and negates Y.
+- `Node::read_pos()` reads scalar `x`/`y` children and negates Y.
+- `Node::read_pos_n(n)` reads `x{n}`/`y{n}` (footholds, areas) and negates Y.
 
-When converting from WZ coordinates to Bevy world coordinates:
+Downstream consumers (`map`, `mob`, `character`, all `WzMapAsset` / `WzMobAsset`
+fields, all `Transform`s, all events) treat coordinates as native Bevy-space.
+The conversion formula `bevy_y = -wz_y` is applied exactly once per value,
+inside the `wz` module. There are no Y-negations or origin-flip sign games
+in any runtime system.
 
-```
-bevy_x = wz_x - origin.x
-bevy_y = -wz_y + origin.y
-```
+**Origins** are loaded as Bevy-local pixel offsets (already Y-flipped). With
+`Anchor::TOP_LEFT`, the formula `bevy_translation = pos - origin` places the
+sprite's WZ pivot at the desired Bevy world position.
 
-This formula applies to map tiles, map objects (obj), mob sprites, NPC sprites, character sprites — every entity type. The origin is always subtracted from the WZ position, and WZ Y is negated for Bevy's Y-up convention.
+**Non-coordinate scalars** (`alpha`, `rx`, `ry`, `mag`, `delay`, `cy`,
+`mobTime`, `force`, `piece`, `cx`, layer indices) are read as raw `i32`/`f32`
+and untouched by the conversion.
+
+**Footholds:** `Foothold.{x1,y1,x2,y2}` are Bevy-space. `layer_at()` uses
+the inequality `f.y_at(x) >= y - 50.0` (foothold at or below entity, where
+"below" means smaller Bevy Y).
+
+**Network boundary** (future): `protocol::types::Position` uses WZ-Y
+convention for wire compatibility with classic clients. Any code that
+consumes inbound positions or emits outbound positions must negate Y at the
+network handler. The server stores `Position` opaquely; it has no Y-direction
+logic today.
 
 ## Client — Character Rendering (`crates/client/src/character/`)
 

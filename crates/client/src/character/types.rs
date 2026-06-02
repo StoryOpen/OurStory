@@ -267,7 +267,7 @@ fn compute_connection_point(
 ) -> Vec2 {
     Vec2::new(
         part_local.x + origin.x + map_entry.x,
-        part_local.y - origin.y - map_entry.y,
+        part_local.y + origin.y + map_entry.y,
     )
 }
 
@@ -310,7 +310,7 @@ pub fn compute_frame_transforms(parts: &[SpriteLayer]) -> HashMap<String, Vec3> 
             let target = *cpoints.get(&attach_name).unwrap();
             let pos = Vec3::new(
                 target.x - part.origin.x - map_entry.x,
-                target.y + part.origin.y + map_entry.y,
+                target.y - part.origin.y - map_entry.y,
                 part.z,
             );
 
