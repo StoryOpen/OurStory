@@ -9,7 +9,7 @@ use image::DynamicImage;
 
 use thiserror::Error;
 
-use crate::wz::Vector2D;
+use crate::wz::WzNodeExt;
 
 #[derive(Asset, TypePath, Debug)]
 pub struct WzMapAsset {
@@ -212,7 +212,10 @@ impl AssetLoader for WzMapLoader {
 
         let info = load_info(&map);
         let footholds = load_footholds(&map);
-        let (tiles, objs) = load_tiles_and_objs(&map, &base, load_context);
+        let mut tiles = load_tiles(&map, &base, load_context);
+        let mut objs = load_objs(&map, &base, load_context);
+        sort_sprites(&mut tiles);
+        sort_sprites(&mut objs);
         let backgrounds = load_backgrounds(&map, &base, load_context);
         let life = load_life(&map);
         let portals = load_portals(&map);
@@ -232,15 +235,23 @@ impl AssetLoader for WzMapLoader {
     }
 }
 
+fn sort_sprites(sprites: &mut [WzSpriteData]) {
+    sprites.sort_by(|a, b| {
+        a.layer.cmp(&b.layer)
+            .then_with(|| a.z.cmp(&b.z))
+            .then_with(|| a.zid.cmp(&b.zid))
+    });
+}
+
 fn load_info(map: &crate::wz::Node) -> MapInfo {
     let info_node = match map.at_path("info") {
         Ok(n) => n,
         Err(_) => return MapInfo::default(),
     };
 
-    let s = |path: &str| info_node.at_path(path).ok().and_then(|n| TryInto::<String>::try_into(n).ok());
-    let i = |path: &str| info_node.at_path(path).ok().and_then(|n| TryInto::<i32>::try_into(n).ok());
-    let f = |path: &str| info_node.at_path(path).ok().and_then(|n| TryInto::<f32>::try_into(n).ok());
+    let s = |path: &str| info_node.get_opt::<String>(path);
+    let i = |path: &str| info_node.get_opt::<i32>(path);
+    let f = |path: &str| info_node.get_opt::<f32>(path);
 
     MapInfo {
         bgm: s("bgm"),
@@ -276,9 +287,9 @@ fn load_footholds(map: &crate::wz::Node) -> Vec<Foothold> {
                     let (x1, y1) = fh.read_pos_n(1).unwrap_or((0.0, 0.0));
                     let (x2, y2) = fh.read_pos_n(2).unwrap_or((0.0, 0.0));
                     let id: i32 = id_name.as_str().parse().unwrap_or(0);
-                    let force: Option<i32> = fh.at_path("force").ok().and_then(|n| n.try_into().ok());
-                    let forbid_fall: Option<i32> = fh.at_path("forbidFall").ok().and_then(|n| n.try_into().ok());
-                    let piece: Option<i32> = fh.at_path("piece").ok().and_then(|n| n.try_into().ok());
+                    let force: Option<i32> = fh.get_opt("force");
+                    let forbid_fall: Option<i32> = fh.get_opt("forbidFall");
+                    let piece: Option<i32> = fh.get_opt("piece");
                     footholds.push(Foothold { id, group: 0, layer: layer_num, x1, y1, x2, y2, force, forbid_fall, piece });
                 }
             }
@@ -287,12 +298,11 @@ fn load_footholds(map: &crate::wz::Node) -> Vec<Foothold> {
     footholds
 }
 
-fn load_tiles_and_objs(
+fn load_tiles(
     map: &crate::wz::Node,
     base: &crate::wz::Node,
     load_context: &mut LoadContext<'_>,
-) -> (Vec<WzSpriteData>, Vec<WzSpriteData>) {
-    let mut objs = Vec::new();
+) -> Vec<WzSpriteData> {
     let mut tiles = Vec::new();
 
     for i in 0..8u8 {
@@ -301,10 +311,7 @@ fn load_tiles_and_objs(
             Err(_) => continue,
         };
 
-        let tile_set: String = match layer.at_path("info/tS") {
-            Ok(n) => n.try_into().unwrap(),
-            Err(_) => continue,
-        };
+        let Some(tile_set) = layer.get_opt::<String>("info/tS") else { continue; };
 
         if let Ok(tile_root) = layer.at_path("tile") {
             let mut children = tile_root.children();
@@ -313,23 +320,16 @@ fn load_tiles_and_objs(
                     .cmp(&x3.as_str().parse::<i32>().unwrap())
             });
             for (name, tile_node) in children {
-                let variant: String = tile_node.at_path("u").unwrap().try_into().unwrap();
-                let index: i32 = tile_node.at_path("no").unwrap().try_into().unwrap();
+                let variant: String = tile_node.required("u");
+                let index: i32 = tile_node.required("no");
                 let (x, y) = tile_node.read_pos().unwrap();
-                let z_m: i32 = tile_node.at_path("zM")
-                    .ok()
-                    .and_then(|n| -> Option<i32> { n.try_into().ok() })
-                    .unwrap_or(0);
+                let z_m: i32 = tile_node.get_or("zM", 0);
                 let tile_id: i32 = name.as_str().parse().unwrap_or(0);
 
                 let img_path = format!("Map/Tile/{}.img/{}/{}", tile_set, variant, index);
                 let img_node = base.at_path(&img_path).unwrap();
-                let z: i32 = img_node.at_path("z")
-                    .ok()
-                    .and_then(|n| -> Option<i32> { n.try_into().ok() })
-                    .unwrap_or(0);
-                let Vector2D(ox, oy) = img_node.at_path("origin").unwrap().try_into().unwrap();
-                let origin = Vec2::new(ox as f32, oy as f32);
+                let z: i32 = img_node.get_or("z", 0);
+                let origin = img_node.get_vec2_opt("origin").unwrap();
 
                 let handle = load_or_decode_image(&img_node, load_context, img_path);
                 tiles.push(WzSpriteData {
@@ -338,28 +338,38 @@ fn load_tiles_and_objs(
                 });
             }
         }
+    }
+
+    tiles
+}
+
+fn load_objs(
+    map: &crate::wz::Node,
+    base: &crate::wz::Node,
+    load_context: &mut LoadContext<'_>,
+) -> Vec<WzSpriteData> {
+    let mut objs = Vec::new();
+
+    for i in 0..8u8 {
+        let layer = match map.at_path(&i.to_string()) {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
 
         if let Ok(obj_root) = layer.at_path("obj") {
             for (name, obj_node) in obj_root.children() {
-                let obj_set: String = obj_node.at_path("oS").unwrap().try_into().unwrap();
-                let layer0: String = obj_node.at_path("l0").unwrap().try_into().unwrap();
-                let layer1: String = obj_node.at_path("l1").unwrap().try_into().unwrap();
-                let layer2: String = obj_node.at_path("l2").unwrap().try_into().unwrap();
+                let obj_set: String = obj_node.required("oS");
+                let layer0: String = obj_node.required("l0");
+                let layer1: String = obj_node.required("l1");
+                let layer2: String = obj_node.required("l2");
                 let (x, y) = obj_node.read_pos().unwrap();
-                let z: i32 = obj_node.at_path("z")
-                    .ok()
-                    .and_then(|n| -> Option<i32> { n.try_into().ok() })
-                    .unwrap_or(0);
-                let z_m: i32 = obj_node.at_path("zM")
-                    .ok()
-                    .and_then(|n| -> Option<i32> { n.try_into().ok() })
-                    .unwrap_or(0);
+                let z: i32 = obj_node.get_or("z", 0);
+                let z_m: i32 = obj_node.get_or("zM", 0);
                 let zid: i32 = name.as_str().parse().unwrap_or(0);
 
                 let img_path = format!("Map/Obj/{}.img/{}/{}/{}/0", obj_set, layer0, layer1, layer2);
                 let img_node = base.at_path(&img_path).unwrap();
-                let Vector2D(ox, oy) = img_node.at_path("origin").unwrap().try_into().unwrap();
-                let origin = Vec2::new(ox as f32, oy as f32);
+                let origin = img_node.get_vec2_opt("origin").unwrap();
 
                 let handle = load_or_decode_image(&img_node, load_context, img_path);
                 objs.push(WzSpriteData {
@@ -370,15 +380,7 @@ fn load_tiles_and_objs(
         }
     }
 
-    let sprite_cmp = |a: &WzSpriteData, b: &WzSpriteData| {
-        a.layer.cmp(&b.layer)
-            .then_with(|| a.z.cmp(&b.z))
-            .then_with(|| a.zid.cmp(&b.zid))
-    };
-    objs.sort_by(sprite_cmp);
-    tiles.sort_by(sprite_cmp);
-
-    (tiles, objs)
+    objs
 }
 
 fn load_backgrounds(
@@ -400,18 +402,18 @@ fn load_backgrounds(
     let mut backgrounds = Vec::new();
     for (name, back_node) in children {
         let index: i32 = name.as_str().parse().unwrap_or(0);
-        let b_s: String = match back_node.at_path("bS").ok().and_then(|n| n.try_into().ok()) {
+        let b_s: String = match back_node.get_opt::<String>("bS") {
             Some(v) => v,
             None => continue,
         };
-        let no: i32 = back_node.at_path("no").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let front: bool = back_node.at_path("front").ok().and_then(|n| TryInto::<i32>::try_into(n).ok()).map(|v| v != 0).unwrap_or(false);
-        let rx: i32 = back_node.at_path("rx").ok().and_then(|n| n.try_into().ok()).unwrap_or(100);
-        let ry: i32 = back_node.at_path("ry").ok().and_then(|n| n.try_into().ok()).unwrap_or(100);
-        let btype: i32 = back_node.at_path("type").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let cx: i32 = back_node.at_path("cx").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let cy: i32 = back_node.at_path("cy").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let alpha: i32 = back_node.at_path("a").ok().and_then(|n| n.try_into().ok()).unwrap_or(255);
+        let no: i32 = back_node.get_or("no", 0);
+        let front: bool = back_node.get_or::<bool>("front", false);
+        let rx: i32 = back_node.get_or("rx", 100);
+        let ry: i32 = back_node.get_or("ry", 100);
+        let btype: i32 = back_node.get_or("type", 0);
+        let cx: i32 = back_node.get_or("cx", 0);
+        let cy: i32 = back_node.get_or("cy", 0);
+        let alpha: i32 = back_node.get_or("a", 255);
         let (x, y) = back_node.read_pos().unwrap_or((0.0, 0.0));
 
         let img_path = format!("Map/Back/{}.img/back/{}", b_s, no);
@@ -429,7 +431,7 @@ fn load_backgrounds(
         let img_label = format!("{}/0", img_path);
         let handle = load_or_decode_image(&frame_node, load_context, img_label);
 
-        let origin = frame_node.at_path("origin").ok().and_then(|n| -> Option<Vector2D> { n.try_into().ok() }).map(|v| Vec2::new(v.0 as f32, v.1 as f32)).unwrap_or_default();
+        let origin = frame_node.get_vec2_opt("origin").unwrap_or_default();
 
         backgrounds.push(BackgroundData {
             image: handle, front, rx, ry, btype, cx, cy,
@@ -449,19 +451,19 @@ fn load_life(map: &crate::wz::Node) -> Vec<LifeSpawn> {
 
     let mut life = Vec::new();
     for (_name, life_node) in life_root.children() {
-        let spawn_type: String = match life_node.at_path("type").ok().and_then(|n| n.try_into().ok()) {
+        let spawn_type: String = match life_node.get_opt::<String>("type") {
             Some(v) => v,
             None => continue,
         };
-        let id: i32 = life_node.at_path("id").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
+        let id: i32 = life_node.get_or("id", 0);
         let (x, y) = life_node.read_pos().unwrap_or((0.0, 0.0));
-        let cy: i32 = life_node.at_path("cy").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let fh: i32 = life_node.at_path("fh").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let rx0: i32 = life_node.at_path("rx0").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let rx1: i32 = life_node.at_path("rx1").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let mob_time: i32 = life_node.at_path("mobTime").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let hide: bool = life_node.at_path("hide").ok().and_then(|n| TryInto::<i32>::try_into(n).ok()).map(|v| v != 0).unwrap_or(false);
-        let flip: bool = life_node.at_path("f").ok().and_then(|n| TryInto::<i32>::try_into(n).ok()).map(|v| v != 0).unwrap_or(false);
+        let cy: i32 = life_node.get_or("cy", 0);
+        let fh: i32 = life_node.get_or("fh", 0);
+        let rx0: i32 = life_node.get_or("rx0", 0);
+        let rx1: i32 = life_node.get_or("rx1", 0);
+        let mob_time: i32 = life_node.get_or("mobTime", 0);
+        let hide: bool = life_node.get_or::<bool>("hide", false);
+        let flip: bool = life_node.get_or::<bool>("f", false);
 
         life.push(LifeSpawn { spawn_type, id, x, y, cy, fh, rx0, rx1, mob_time, hide, flip });
     }
@@ -477,16 +479,16 @@ fn load_portals(map: &crate::wz::Node) -> Vec<PortalData> {
 
     let mut portals = Vec::new();
     for (_name, portal_node) in portal_root.children() {
-        let pt: i32 = portal_node.at_path("pt").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let pn: String = portal_node.at_path("pn").ok().and_then(|n| n.try_into().ok()).unwrap_or_default();
+        let pt: i32 = portal_node.get_or("pt", 0);
+        let pn: String = portal_node.get_or("pn", String::new());
         let (x, y) = portal_node.read_pos().unwrap_or((0.0, 0.0));
-        let tm: i32 = portal_node.at_path("tm").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let tn: String = portal_node.at_path("tn").ok().and_then(|n| n.try_into().ok()).unwrap_or_default();
-        let script: Option<String> = portal_node.at_path("script").ok().and_then(|n| n.try_into().ok());
-        let delay: Option<i32> = portal_node.at_path("delay").ok().and_then(|n| n.try_into().ok());
-        let horizontal_impact: Option<i32> = portal_node.at_path("horizontalImpact").ok().and_then(|n| n.try_into().ok());
-        let vertical_impact: Option<i32> = portal_node.at_path("verticalImpact").ok().and_then(|n| n.try_into().ok());
-        let only_once: Option<i32> = portal_node.at_path("onlyOnce").ok().and_then(|n| n.try_into().ok());
+        let tm: i32 = portal_node.get_or("tm", 0);
+        let tn: String = portal_node.get_or("tn", String::new());
+        let script: Option<String> = portal_node.get_opt("script");
+        let delay: Option<i32> = portal_node.get_opt("delay");
+        let horizontal_impact: Option<i32> = portal_node.get_opt("horizontalImpact");
+        let vertical_impact: Option<i32> = portal_node.get_opt("verticalImpact");
+        let only_once: Option<i32> = portal_node.get_opt("onlyOnce");
 
         portals.push(PortalData { pt, pn, x, y, tm, tn, script, delay, horizontal_impact, vertical_impact, only_once });
     }
@@ -502,14 +504,14 @@ fn load_ladder_ropes(map: &crate::wz::Node) -> Vec<LadderRopeData> {
 
     let mut lrs = Vec::new();
     for (_name, lr_node) in lr_root.children() {
-        let x: f32 = lr_node.at_path("x").ok().and_then(|n| n.try_into().ok()).unwrap_or(0.0);
-        let raw_y1: f32 = lr_node.at_path("y1").ok().and_then(|n| n.try_into().ok()).unwrap_or(0.0);
-        let raw_y2: f32 = lr_node.at_path("y2").ok().and_then(|n| n.try_into().ok()).unwrap_or(0.0);
+        let x: f32 = lr_node.get_or("x", 0.0);
+        let raw_y1: f32 = lr_node.get_or("y1", 0.0);
+        let raw_y2: f32 = lr_node.get_or("y2", 0.0);
         let y1 = -raw_y1;
         let y2 = -raw_y2;
-        let is_ladder: bool = lr_node.at_path("l").ok().and_then(|n| TryInto::<i32>::try_into(n).ok()).map(|v| v == 0).unwrap_or(true);
-        let uf: i32 = lr_node.at_path("uf").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let page: i32 = lr_node.at_path("page").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
+        let is_ladder: bool = lr_node.get_or::<i32>("l", 0) == 0;
+        let uf: i32 = lr_node.get_or("uf", 0);
+        let page: i32 = lr_node.get_or("page", 0);
 
         lrs.push(LadderRopeData { x, y1, y2, is_ladder, uf, page });
     }
@@ -540,10 +542,10 @@ fn load_areas(map: &crate::wz::Node) -> Vec<AreaData> {
 
     let mut areas = Vec::new();
     for (_name, area_node) in area_root.children() {
-        let x1: i32 = area_node.at_path("x1").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let raw_y1: i32 = area_node.at_path("y1").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let x2: i32 = area_node.at_path("x2").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let raw_y2: i32 = area_node.at_path("y2").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
+        let x1: i32 = area_node.get_or("x1", 0);
+        let raw_y1: i32 = area_node.get_or("y1", 0);
+        let x2: i32 = area_node.get_or("x2", 0);
+        let raw_y2: i32 = area_node.get_or("y2", 0);
         areas.push(AreaData { x1, y1: -raw_y1, x2, y2: -raw_y2 });
     }
 
@@ -560,11 +562,11 @@ fn load_minimap(
     let canvas_node = mm_node.at_path("canvas").ok()?;
     let handle = load_or_decode_image(&canvas_node, load_context, format!("{}/miniMap/canvas", map.path()));
 
-    let x: Option<i32> = mm_node.at_path("x").ok().and_then(|n| n.try_into().ok());
-    let y: Option<i32> = mm_node.at_path("y").ok().and_then(|n| n.try_into().ok()).map(|v: i32| -v);
-    let width: Option<i32> = mm_node.at_path("width").ok().and_then(|n| n.try_into().ok());
-    let height: Option<i32> = mm_node.at_path("height").ok().and_then(|n| n.try_into().ok());
-    let mag: Option<i32> = mm_node.at_path("mag").ok().and_then(|n| n.try_into().ok());
+    let x: Option<i32> = mm_node.get_opt("x");
+    let y: Option<i32> = mm_node.get_opt::<i32>("y").map(|v| -v);
+    let width: Option<i32> = mm_node.get_opt("width");
+    let height: Option<i32> = mm_node.get_opt("height");
+    let mag: Option<i32> = mm_node.get_opt("mag");
 
     Some(MiniMapData { image: handle, x, y, width, height, mag })
 }

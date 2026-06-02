@@ -157,6 +157,29 @@ impl Node {
         let y: f32 = self.at_path(&format!("y{n}"))?.try_into()?;
         Ok((x, -y))
     }
+
+    /// Reads a child node at `path` and tries to convert it to `T`,
+    /// falling back to `default` on any failure.
+    pub fn get_or<T: TryFrom<Node, Error = NodeError>>(&self, path: &str, default: T) -> T {
+        self.at_path(path).ok()
+            .and_then(|n| T::try_from(n).ok())
+            .unwrap_or(default)
+    }
+
+    /// Reads a child node at `path` and tries to convert it to `T`,
+    /// returning `None` if the path doesn't exist or the type doesn't match.
+    pub fn get_opt<T: TryFrom<Node, Error = NodeError>>(&self, path: &str) -> Option<T> {
+        self.at_path(path).ok()
+            .and_then(|n| T::try_from(n).ok())
+    }
+
+    /// Reads a required child at `path` and converts to `T`.
+    /// Panics with a descriptive message if the path doesn't exist
+    /// or the type doesn't match.
+    pub fn required<T: TryFrom<Node, Error = NodeError>>(&self, path: &str) -> T {
+        self.at_path(path).unwrap_or_else(|_| panic!("required child '{path}' not found"))
+            .try_into().unwrap_or_else(|_| panic!("required child '{path}' type mismatch"))
+    }
 }
 
 impl TryFrom<Node> for i32 {
