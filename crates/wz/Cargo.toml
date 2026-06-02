@@ -1,11 +1,9 @@
 [package]
-name = "client"
+name = "wz"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { path = "../../third_party/bevy", features = ["bevy_dev_tools", "dynamic_linking"] }
-wz = { path = "../wz" }
 wz_reader = { path = "../../third_party/wz_reader" }
 image = "0.25.10"
 indexmap = "2.14.0"

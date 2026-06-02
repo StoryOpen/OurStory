@@ -6,7 +6,7 @@ use bevy::{
 };
 use image::DynamicImage;
 
-use crate::wz::Node;
+use crate::wz::{Node, Vector2D};
 use crate::character::types::*;
 
 #[derive(Resource, Default)]
@@ -52,7 +52,8 @@ fn load_part(
     images: &mut Assets<Image>,
 ) -> Option<SpriteLayer> {
     let part_node = node.at_path(part_name).ok()?;
-    let origin: Vec2 = part_node.at_path("origin").ok()?.try_into().ok()?;
+    let Vector2D(ox, oy) = part_node.at_path("origin").ok()?.try_into().ok()?;
+    let origin = Vec2::new(ox as f32, oy as f32);
     let z_str: String = part_node.at_path("z").ok()?.try_into().ok()?;
     let z = zmap.depth(&z_str);
     let path = part_node.path();
@@ -64,7 +65,8 @@ fn load_part(
         if let Some(val) = map_node
             .at_path(child_name.as_str())
             .ok()
-            .and_then(|n| n.try_into().ok())
+            .and_then(|n| -> Option<Vector2D> { n.try_into().ok() })
+            .map(|v| Vec2::new(v.0 as f32, v.1 as f32))
         {
             map.insert(child_name.to_string(), val);
         }

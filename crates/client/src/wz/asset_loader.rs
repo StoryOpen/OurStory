@@ -9,6 +9,8 @@ use image::DynamicImage;
 
 use thiserror::Error;
 
+use crate::wz::Vector2D;
+
 #[derive(Asset, TypePath, Debug)]
 pub struct WzMapAsset {
     pub info: MapInfo,
@@ -271,13 +273,13 @@ fn load_footholds(map: &crate::wz::Node) -> Vec<Foothold> {
             let layer_num: u8 = layer_name.as_str().parse().unwrap_or(0);
             for (_group_name, id_node) in group_node.children() {
                 for (id_name, fh) in id_node.children() {
-                    let p1 = fh.read_pos_n(1).unwrap_or(Vec2::ZERO);
-                    let p2 = fh.read_pos_n(2).unwrap_or(Vec2::ZERO);
+                    let (x1, y1) = fh.read_pos_n(1).unwrap_or((0.0, 0.0));
+                    let (x2, y2) = fh.read_pos_n(2).unwrap_or((0.0, 0.0));
                     let id: i32 = id_name.as_str().parse().unwrap_or(0);
                     let force: Option<i32> = fh.at_path("force").ok().and_then(|n| n.try_into().ok());
                     let forbid_fall: Option<i32> = fh.at_path("forbidFall").ok().and_then(|n| n.try_into().ok());
                     let piece: Option<i32> = fh.at_path("piece").ok().and_then(|n| n.try_into().ok());
-                    footholds.push(Foothold { id, group: 0, layer: layer_num, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, force, forbid_fall, piece });
+                    footholds.push(Foothold { id, group: 0, layer: layer_num, x1, y1, x2, y2, force, forbid_fall, piece });
                 }
             }
         }
@@ -313,7 +315,7 @@ fn load_tiles_and_objs(
             for (name, tile_node) in children {
                 let variant: String = tile_node.at_path("u").unwrap().try_into().unwrap();
                 let index: i32 = tile_node.at_path("no").unwrap().try_into().unwrap();
-                let pos = tile_node.read_pos().unwrap();
+                let (x, y) = tile_node.read_pos().unwrap();
                 let z_m: i32 = tile_node.at_path("zM")
                     .ok()
                     .and_then(|n| -> Option<i32> { n.try_into().ok() })
@@ -326,11 +328,12 @@ fn load_tiles_and_objs(
                     .ok()
                     .and_then(|n| -> Option<i32> { n.try_into().ok() })
                     .unwrap_or(0);
-                let origin: Vec2 = img_node.at_path("origin").unwrap().try_into().unwrap();
+                let Vector2D(ox, oy) = img_node.at_path("origin").unwrap().try_into().unwrap();
+                let origin = Vec2::new(ox as f32, oy as f32);
 
                 let handle = load_or_decode_image(&img_node, load_context, img_path);
                 tiles.push(WzSpriteData {
-                    image: handle, x: pos.x, y: pos.y, z, z_m, layer: i,
+                    image: handle, x, y, z, z_m, layer: i,
                     zid: tile_id, origin,
                 });
             }
@@ -342,7 +345,7 @@ fn load_tiles_and_objs(
                 let layer0: String = obj_node.at_path("l0").unwrap().try_into().unwrap();
                 let layer1: String = obj_node.at_path("l1").unwrap().try_into().unwrap();
                 let layer2: String = obj_node.at_path("l2").unwrap().try_into().unwrap();
-                let pos = obj_node.read_pos().unwrap();
+                let (x, y) = obj_node.read_pos().unwrap();
                 let z: i32 = obj_node.at_path("z")
                     .ok()
                     .and_then(|n| -> Option<i32> { n.try_into().ok() })
@@ -355,11 +358,12 @@ fn load_tiles_and_objs(
 
                 let img_path = format!("Map/Obj/{}.img/{}/{}/{}/0", obj_set, layer0, layer1, layer2);
                 let img_node = base.at_path(&img_path).unwrap();
-                let origin: Vec2 = img_node.at_path("origin").unwrap().try_into().unwrap();
+                let Vector2D(ox, oy) = img_node.at_path("origin").unwrap().try_into().unwrap();
+                let origin = Vec2::new(ox as f32, oy as f32);
 
                 let handle = load_or_decode_image(&img_node, load_context, img_path);
                 objs.push(WzSpriteData {
-                    image: handle, x: pos.x, y: pos.y, z, z_m, layer: i,
+                    image: handle, x, y, z, z_m, layer: i,
                     zid, origin,
                 });
             }
@@ -408,7 +412,7 @@ fn load_backgrounds(
         let cx: i32 = back_node.at_path("cx").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
         let cy: i32 = back_node.at_path("cy").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
         let alpha: i32 = back_node.at_path("a").ok().and_then(|n| n.try_into().ok()).unwrap_or(255);
-        let pos = back_node.read_pos().unwrap_or(Vec2::ZERO);
+        let (x, y) = back_node.read_pos().unwrap_or((0.0, 0.0));
 
         let img_path = format!("Map/Back/{}.img/back/{}", b_s, no);
         let img_node = match base.at_path(&img_path) {
@@ -425,12 +429,12 @@ fn load_backgrounds(
         let img_label = format!("{}/0", img_path);
         let handle = load_or_decode_image(&frame_node, load_context, img_label);
 
-        let origin: Vec2 = frame_node.at_path("origin").ok().and_then(|n| n.try_into().ok()).unwrap_or_default();
+        let origin = frame_node.at_path("origin").ok().and_then(|n| -> Option<Vector2D> { n.try_into().ok() }).map(|v| Vec2::new(v.0 as f32, v.1 as f32)).unwrap_or_default();
 
         backgrounds.push(BackgroundData {
             image: handle, front, rx, ry, btype, cx, cy,
             alpha: alpha.clamp(0, 255) as u8,
-            x: pos.x, y: pos.y, origin, index,
+            x, y, origin, index,
         });
     }
 
@@ -450,7 +454,7 @@ fn load_life(map: &crate::wz::Node) -> Vec<LifeSpawn> {
             None => continue,
         };
         let id: i32 = life_node.at_path("id").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
-        let pos = life_node.read_pos().unwrap_or(Vec2::ZERO);
+        let (x, y) = life_node.read_pos().unwrap_or((0.0, 0.0));
         let cy: i32 = life_node.at_path("cy").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
         let fh: i32 = life_node.at_path("fh").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
         let rx0: i32 = life_node.at_path("rx0").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
@@ -459,7 +463,7 @@ fn load_life(map: &crate::wz::Node) -> Vec<LifeSpawn> {
         let hide: bool = life_node.at_path("hide").ok().and_then(|n| TryInto::<i32>::try_into(n).ok()).map(|v| v != 0).unwrap_or(false);
         let flip: bool = life_node.at_path("f").ok().and_then(|n| TryInto::<i32>::try_into(n).ok()).map(|v| v != 0).unwrap_or(false);
 
-        life.push(LifeSpawn { spawn_type, id, x: pos.x, y: pos.y, cy, fh, rx0, rx1, mob_time, hide, flip });
+        life.push(LifeSpawn { spawn_type, id, x, y, cy, fh, rx0, rx1, mob_time, hide, flip });
     }
 
     life
@@ -475,7 +479,7 @@ fn load_portals(map: &crate::wz::Node) -> Vec<PortalData> {
     for (_name, portal_node) in portal_root.children() {
         let pt: i32 = portal_node.at_path("pt").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
         let pn: String = portal_node.at_path("pn").ok().and_then(|n| n.try_into().ok()).unwrap_or_default();
-        let pos = portal_node.read_pos().unwrap_or(Vec2::ZERO);
+        let (x, y) = portal_node.read_pos().unwrap_or((0.0, 0.0));
         let tm: i32 = portal_node.at_path("tm").ok().and_then(|n| n.try_into().ok()).unwrap_or(0);
         let tn: String = portal_node.at_path("tn").ok().and_then(|n| n.try_into().ok()).unwrap_or_default();
         let script: Option<String> = portal_node.at_path("script").ok().and_then(|n| n.try_into().ok());
@@ -484,7 +488,7 @@ fn load_portals(map: &crate::wz::Node) -> Vec<PortalData> {
         let vertical_impact: Option<i32> = portal_node.at_path("verticalImpact").ok().and_then(|n| n.try_into().ok());
         let only_once: Option<i32> = portal_node.at_path("onlyOnce").ok().and_then(|n| n.try_into().ok());
 
-        portals.push(PortalData { pt, pn, x: pos.x, y: pos.y, tm, tn, script, delay, horizontal_impact, vertical_impact, only_once });
+        portals.push(PortalData { pt, pn, x, y, tm, tn, script, delay, horizontal_impact, vertical_impact, only_once });
     }
 
     portals
@@ -521,8 +525,8 @@ fn load_seats(map: &crate::wz::Node) -> Vec<SeatData> {
 
     let mut seats = Vec::new();
     for (_name, seat_node) in seat_root.children() {
-        let pos = seat_node.read_pos().unwrap_or(Vec2::ZERO);
-        seats.push(SeatData { x: pos.x, y: pos.y });
+        let (x, y) = seat_node.read_pos().unwrap_or((0.0, 0.0));
+        seats.push(SeatData { x, y });
     }
 
     seats

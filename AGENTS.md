@@ -4,8 +4,9 @@ A Rust workspace for MapleStory game tooling.
 
 ## Crates
 
-- **`wz-cli`** (`crates/wz-cli/`) — CLI tool and library for probing MapleStory `.wz` asset files. Use this to explore the WZ tree structure (maps, sprites, items, sounds, strings, etc.), search nodes by name, dump subtrees as JSON, and understand the game data taxonomy. Forms the data layer for higher-level tooling.
-- **`client`** (`crates/client/`) — Bevy-based game client that renders maps and sprites from WZ assets.
+- **`wz`** (`crates/wz/`) — Core WZ file parsing library. Wraps `wz_reader` with a typed `Node` API, canonical coordinate system (Y-up), and `TryFrom` impls for scalars, `DynamicImage`, and `Vector2D`. Bevy-independent; usable by client, server, and tooling.
+- **`wz-cli`** (`crates/wz-cli/`) — CLI tool and library for probing MapleStory `.wz` asset files. Use this to explore the WZ tree structure (maps, sprites, items, sounds, strings, etc.), search nodes by name, dump subtrees as JSON, and understand the game data taxonomy.
+- **`client`** (`crates/client/`) — Bevy-based game client that renders maps and sprites from WZ assets. Depends on `wz` for parsing; wraps types into Bevy via trivial `From` conversions.
 
 ## Server Crates
 
@@ -23,17 +24,18 @@ A Rust workspace for MapleStory game tooling.
 ## Coordinate System
 
 WZ stores 2D pixel coordinates with Y increasing downward; Bevy uses Y-up.
-All WZ\u2192Bevy conversion happens at the `crates/client/src/wz/` boundary:
+All WZ→Bevy conversion happens at the `crates/wz/src/lib.rs` boundary:
 
-- `TryFrom<Node> for Vec2` reads WZ `Vector2D` values and negates Y.
+- `TryFrom<Node> for Vector2D` reads WZ `Vector2D` values and negates Y.
 - `Node::read_pos()` reads scalar `x`/`y` children and negates Y.
 - `Node::read_pos_n(n)` reads `x{n}`/`y{n}` (footholds, areas) and negates Y.
 
 Downstream consumers (`map`, `mob`, `character`, all `WzMapAsset` / `WzMobAsset`
 fields, all `Transform`s, all events) treat coordinates as native Bevy-space.
 The conversion formula `bevy_y = -wz_y` is applied exactly once per value,
-inside the `wz` module. There are no Y-negations or origin-flip sign games
-in any runtime system.
+inside the `wz` crate. There are no Y-negations or origin-flip sign games
+in any runtime system. The client crate performs only trivial field copies
+(`Vector2D(i32,i32)` → `Vec2(f32,f32)` with no sign changes).
 
 **Origins** are loaded as Bevy-local pixel offsets (already Y-flipped). With
 `Anchor::TOP_LEFT`, the formula `bevy_translation = pos - origin` places the

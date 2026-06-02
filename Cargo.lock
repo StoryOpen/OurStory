@@ -1789,6 +1789,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
+name = "client"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "image",
+ "indexmap",
+ "thiserror 2.0.18",
+ "wz",
+ "wz_reader 0.0.20",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5614,6 +5626,16 @@ name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
+
+[[package]]
+name = "wz"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "indexmap",
+ "thiserror 2.0.18",
+ "wz_reader 0.0.20",
+]
 
 [[package]]
 name = "wz-cli"
