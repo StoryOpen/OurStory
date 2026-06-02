@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use wz_reader::WzNodeCast;
+use wz::Node;
 
 use crate::wz::asset_loader::Foothold;
 
@@ -50,40 +50,26 @@ pub fn load_physics(base: &crate::wz::Node) -> PhysicsConstants {
         .at_path("Map/Physics.img")
         .expect("Map/Physics.img not found");
 
-    let guard = physics_node.wz_node.read().expect("lock poisoned");
-    let image = guard
-        .try_as_image()
-        .expect("Map/Physics.img is not an image");
-
-    let (children, _) = image
-        .resolve_children(None)
-        .expect("failed to resolve Map/Physics.img children");
-
-    let refs: Vec<(&str, wz_reader::WzNodeArc)> = children
-        .iter()
-        .map(|(name, node)| (name.as_str(), node.clone()))
-        .collect();
-
     PhysicsConstants {
-        gravity_acc: get_f32(&refs, "gravityAcc"),
-        jump_speed: get_f32(&refs, "jumpSpeed"),
-        fall_speed: get_f32(&refs, "fallSpeed"),
-        walk_speed: get_f32(&refs, "walkSpeed"),
-        walk_force: get_f32(&refs, "walkForce"),
-        walk_drag: get_f32(&refs, "walkDrag"),
-        slip_speed: get_f32(&refs, "slipSpeed"),
-        slip_force: get_f32(&refs, "slipForce"),
-        swim_speed: get_f32(&refs, "swimSpeed"),
-        swim_speed_dec: get_f32(&refs, "swimSpeedDec"),
-        swim_force: get_f32(&refs, "swimForce"),
-        fly_speed: get_f32(&refs, "flySpeed"),
-        fly_force: get_f32(&refs, "flyForce"),
-        fly_jump_dec: get_f32(&refs, "flyJumpDec"),
-        float_drag1: get_f32(&refs, "floatDrag1"),
-        float_drag2: get_f32(&refs, "floatDrag2"),
-        float_coefficient: get_f32(&refs, "floatCoefficient"),
-        min_friction: get_f32(&refs, "minFriction"),
-        max_friction: get_f32(&refs, "maxFriction"),
+        gravity_acc: physics_node.required("gravityAcc"),
+        jump_speed: physics_node.required("jumpSpeed"),
+        fall_speed: physics_node.required("fallSpeed"),
+        walk_speed: physics_node.required("walkSpeed"),
+        walk_force: physics_node.required("walkForce"),
+        walk_drag: physics_node.required("walkDrag"),
+        slip_speed: physics_node.required("slipSpeed"),
+        slip_force: physics_node.required("slipForce"),
+        swim_speed: physics_node.required("swimSpeed"),
+        swim_speed_dec: physics_node.required("swimSpeedDec"),
+        swim_force: physics_node.required("swimForce"),
+        fly_speed: physics_node.required("flySpeed"),
+        fly_force: physics_node.required("flyForce"),
+        fly_jump_dec: physics_node.required("flyJumpDec"),
+        float_drag1: physics_node.required("floatDrag1"),
+        float_drag2: physics_node.required("floatDrag2"),
+        float_coefficient: physics_node.required("floatCoefficient"),
+        min_friction: physics_node.required("minFriction"),
+        max_friction: physics_node.required("maxFriction"),
     }
 }
 

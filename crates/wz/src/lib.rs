@@ -215,6 +215,9 @@ impl TryFrom<Node> for f32 {
             if let Some(v) = guard.try_as_float() {
                 return Ok(*v);
             }
+            if let Some(v) = guard.try_as_double() {
+                return Ok(*v as f32);
+            }
         }
         let value: i32 = node.try_into()?;
         Ok(value as f32)

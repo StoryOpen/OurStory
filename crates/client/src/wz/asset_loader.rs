@@ -14,8 +14,8 @@ use crate::wz::WzNodeExt;
 #[derive(Asset, TypePath, Debug)]
 pub struct WzMapAsset {
     pub info: MapInfo,
-    pub objs: Vec<WzSpriteData>,
-    pub tiles: Vec<WzSpriteData>,
+    pub objs: Vec<ObjData>,
+    pub tiles: Vec<TileData>,
     pub footholds: Vec<Foothold>,
     pub backgrounds: Vec<BackgroundData>,
     pub life: Vec<LifeSpawn>,
@@ -55,15 +55,50 @@ pub struct MapInfo {
 }
 
 #[derive(Debug)]
-pub struct WzSpriteData {
+pub struct TileData {
+    pub image: Handle<Image>,
+    pub x: f32,
+    pub y: f32,
+    pub z: i32,
+    pub layer: u8,
+    #[allow(dead_code)]
+    pub zid: i32,
+    pub origin: Vec2,
+    pub animation_frames: Vec<AnimFrame>,
+}
+
+#[derive(Debug)]
+pub struct ObjData {
     pub image: Handle<Image>,
     pub x: f32,
     pub y: f32,
     pub z: i32,
     pub z_m: i32,
     pub layer: u8,
+    #[allow(dead_code)]
     pub zid: i32,
     pub origin: Vec2,
+    pub animation_frames: Vec<AnimFrame>,
+    pub flip: bool,
+    pub flow: i32,
+    pub rx: i32,
+    pub ry: i32,
+    pub cx: i32,
+    pub cy: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct AnimFrame {
+    pub image: Handle<Image>,
+    pub origin: Vec2,
+    pub delay: i32,
+    pub move_type: i32,
+    pub move_w: f32,
+    pub move_h: f32,
+    pub move_p: f32,
+    pub move_r: f32,
+    pub a0: f32,
+    pub a1: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -123,11 +158,14 @@ pub struct BackgroundData {
     pub btype: i32,
     pub cx: i32,
     pub cy: i32,
+    #[allow(dead_code)]
     pub alpha: u8,
+    pub flip: bool,
     pub x: f32,
     pub y: f32,
     pub origin: Vec2,
     pub index: i32,
+    pub animation_frames: Vec<AnimFrame>,
 }
 
 #[derive(Debug)]
@@ -220,10 +258,8 @@ impl AssetLoader for WzMapLoader {
 
         let info = load_info(&map);
         let footholds = load_footholds(&map);
-        let mut tiles = load_tiles(&map, &base, load_context);
-        let mut objs = load_objs(&map, &base, load_context);
-        sort_sprites(&mut tiles);
-        sort_sprites(&mut objs);
+        let tiles = load_tiles(&map, &base, load_context);
+        let objs = load_objs(&map, &base, load_context);
         let backgrounds = load_backgrounds(&map, &base, load_context);
         let life = load_life(&map);
         let portals = load_portals(&map);
@@ -241,14 +277,6 @@ impl AssetLoader for WzMapLoader {
     fn extensions(&self) -> &[&str] {
         &["map"]
     }
-}
-
-fn sort_sprites(sprites: &mut [WzSpriteData]) {
-    sprites.sort_by(|a, b| {
-        a.layer.cmp(&b.layer)
-            .then_with(|| a.z.cmp(&b.z))
-            .then_with(|| a.zid.cmp(&b.zid))
-    });
 }
 
 fn load_info(map: &crate::wz::Node) -> MapInfo {
@@ -325,7 +353,7 @@ fn load_tiles(
     map: &crate::wz::Node,
     base: &crate::wz::Node,
     load_context: &mut LoadContext<'_>,
-) -> Vec<WzSpriteData> {
+) -> Vec<TileData> {
     let mut tiles = Vec::new();
 
     for i in 0..8u8 {
@@ -346,18 +374,18 @@ fn load_tiles(
                 let variant: String = tile_node.required("u");
                 let index: i32 = tile_node.required("no");
                 let (x, y) = tile_node.read_pos().unwrap();
-                let z_m: i32 = tile_node.get_or("zM", 0);
                 let tile_id: i32 = name.as_str().parse().unwrap_or(0);
 
                 let img_path = format!("Map/Tile/{}.img/{}/{}", tile_set, variant, index);
                 let img_node = base.at_path(&img_path).unwrap();
                 let z: i32 = img_node.get_or("z", 0);
-                let origin = img_node.get_vec2_opt("origin").unwrap();
 
-                let handle = load_or_decode_image(&img_node, load_context, img_path);
-                tiles.push(WzSpriteData {
-                    image: handle, x, y, z, z_m, layer: i,
-                    zid: tile_id, origin,
+                let (animation_frames, image, origin) =
+                    load_animated_node(&img_node, load_context, &img_path);
+
+                tiles.push(TileData {
+                    image, x, y, z, layer: i,
+                    zid: tile_id, origin, animation_frames,
                 });
             }
         }
@@ -370,7 +398,7 @@ fn load_objs(
     map: &crate::wz::Node,
     base: &crate::wz::Node,
     load_context: &mut LoadContext<'_>,
-) -> Vec<WzSpriteData> {
+) -> Vec<ObjData> {
     let mut objs = Vec::new();
 
     for i in 0..8u8 {
@@ -382,22 +410,33 @@ fn load_objs(
         if let Ok(obj_root) = layer.at_path("obj") {
             for (name, obj_node) in obj_root.children() {
                 let obj_set: String = obj_node.required("oS");
-                let layer0: String = obj_node.required("l0");
-                let layer1: String = obj_node.required("l1");
-                let layer2: String = obj_node.required("l2");
+                let l0: String = obj_node.required("l0");
+                let l1: String = obj_node.required("l1");
+                let l2: String = obj_node.required("l2");
                 let (x, y) = obj_node.read_pos().unwrap();
                 let z: i32 = obj_node.get_or("z", 0);
                 let z_m: i32 = obj_node.get_or("zM", 0);
                 let zid: i32 = name.as_str().parse().unwrap_or(0);
+                let flip: bool = obj_node.get_or("f", false);
+                let flow: i32 = obj_node.get_or("flow", 0);
+                let rx: i32 = obj_node.get_or("rx", 0);
+                let ry: i32 = obj_node.get_or("ry", 0);
+                let mut cx: i32 = obj_node.get_or("cx", 0);
+                let mut cy: i32 = obj_node.get_or("cy", 0);
 
-                let img_path = format!("Map/Obj/{}.img/{}/{}/{}/0", obj_set, layer0, layer1, layer2);
+                if flow & 1 != 0 && cx == 0 { cx = 1000; }
+                if flow & 2 != 0 && cy == 0 { cy = 1000; }
+
+                let img_path = format!("Map/Obj/{}.img/{}/{}/{}/0", obj_set, l0, l1, l2);
                 let img_node = base.at_path(&img_path).unwrap();
-                let origin = img_node.get_vec2_opt("origin").unwrap();
 
-                let handle = load_or_decode_image(&img_node, load_context, img_path);
-                objs.push(WzSpriteData {
-                    image: handle, x, y, z, z_m, layer: i,
-                    zid, origin,
+                let (animation_frames, image, origin) =
+                    load_animated_node(&img_node, load_context, &img_path);
+
+                objs.push(ObjData {
+                    image, x, y, z, z_m, layer: i,
+                    zid, origin, animation_frames,
+                    flip, flow, rx, ry, cx, cy,
                 });
             }
         }
@@ -437,6 +476,7 @@ fn load_backgrounds(
         let cx: i32 = back_node.get_or("cx", 0);
         let cy: i32 = back_node.get_or("cy", 0);
         let alpha: i32 = back_node.get_or("a", 255);
+        let flip: bool = back_node.get_or("f", false);
         let (x, y) = back_node.read_pos().unwrap_or((0.0, 0.0));
 
         let img_path = format!("Map/Back/{}.img/back/{}", b_s, no);
@@ -445,21 +485,14 @@ fn load_backgrounds(
             Err(_) => continue,
         };
 
-        let frame_node = if img_node.has("0") && TryInto::<DynamicImage>::try_into(img_node.clone()).is_err() {
-            img_node.at_path("0").unwrap()
-        } else {
-            img_node
-        };
-
         let img_label = format!("{}/0", img_path);
-        let handle = load_or_decode_image(&frame_node, load_context, img_label);
-
-        let origin = frame_node.get_vec2_opt("origin").unwrap_or_default();
+        let (animation_frames, image, origin) =
+            load_animated_node(&img_node, load_context, &img_label);
 
         backgrounds.push(BackgroundData {
-            image: handle, front, rx, ry, btype, cx, cy,
-            alpha: alpha.clamp(0, 255) as u8,
-            x, y, origin, index,
+            image, front, rx, ry, btype, cx, cy,
+            alpha: alpha.clamp(0, 255) as u8, flip,
+            x, y, origin, index, animation_frames,
         });
     }
 
@@ -615,4 +648,71 @@ fn load_or_decode_image(
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
     load_context.add_labeled_asset(wz_path, image)
+}
+
+/// Checks if a WZ node is animated (has child "0" with bitmap while parent is
+/// not a bitmap). If animated, iterates child frames and returns all frame data.
+/// Otherwise returns empty frames with the single bitmap.
+fn load_animated_node(
+    node: &crate::wz::Node,
+    load_context: &mut LoadContext<'_>,
+    base_path: &str,
+) -> (Vec<AnimFrame>, Handle<Image>, Vec2) {
+    let is_animated = node.has("0")
+        && TryInto::<DynamicImage>::try_into(node.clone()).is_err();
+
+    if !is_animated {
+        let handle = load_or_decode_image(node, load_context, base_path.to_string());
+        let origin = node.get_vec2_opt("origin").unwrap_or_default();
+        return (Vec::new(), handle, origin);
+    }
+
+    let mut frames = Vec::new();
+    let mut first_handle = None;
+    let mut first_origin = Vec2::ZERO;
+
+    let mut children = node.children();
+    children.sort_by(|a, _, b, _| {
+        a.as_str().parse::<i32>().unwrap_or(0)
+            .cmp(&b.as_str().parse::<i32>().unwrap_or(0))
+    });
+
+    for (name, child) in children {
+        let frame_index = match name.as_str().parse::<i32>() {
+            Ok(v) if v >= 0 => v,
+            _ => continue,
+        };
+
+        if TryInto::<DynamicImage>::try_into(child.clone()).is_err() {
+            continue;
+        }
+
+        let frame_path = format!("{}/{}", base_path, frame_index);
+        let handle = load_or_decode_image(&child, load_context, frame_path);
+        let origin = child.get_vec2_opt("origin").unwrap_or_default();
+        let delay: i32 = child.get_or("delay", 100);
+        let move_type: i32 = child.get_or("moveType", 0);
+        let move_w: f32 = child.get_or("moveW", 0.0f32);
+        let move_h: f32 = child.get_or("moveH", 0.0f32);
+        let move_p: f32 = child.get_or("moveP", 6283.0f32);
+        let move_r: f32 = child.get_or("moveR", 0.0f32);
+        let a0: f32 = child.get_or("a0", 1.0f32);
+        let a1: f32 = child.get_or("a1", 1.0f32);
+
+        if first_handle.is_none() {
+            first_handle = Some(handle.clone());
+            first_origin = origin;
+        }
+
+        frames.push(AnimFrame {
+            image: handle, origin, delay,
+            move_type, move_w, move_h, move_p, move_r,
+            a0, a1,
+        });
+    }
+
+    let handle = first_handle.unwrap_or_else(|| {
+        load_or_decode_image(node, load_context, base_path.to_string())
+    });
+    (frames, handle, first_origin)
 }

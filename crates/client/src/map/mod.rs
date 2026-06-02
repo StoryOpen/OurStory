@@ -1,3 +1,4 @@
+pub mod components;
 pub mod events;
 pub mod resources;
 pub mod systems;
@@ -23,7 +24,12 @@ impl Plugin for MapPlugin {
             .init_asset_loader::<WzMapLoader>()
             .insert_resource(resources::MapCache::new(self.cache_capacity))
             .insert_resource(resources::CurrentMap(resources::MapState::None))
-            .add_systems(Update, systems::on_asset_loaded)
+            .add_systems(Update, (
+                systems::on_asset_loaded,
+                systems::tick_map_animations,
+                systems::tick_move_effects,
+                systems::tick_background_parallax,
+            ))
             .add_observer(systems::handle_request_map)
             .add_observer(systems::spawn_map);
 

@@ -8,7 +8,7 @@ use bevy::prelude::*;
 
 use self::loader::WzSpriteCache;
 use self::systems::*;
-use self::types::{load_smap, load_zmap, SlotMap, ZMap};
+use self::types::{load_smap, load_zmap};
 use crate::wz::get_cached_base;
 
 pub struct CharacterPlugin;
