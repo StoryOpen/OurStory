@@ -10,3 +10,9 @@ wz_reader = { path = "../../third_party/wz_reader" }
 image = "0.25.10"
 indexmap = "2.14.0"
 thiserror = "2.0.18"
+
+[features]
+default = ["map", "mob", "ui"]
+map = []
+mob = []
+ui = []

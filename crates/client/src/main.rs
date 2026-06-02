@@ -1,9 +1,13 @@
 mod character;
-mod map;
-mod mob;
 mod physics;
-mod ui;
 mod wz;
+
+#[cfg(feature = "map")]
+mod map;
+#[cfg(feature = "mob")]
+mod mob;
+#[cfg(feature = "ui")]
+mod ui;
 
 const WORLD_X: DiagnosticPath = DiagnosticPath::const_new("world/x");
 const WORLD_Y: DiagnosticPath = DiagnosticPath::const_new("world/y");
@@ -18,32 +22,76 @@ use bevy::diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, FrameTimeDiagnos
 use bevy::dev_tools::diagnostics_overlay::{
     DiagnosticsOverlay, DiagnosticsOverlayItem, DiagnosticsOverlayPlugin, DiagnosticsOverlayStatistic,
 };
+use character::CharacterPlugin;
 use wz::asset_source::WzAssetSourcePlugin;
-
-use character::{CharacterPlugin, components::CharacterConfig, events::SpawnCharacter, types::EquipSlot};
 use wz::get_cached_base;
 
+#[cfg(feature = "map")]
+use map::MapPlugin;
+#[cfg(feature = "mob")]
+use mob::MobPlugin;
+#[cfg(feature = "ui")]
+use ui::UiPlugin;
+
 fn main() {
-    App::new()
-        .add_plugins(WzAssetSourcePlugin)
-        .add_plugins(DefaultPlugins.set(ImagePlugin::default_linear()))
-        .add_plugins(FrameTimeDiagnosticsPlugin::default())
-        .add_plugins(DiagnosticsOverlayPlugin)
-        .register_diagnostic(Diagnostic::new(WORLD_X).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
-        .register_diagnostic(Diagnostic::new(WORLD_Y).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
-        .register_diagnostic(Diagnostic::new(SCREEN_X).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
-        .register_diagnostic(Diagnostic::new(SCREEN_Y).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
-        .add_plugins(map::MapPlugin::default())
-        .add_plugins(CharacterPlugin)
-        .add_plugins(mob::MobPlugin::default())
-        .add_plugins(ui::UiPlugin)
-        .insert_resource(physics::load_physics(get_cached_base()))
-        .add_systems(Startup, setup)
-        .add_systems(Startup, draw_grid)
-        .add_systems(Update, drag_camera)
-        .add_systems(Update, write_coords)
-        .add_systems(Update, debug_cycle_actions)
-        .run();
+    let mut app = App::new();
+    app.add_plugins(WzAssetSourcePlugin)
+       .add_plugins(DefaultPlugins.set(ImagePlugin::default_linear()))
+       .add_plugins(FrameTimeDiagnosticsPlugin::default())
+       .add_plugins(DiagnosticsOverlayPlugin)
+       .register_diagnostic(Diagnostic::new(WORLD_X).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
+       .register_diagnostic(Diagnostic::new(WORLD_Y).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
+       .register_diagnostic(Diagnostic::new(SCREEN_X).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
+       .register_diagnostic(Diagnostic::new(SCREEN_Y).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
+       .add_plugins(CharacterPlugin);
+
+    #[cfg(feature = "map")]
+    app.add_plugins(MapPlugin::default());
+    #[cfg(feature = "mob")]
+    app.add_plugins(MobPlugin::default());
+    #[cfg(feature = "ui")]
+    app.add_plugins(UiPlugin);
+
+    app.add_systems(Startup, (setup, draw_grid))
+       .add_systems(Update, (drag_camera, write_coords))
+       .run();
+}
+
+fn setup(mut commands: Commands) {
+    commands.spawn(Camera2d);
+    commands.insert_resource(physics::load_physics(get_cached_base()));
+    commands.spawn(DiagnosticsOverlay {
+        title: "Debug".into(),
+        diagnostic_overlay_items: vec![
+            DiagnosticsOverlayItem {
+                path: WORLD_X,
+                statistic: DiagnosticsOverlayStatistic::Value,
+                precision: 1,
+            },
+            DiagnosticsOverlayItem {
+                path: WORLD_Y,
+                statistic: DiagnosticsOverlayStatistic::Value,
+                precision: 1,
+            },
+            DiagnosticsOverlayItem {
+                path: SCREEN_X,
+                statistic: DiagnosticsOverlayStatistic::Value,
+                precision: 1,
+            },
+            DiagnosticsOverlayItem {
+                path: SCREEN_Y,
+                statistic: DiagnosticsOverlayStatistic::Value,
+                precision: 1,
+            },
+            FrameTimeDiagnosticsPlugin::FPS.into(),
+            FrameTimeDiagnosticsPlugin::FRAME_TIME.into(),
+            DiagnosticsOverlayItem {
+                path: FrameTimeDiagnosticsPlugin::FRAME_COUNT,
+                statistic: DiagnosticsOverlayStatistic::Smoothed,
+                precision: 0,
+            },
+        ],
+    });
 }
 
 fn draw_grid(
@@ -93,86 +141,6 @@ fn draw_grid(
             Transform::from_xyz(x, 0.0, 0.0),
         ));
     }
-}
-
-fn debug_cycle_actions(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut commands: Commands,
-) {
-    let actions = ["stand", "move", "hit1", "die1"];
-    for (i, action) in actions.iter().enumerate() {
-        let key = match i {
-            0 => KeyCode::Digit1,
-            1 => KeyCode::Digit2,
-            2 => KeyCode::Digit3,
-            3 => KeyCode::Digit4,
-            _ => continue,
-        };
-        if keys.just_pressed(key) {
-            commands.trigger(mob::events::SwitchMobAction {
-                mob_id: 100100,
-                action: action.to_string(),
-            });
-            bevy::log::info!("switch Snail to {action}");
-        }
-    }
-}
-
-fn setup(mut commands: Commands) {
-    commands.spawn(Camera2d);
-    commands.trigger(SpawnCharacter {
-        transform: Transform::from_xyz(0.0, 0.0, 0.0),
-        config: CharacterConfig {
-            skin_suffix: 2000,
-            hair_id: 31200,
-            face_id: 21405,
-            equipment: vec![
-                (EquipSlot::Cap, 01002419),
-                (EquipSlot::Coat, 01042013),
-                (EquipSlot::Pants, 01060135),
-                (EquipSlot::Shoes, 01072306),
-                (EquipSlot::Glove, 01082178),
-                (EquipSlot::Weapon, 01452000),
-                (EquipSlot::Shield, 01092027),
-                (EquipSlot::Cape, 01102149),
-            ],
-        },
-        action: "stand1".into(),
-        face_expression: "default".into(),
-    });
-    commands.trigger(mob::events::SpawnMob { mob_id: 100100, x: 0.0, y: 0.0, z: 100 });
-    commands.spawn(DiagnosticsOverlay {
-        title: "Debug".into(),
-        diagnostic_overlay_items: vec![
-            DiagnosticsOverlayItem {
-                path: WORLD_X,
-                statistic: DiagnosticsOverlayStatistic::Value,
-                precision: 1,
-            },
-            DiagnosticsOverlayItem {
-                path: WORLD_Y,
-                statistic: DiagnosticsOverlayStatistic::Value,
-                precision: 1,
-            },
-            DiagnosticsOverlayItem {
-                path: SCREEN_X,
-                statistic: DiagnosticsOverlayStatistic::Value,
-                precision: 1,
-            },
-            DiagnosticsOverlayItem {
-                path: SCREEN_Y,
-                statistic: DiagnosticsOverlayStatistic::Value,
-                precision: 1,
-            },
-            FrameTimeDiagnosticsPlugin::FPS.into(),
-            FrameTimeDiagnosticsPlugin::FRAME_TIME.into(),
-            DiagnosticsOverlayItem {
-                path: FrameTimeDiagnosticsPlugin::FRAME_COUNT,
-                statistic: DiagnosticsOverlayStatistic::Smoothed,
-                precision: 0,
-            },
-        ],
-    });
 }
 
 fn drag_camera(

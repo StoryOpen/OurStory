@@ -21,6 +21,31 @@ impl Plugin for CharacterPlugin {
            .init_resource::<WzSpriteCache>()
            .add_observer(spawn_character)
            .add_observer(on_set_action)
-           .add_systems(Update, (animate_characters, character_action_controls));
+           .add_systems(Update, (animate_characters, character_action_controls))
+           .add_systems(Startup, spawn_test_character);
     }
+}
+
+fn spawn_test_character(mut commands: Commands) {
+    use crate::character::{components::CharacterConfig, events::SpawnCharacter, types::EquipSlot};
+    commands.trigger(SpawnCharacter {
+        transform: Transform::from_xyz(0.0, 0.0, 0.0),
+        config: CharacterConfig {
+            skin_suffix: 2000,
+            hair_id: 31200,
+            face_id: 21405,
+            equipment: vec![
+                (EquipSlot::Cap, 01002419),
+                (EquipSlot::Coat, 01042013),
+                (EquipSlot::Pants, 01060135),
+                (EquipSlot::Shoes, 01072306),
+                (EquipSlot::Glove, 01082178),
+                (EquipSlot::Weapon, 01452000),
+                (EquipSlot::Shield, 01092027),
+                (EquipSlot::Cape, 01102149),
+            ],
+        },
+        action: "stand1".into(),
+        face_expression: "default".into(),
+    });
 }
