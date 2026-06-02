@@ -1,3 +1,4 @@
+#[cfg(feature = "character")]
 mod character;
 mod physics;
 mod wz;
@@ -22,6 +23,7 @@ use bevy::diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, FrameTimeDiagnos
 use bevy::dev_tools::diagnostics_overlay::{
     DiagnosticsOverlay, DiagnosticsOverlayItem, DiagnosticsOverlayPlugin, DiagnosticsOverlayStatistic,
 };
+#[cfg(feature = "character")]
 use character::CharacterPlugin;
 use wz::asset_source::WzAssetSourcePlugin;
 use wz::get_cached_base;
@@ -53,9 +55,10 @@ fn main() {
        .register_diagnostic(Diagnostic::new(WORLD_X).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
        .register_diagnostic(Diagnostic::new(WORLD_Y).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
        .register_diagnostic(Diagnostic::new(SCREEN_X).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
-       .register_diagnostic(Diagnostic::new(SCREEN_Y).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
-       .add_plugins(CharacterPlugin);
+       .register_diagnostic(Diagnostic::new(SCREEN_Y).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0));
 
+    #[cfg(feature = "character")]
+    app.add_plugins(CharacterPlugin);
     #[cfg(feature = "map")]
     app.add_plugins(MapPlugin::default());
     #[cfg(feature = "mob")]
