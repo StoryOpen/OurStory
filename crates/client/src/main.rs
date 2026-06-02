@@ -34,9 +34,20 @@ use mob::MobPlugin;
 use ui::UiPlugin;
 
 fn main() {
+    let workspace_id: String = std::env::var("WORKSPACE_ID").unwrap_or_default();
+
+    let title = if workspace_id.is_empty() {
+        "OurStory".to_string()
+    } else {
+        format!("OurStory{workspace_id}")
+    };
+
     let mut app = App::new();
     app.add_plugins(WzAssetSourcePlugin)
-       .add_plugins(DefaultPlugins.set(ImagePlugin::default_linear()))
+       .add_plugins(DefaultPlugins.set(ImagePlugin::default_linear()).set(WindowPlugin {
+           primary_window: Some(Window { title, ..default() }),
+           ..default()
+       }))
        .add_plugins(FrameTimeDiagnosticsPlugin::default())
        .add_plugins(DiagnosticsOverlayPlugin)
        .register_diagnostic(Diagnostic::new(WORLD_X).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
