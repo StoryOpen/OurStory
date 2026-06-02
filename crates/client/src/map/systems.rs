@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
     sprite::Anchor,
 };
-use crate::wz::asset_loader::WzMapAsset;
+use crate::wz::asset_loader::{BackgroundData, WzMapAsset};
 use super::events::*;
 use super::resources::*;
 
@@ -77,8 +77,17 @@ pub fn spawn_map(
         }
     }
 
-    let mut sprites = Vec::with_capacity(asset.sprites.len());
-    for s in &asset.sprites {
+    let total = asset.backgrounds.len() + asset.objs.len() + asset.tiles.len();
+    let mut sprites = Vec::with_capacity(total);
+
+    for b in &asset.backgrounds {
+        if b.front {
+            continue;
+        }
+        sprites.push(spawn_background(b, &mut commands));
+    }
+
+    for s in asset.tiles.iter().chain(asset.objs.iter()) {
         let e = commands.spawn((
             Sprite::from_image(s.image.clone()),
             Anchor::TOP_LEFT,
@@ -87,6 +96,22 @@ pub fn spawn_map(
         sprites.push(e);
     }
 
+    for b in &asset.backgrounds {
+        if !b.front {
+            continue;
+        }
+        sprites.push(spawn_background(b, &mut commands));
+    }
+
     info!("spawned {} sprites for map {}", sprites.len(), ev.path);
     *current_map = CurrentMap(MapState::Loaded { path: ev.path.clone(), sprites });
+}
+
+fn spawn_background(b: &BackgroundData, commands: &mut Commands) -> Entity {
+    let z = if b.front { 300 + b.index } else { -100 - b.index };
+    commands.spawn((
+        Sprite::from_image(b.image.clone()),
+        Anchor::TOP_LEFT,
+        Transform::from_xyz(b.x - b.origin.x, (-b.y) + b.origin.y, z as f32),
+    )).id()
 }

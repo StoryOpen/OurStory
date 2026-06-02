@@ -171,5 +171,5 @@ fn spawn_one(commands: &mut Commands, ev: &SpawnMob, asset: &WzMobAsset) {
         ),
     ));
 
-    bevy::log::info!("spawned mob {} ({}) at ({}, {})", ev.mob_id, asset.info.name, ev.x, ev.y);
+    bevy::log::info!("spawned mob {} ({}) at ({}, {}, {})", ev.mob_id, asset.info.name, ev.x, ev.y, ev.z);
 }

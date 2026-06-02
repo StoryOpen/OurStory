@@ -142,6 +142,7 @@ pub fn spawn_character(
         },
         CharacterFrameData { actions, face_expressions },
         PartEntities { map: HashMap::new() },
+        CharacterLayer(0),
         ev.transform,
     )).id();
 

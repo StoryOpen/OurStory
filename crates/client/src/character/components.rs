@@ -49,3 +49,6 @@ pub struct CharacterPart {
     pub layer: String,
     pub z_base: f32,
 }
+
+#[derive(Component)]
+pub struct CharacterLayer(pub u8);
