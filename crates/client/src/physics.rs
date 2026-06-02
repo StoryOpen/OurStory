@@ -34,11 +34,13 @@ fn get_f32(children: &[(&str, wz_reader::WzNodeArc)], name: &str) -> f32 {
     if let Some(v) = guard.try_as_float() {
         return *v;
     }
-    let value: i32 = guard
-        .try_as_int()
-        .copied()
-        .unwrap_or_else(|| panic!("Physics.img: `{name}` is not numeric"));
-    value as f32
+    if let Some(v) = guard.try_as_double() {
+        return *v as f32;
+    }
+    if let Some(v) = guard.try_as_int() {
+        return *v as f32;
+    }
+    panic!("Physics.img: `{name}` is not numeric");
 }
 
 pub fn load_physics(base: &crate::wz::Node) -> PhysicsConstants {
