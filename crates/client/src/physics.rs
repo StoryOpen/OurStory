@@ -163,7 +163,22 @@ impl Plugin for PhysicsPlugin {
             .add_systems(Update, (
                 physics_update.in_set(PhysicsSet::Simulate),
                 sync_physics_to_transform.after(PhysicsSet::Simulate),
+                draw_foothold_gizmos,
             ));
+    }
+}
+
+pub fn draw_foothold_gizmos(
+    graph: Option<Res<FootholdGraph>>,
+    mut gizmos: Gizmos,
+) {
+    let Some(graph) = graph else { return };
+    for fh in &graph.footholds {
+        gizmos.line_2d(
+            Vec2::new(fh.x1, fh.y1),
+            Vec2::new(fh.x2, fh.y2),
+            Color::srgb(1.0, 0.0, 1.0),
+        );
     }
 }
 
