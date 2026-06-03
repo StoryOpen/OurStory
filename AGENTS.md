@@ -78,3 +78,36 @@ crates/client/src/character/
   loader.rs       — WzSpriteCache, preload_character_frames, load_part, load_frame
   systems.rs      — spawn_character, animate_characters, on_set_action, character_action_controls
 ```
+
+## Remote Inspection (BRP)
+
+The Bevy Remote Protocol (BRP) is enabled on the client binary. When running, it
+listens at `http://127.0.0.1:15702` for JSON-RPC 2.0 requests. This allows
+inspecting and modifying ECS state from external tools.
+
+**Using from outside:**
+```bash
+# List all entities with their Transform component
+curl -X POST http://127.0.0.1:15702 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"world.query","id":1,"params":{"data":{"components":["bevy_transform::components::transform::Transform"]}}}'
+
+# List all registered component types
+curl -X POST http://127.0.0.1:15702 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"world.list_components","id":1}'
+```
+
+**Available methods:** `world.query`, `world.get_components`, `world.spawn_entity`,
+`world.despawn_entity`, `world.insert_components`, `world.remove_components`,
+`world.mutate_components`, `world.reparent_entities`, `world.list_components`,
+`world.get_resources`, `world.insert_resources`, `world.remove_resources`,
+`world.mutate_resources`, `world.list_resources`, `world.trigger_event`,
+`world.write_message`, `registry.schema`, `schedule.list`, `schedule.graph`,
+`rpc.discover`. Append `+watch` to streaming methods for SSE.
+
+**Clients:** VS Code extensions `splo/vscode-bevy-inspector` and `foxication/bevy-inspection`
+connect via BRP automatically.
+
+**Component types** use fully-qualified paths (e.g. `bevy_transform::components::transform::Transform`).
+Custom types must derive `Reflect` and be registered with `app.register_type::<T>()`.

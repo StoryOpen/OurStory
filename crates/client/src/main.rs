@@ -48,6 +48,8 @@ fn main() {
 
     let mut app = App::new();
     app.add_plugins(WzAssetSourcePlugin)
+       .add_plugins(bevy::remote::RemotePlugin::default())
+       .add_plugins(bevy::remote::RemoteHttpPlugin::default())
        .add_plugins(DefaultPlugins.set(ImagePlugin::default_linear()).set(WindowPlugin {
            primary_window: Some(Window { title, ..default() }),
            ..default()
