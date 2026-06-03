@@ -5,6 +5,7 @@ use crate::character::components::*;
 use crate::character::events::*;
 use crate::character::loader::{self, WzSpriteCache};
 use crate::character::types::*;
+use crate::physics::PhysicsState;
 use crate::wz::get_cached_base;
 
 fn resolve_equipment(
@@ -128,6 +129,7 @@ pub fn spawn_character(
         .map(|f| f.delay)
         .unwrap_or(100);
 
+    let pos = ev.transform.translation;
     let root = commands.spawn((
         CharacterRoot,
         ev.config.clone(),
@@ -144,6 +146,23 @@ pub fn spawn_character(
         PartEntities { map: HashMap::new() },
         CharacterLayer(0),
         ev.transform,
+        PhysicsState {
+            x: pos.x,
+            y: pos.y,
+            vx: 0.0,
+            vy: 0.0,
+            on_fh: false,
+            fh_id: 0,
+            fh_group: 0,
+            fh_layer: 0,
+            left: false,
+            right: false,
+            up: false,
+            down: false,
+            jump_request: false,
+            enable_gravity: true,
+            enable_footholds: true,
+        },
     )).id();
 
     let mut part_map = HashMap::new();
@@ -254,6 +273,23 @@ pub fn animate_characters(
                 update_part_sprite(child, layer, pos, &mut part_query);
             }
         }
+    }
+}
+
+pub fn character_movement_input(
+    input: Res<ButtonInput<KeyCode>>,
+    mut query: Query<&mut PhysicsState, With<CharacterRoot>>,
+) {
+    let mut ps = match query.iter_mut().next() {
+        Some(p) => p,
+        None => return,
+    };
+    ps.left = input.pressed(KeyCode::ArrowLeft);
+    ps.right = input.pressed(KeyCode::ArrowRight);
+    ps.up = input.pressed(KeyCode::ArrowUp);
+    ps.down = input.pressed(KeyCode::ArrowDown);
+    if input.just_pressed(KeyCode::Space) {
+        ps.jump_request = true;
     }
 }
 

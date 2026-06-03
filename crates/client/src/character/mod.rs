@@ -9,6 +9,7 @@ use bevy::prelude::*;
 use self::loader::WzSpriteCache;
 use self::systems::*;
 use self::types::{load_smap, load_zmap, SlotMap, ZMap};
+use crate::physics::PhysicsSet;
 use crate::wz::get_cached_base;
 
 pub struct CharacterPlugin;
@@ -21,7 +22,11 @@ impl Plugin for CharacterPlugin {
            .init_resource::<WzSpriteCache>()
            .add_observer(spawn_character)
            .add_observer(on_set_action)
-           .add_systems(Update, (animate_characters, character_action_controls))
+           .add_systems(Update, (
+               animate_characters,
+               character_action_controls,
+               character_movement_input.before(PhysicsSet::Simulate),
+           ))
            .add_systems(Startup, spawn_test_character);
     }
 }

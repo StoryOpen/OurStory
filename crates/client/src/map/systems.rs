@@ -5,6 +5,7 @@ use bevy::{
     sprite::Anchor,
 };
 use crate::wz::asset_loader::{BackgroundData, WzMapAsset};
+use crate::physics::FootholdGraph;
 use super::events::*;
 use super::resources::*;
 
@@ -79,6 +80,8 @@ pub fn spawn_map(
 
     let bounds = compute_bounds(&asset.info, &asset.footholds);
     commands.insert_resource(bounds);
+    let graph = FootholdGraph::from_footholds(asset.footholds.clone());
+    commands.insert_resource(graph);
     commands.trigger(super::events::MapLoaded { path: ev.path.clone(), bounds });
 
     let total = asset.backgrounds.len() + asset.objs.len() + asset.tiles.len();

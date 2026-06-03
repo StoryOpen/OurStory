@@ -59,7 +59,8 @@ fn main() {
 
     #[cfg(feature = "character")]
     app.add_plugins(CharacterPlugin);
-    app.add_plugins(CameraPlugin);
+    app.add_plugins(CameraPlugin)
+       .add_plugins(physics::PhysicsPlugin);
     #[cfg(feature = "map")]
     app.add_plugins(MapPlugin::default());
     #[cfg(feature = "mob")]

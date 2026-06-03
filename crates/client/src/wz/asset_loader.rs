@@ -78,6 +78,10 @@ pub struct Foothold {
     pub force: Option<i32>,
     pub forbid_fall: Option<i32>,
     pub piece: Option<i32>,
+    pub next_id: Option<i32>,
+    pub prev_id: Option<i32>,
+    pub cant_through: bool,
+    pub forbid_fall_down: bool,
 }
 
 impl Foothold {
@@ -290,7 +294,8 @@ fn load_footholds(map: &crate::wz::Node) -> Vec<Foothold> {
     if let Ok(fh_root) = map.at_path("foothold") {
         for (layer_name, group_node) in fh_root.children() {
             let layer_num: u8 = layer_name.as_str().parse().unwrap_or(0);
-            for (_group_name, id_node) in group_node.children() {
+            for (group_name, id_node) in group_node.children() {
+                let group_num: i32 = group_name.as_str().parse().unwrap_or(0);
                 for (id_name, fh) in id_node.children() {
                     let (x1, y1) = fh.read_pos_n(1).unwrap_or((0.0, 0.0));
                     let (x2, y2) = fh.read_pos_n(2).unwrap_or((0.0, 0.0));
@@ -298,7 +303,17 @@ fn load_footholds(map: &crate::wz::Node) -> Vec<Foothold> {
                     let force: Option<i32> = fh.get_opt("force");
                     let forbid_fall: Option<i32> = fh.get_opt("forbidFall");
                     let piece: Option<i32> = fh.get_opt("piece");
-                    footholds.push(Foothold { id, group: 0, layer: layer_num, x1, y1, x2, y2, force, forbid_fall, piece });
+                    let next_id: Option<i32> = fh.get_opt("next");
+                    let prev_id: Option<i32> = fh.get_opt("prev");
+                    let cant_through: bool = fh.get_or("cantThrough", false);
+                    let forbid_fall_down: bool = fh.get_or("forbidFallDown", false);
+                    footholds.push(Foothold {
+                        id, group: group_num, layer: layer_num,
+                        x1, y1, x2, y2,
+                        force, forbid_fall, piece,
+                        next_id, prev_id,
+                        cant_through, forbid_fall_down,
+                    });
                 }
             }
         }
