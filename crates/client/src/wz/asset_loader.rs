@@ -48,6 +48,10 @@ pub struct MapInfo {
     pub field_type: Option<i32>,
     pub expedition_only: Option<i32>,
     pub party_only: Option<i32>,
+    pub vr_left: Option<i32>,
+    pub vr_right: Option<i32>,
+    pub vr_top: Option<i32>,
+    pub vr_bottom: Option<i32>,
 }
 
 #[derive(Debug)]
@@ -274,6 +278,10 @@ fn load_info(map: &crate::wz::Node) -> MapInfo {
         field_type: i("fieldType"),
         expedition_only: i("expeditionOnly"),
         party_only: i("partyOnly"),
+        vr_left: i("VRLeft"),
+        vr_right: i("VRRight"),
+        vr_top: info_node.get_y_opt("VRTop"),
+        vr_bottom: info_node.get_y_opt("VRBottom"),
     }
 }
 

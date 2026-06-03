@@ -77,6 +77,10 @@ pub fn spawn_map(
         }
     }
 
+    let bounds = compute_bounds(&asset.info, &asset.footholds);
+    commands.insert_resource(bounds);
+    commands.trigger(super::events::MapLoaded { path: ev.path.clone(), bounds });
+
     let total = asset.backgrounds.len() + asset.objs.len() + asset.tiles.len();
     let mut sprites = Vec::with_capacity(total);
 
@@ -105,6 +109,16 @@ pub fn spawn_map(
 
     info!("spawned {} sprites for map {}", sprites.len(), ev.path);
     *current_map = CurrentMap(MapState::Loaded { path: ev.path.clone(), sprites });
+}
+
+fn compute_bounds(info: &crate::wz::asset_loader::MapInfo, footholds: &[crate::wz::asset_loader::Foothold]) -> super::resources::MapBounds {
+    if let (Some(l), Some(r), Some(t), Some(b)) = (info.vr_left, info.vr_right, info.vr_top, info.vr_bottom) {
+        super::resources::MapBounds::from_vr(l, r, t, b)
+    } else if !footholds.is_empty() {
+        super::resources::MapBounds::from_footholds(footholds)
+    } else {
+        super::resources::MapBounds { left: -1000.0, right: 1000.0, top: 1000.0, bottom: -1000.0 }
+    }
 }
 
 fn spawn_background(b: &BackgroundData, commands: &mut Commands) -> Entity {

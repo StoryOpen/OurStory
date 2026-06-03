@@ -1,5 +1,6 @@
 #[cfg(feature = "character")]
 mod character;
+mod camera;
 mod physics;
 mod wz;
 
@@ -15,16 +16,15 @@ const WORLD_Y: DiagnosticPath = DiagnosticPath::const_new("world/y");
 const SCREEN_X: DiagnosticPath = DiagnosticPath::const_new("screen/x");
 const SCREEN_Y: DiagnosticPath = DiagnosticPath::const_new("screen/y");
 
-use bevy::{
-    input::mouse::AccumulatedMouseMotion,
-    prelude::*,
-};
+use bevy::prelude::*;
+use bevy::camera::ScalingMode;
 use bevy::diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, FrameTimeDiagnosticsPlugin, RegisterDiagnostic};
 use bevy::dev_tools::diagnostics_overlay::{
     DiagnosticsOverlay, DiagnosticsOverlayItem, DiagnosticsOverlayPlugin, DiagnosticsOverlayStatistic,
 };
 #[cfg(feature = "character")]
 use character::CharacterPlugin;
+use camera::CameraPlugin;
 use wz::asset_source::WzAssetSourcePlugin;
 use wz::get_cached_base;
 
@@ -59,6 +59,7 @@ fn main() {
 
     #[cfg(feature = "character")]
     app.add_plugins(CharacterPlugin);
+    app.add_plugins(CameraPlugin);
     #[cfg(feature = "map")]
     app.add_plugins(MapPlugin::default());
     #[cfg(feature = "mob")]
@@ -67,12 +68,20 @@ fn main() {
     app.add_plugins(UiPlugin);
 
     app.add_systems(Startup, (setup, draw_grid))
-       .add_systems(Update, (drag_camera, write_coords))
+       .add_systems(Update, write_coords)
        .run();
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn(Camera2d);
+    commands.spawn((
+        Camera2d,
+        camera::resources::MainCamera,
+        Projection::Orthographic(OrthographicProjection {
+            scaling_mode: ScalingMode::FixedVertical { viewport_height: 768.0 },
+            ..OrthographicProjection::default_2d()
+        }),
+    ));
+    commands.insert_resource(camera::resources::BaseResolution { width: 1024.0, height: 768.0 });
     commands.insert_resource(physics::load_physics(get_cached_base()));
     commands.spawn(DiagnosticsOverlay {
         title: "Debug".into(),
@@ -155,21 +164,6 @@ fn draw_grid(
             Transform::from_xyz(x, 0.0, 0.0),
         ));
     }
-}
-
-fn drag_camera(
-    mouse_button_input: Res<ButtonInput<MouseButton>>,
-    accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
-    mut camera: Query<&mut Transform, With<Camera>>,
-) {
-    if accumulated_mouse_motion.delta == Vec2::ZERO || !mouse_button_input.pressed(MouseButton::Left) {
-        return;
-    }
-    let mut camera_transform = match camera.iter_mut().next() {
-        Some(t) => t,
-        None => return,
-    };
-    camera_transform.translation += (accumulated_mouse_motion.delta * Vec2::new(-1.0, 1.0)).extend(0.0);
 }
 
 fn write_coords(

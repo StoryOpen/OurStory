@@ -180,6 +180,18 @@ impl Node {
         self.at_path(path).unwrap_or_else(|_| panic!("required child '{path}' not found"))
             .try_into().unwrap_or_else(|_| panic!("required child '{path}' type mismatch"))
     }
+
+    /// Reads a child at `path` as an `i32` Y-coordinate and negates it
+    /// (WZ Y-down → Bevy Y-up). Returns `None` if the path doesn't exist
+    /// or the value isn't an integer.
+    pub fn get_y_opt(&self, path: &str) -> Option<i32> {
+        self.get_opt::<i32>(path).map(|v| -v)
+    }
+
+    /// Like `get_y_opt` but falls back to `default` on any failure.
+    pub fn get_y_or(&self, path: &str, default: i32) -> i32 {
+        self.get_y_opt(path).unwrap_or(default)
+    }
 }
 
 impl TryFrom<Node> for i32 {
