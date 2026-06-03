@@ -73,9 +73,7 @@ pub struct ObjData {
     pub x: f32,
     pub y: f32,
     pub z: i32,
-    pub z_m: i32,
     pub layer: u8,
-    #[allow(dead_code)]
     pub zid: i32,
     pub origin: Vec2,
     pub animation_frames: Vec<AnimFrame>,
@@ -415,7 +413,6 @@ fn load_objs(
                 let l2: String = obj_node.required("l2");
                 let (x, y) = obj_node.read_pos().unwrap();
                 let z: i32 = obj_node.get_or("z", 0);
-                let z_m: i32 = obj_node.get_or("zM", 0);
                 let zid: i32 = name.as_str().parse().unwrap_or(0);
                 let flip: bool = obj_node.get_or("f", false);
                 let flow: i32 = obj_node.get_or("flow", 0);
@@ -434,7 +431,7 @@ fn load_objs(
                     load_animated_node(&img_node, load_context, &img_path);
 
                 objs.push(ObjData {
-                    image, x, y, z, z_m, layer: i,
+                    image, x, y, z, layer: i,
                     zid, origin, animation_frames,
                     flip, flow, rx, ry, cx, cy,
                 });

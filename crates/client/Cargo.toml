@@ -12,7 +12,7 @@ indexmap = "2.14.0"
 thiserror = "2.0.18"
 
 [features]
-default = ["character", "map", "mob", "ui"]
+default = ["map"]
 character = []
 map = []
 mob = []
