@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use wz::Node;
+use wz_reader::WzNodeCast;
 
 use crate::wz::asset_loader::Foothold;
 
@@ -149,7 +149,8 @@ impl Plugin for PhysicsPlugin {
             .add_systems(Update, (
                 physics_update.in_set(PhysicsSet::Simulate),
                 sync_physics_to_transform.after(PhysicsSet::Simulate),
-                draw_foothold_gizmos,
+                // TEMP: foothold gizmos disabled
+                // draw_foothold_gizmos,
             ));
     }
 }

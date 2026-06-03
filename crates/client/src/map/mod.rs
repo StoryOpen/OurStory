@@ -29,6 +29,7 @@ impl Plugin for MapPlugin {
                 systems::tick_map_animations,
                 systems::tick_move_effects,
                 systems::tick_background_parallax,
+                systems::draw_background_gizmos,
             ))
             .add_observer(systems::handle_request_map)
             .add_observer(systems::spawn_map);

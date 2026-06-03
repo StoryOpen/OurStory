@@ -89,35 +89,8 @@ pub fn spawn_map(
     let mut sprites = Vec::with_capacity(total);
     let mut z = -1000.0;
 
-    for b in &asset.backgrounds {
-        if b.front {
-            continue;
-        }
-        z += 1.0;
-        sprites.push(spawn_background_entity(b, &mut commands, z));
-    }
-
-    // Match NoLifeStory's draw order: objs sorted by (z, zid), then tiles sorted by z, per layer
-    for layer in 0..8u8 {
-        let mut layer_objs: Vec<&ObjData> = asset.objs.iter().filter(|o| o.layer == layer).collect();
-        layer_objs.sort_by(|a, b| a.z.cmp(&b.z).then(a.zid.cmp(&b.zid)));
-        for obj in layer_objs {
-            z += 1.0;
-            sprites.push(spawn_obj_entity(obj, &mut commands, z));
-        }
-
-        let mut layer_tiles: Vec<&TileData> = asset.tiles.iter().filter(|t| t.layer == layer).collect();
-        layer_tiles.sort_by(|a, b| a.z.cmp(&b.z));
-        for tile in layer_tiles {
-            z += 1.0;
-            sprites.push(spawn_tile_entity(tile, &mut commands, z));
-        }
-    }
-
-    for b in &asset.backgrounds {
-        if !b.front {
-            continue;
-        }
+    // TEMP: only render background 0 for inspection
+    if let Some(b) = asset.backgrounds.first() {
         z += 1.0;
         sprites.push(spawn_background_entity(b, &mut commands, z));
     }
@@ -136,6 +109,7 @@ fn compute_bounds(info: &crate::wz::asset_loader::MapInfo, footholds: &[crate::w
     }
 }
 
+#[allow(dead_code)]
 fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity {
     let mut entity = commands.spawn((
         Sprite::from_image(tile.image.clone()),
@@ -159,6 +133,7 @@ fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity
     entity.id()
 }
 
+#[allow(dead_code)]
 fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
     let mut entity = commands.spawn((
         Sprite {
@@ -386,8 +361,8 @@ pub fn tick_background_parallax(
         //   Reference draws pivot at screen (dx, dy), so top-left is (dx - ox, dy - oy).
         //   Bevy screen (Y-down) = cam_pos.y + viewport.y/2 - world_y
         //   Bevy world_x = screen_x + cam_pos.x - viewport.x/2
-        let bevy_x = pivot_screen_x + cam_pos.x - viewport.x / 2.0 - bg.origin.x;
-        let bevy_y = cam_pos.y + viewport.y / 2.0 - pivot_screen_y + bg.origin.y;
+        let mut bevy_x = pivot_screen_x + cam_pos.x - viewport.x / 2.0 - bg.origin.x;
+        let mut bevy_y = cam_pos.y + viewport.y / 2.0 - pivot_screen_y + bg.origin.y;
 
         let tile_x = matches!(bg.btype, 1 | 3 | 4 | 6 | 7);
         let tile_y = matches!(bg.btype, 2 | 3 | 5 | 6 | 7);
@@ -395,10 +370,39 @@ pub fn tick_background_parallax(
         if tile_x || tile_y {
             let tex_size = images.get(&sprite.image).map(|i| i.size_f32());
             let margin = tex_size.unwrap_or(Vec2::splat(2000.0));
-            sprite.custom_size = Some(viewport + margin);
+            let tiled_size = viewport + margin;
+            sprite.custom_size = Some(tiled_size);
+            bevy_x -= tiled_size.x / 2.0;
+            bevy_y += tiled_size.y / 2.0;
+
         }
 
         transform.translation.x = bevy_x;
         transform.translation.y = bevy_y;
+    }
+}
+
+pub fn draw_background_gizmos(
+    mut gizmos: Gizmos,
+    images: Res<Assets<Image>>,
+    query: Query<(&MapParallaxBackground, &Transform, &Sprite)>,
+) {
+    for (_bg, transform, sprite) in &query {
+        let size = sprite.custom_size.unwrap_or_else(|| {
+            images
+                .get(&sprite.image)
+                .map(|i| i.size_f32())
+                .unwrap_or(Vec2::splat(64.0))
+        });
+        // Anchor::TOP_LEFT: sprite extends right (+X) and down (-Y) from transform
+        let center = Vec2::new(
+            transform.translation.x + size.x / 2.0,
+            transform.translation.y - size.y / 2.0,
+        );
+        gizmos.rect_2d(
+            Isometry2d::new(center, Rot2::default()),
+            size,
+            Color::srgba(0.0, 1.0, 0.0, 0.5),
+        );
     }
 }
