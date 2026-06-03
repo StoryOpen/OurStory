@@ -5,6 +5,7 @@ use crate::character::components::*;
 use crate::character::events::*;
 use crate::character::loader::{self, WzSpriteCache};
 use crate::character::types::*;
+use crate::input::{CharacterIntent, IsLocalPlayer};
 use crate::physics::PhysicsState;
 use crate::wz::get_cached_base;
 
@@ -163,6 +164,8 @@ pub fn spawn_character(
             enable_gravity: true,
             enable_footholds: true,
         },
+        CharacterIntent::default(),
+        IsLocalPlayer,
     )).id();
 
     let mut part_map = HashMap::new();
@@ -179,33 +182,35 @@ pub fn spawn_character(
     commands.entity(root).insert(PartEntities { map: part_map });
 }
 
-pub fn character_action_controls(
-    input: Res<ButtonInput<KeyCode>>,
+pub fn on_character_action(
+    trigger: On<crate::input::ActionEvent>,
     query: Query<Entity, With<CharacterRoot>>,
     mut commands: Commands,
 ) {
+    use crate::input::KeyAction;
     let entity = match query.iter().next() {
         Some(e) => e,
         None => return,
     };
 
-    let action = if input.just_pressed(KeyCode::Digit1) { "stand1" }
-    else if input.just_pressed(KeyCode::Digit2) { "walk1" }
-    else if input.just_pressed(KeyCode::Digit3) { "jump" }
-    else if input.just_pressed(KeyCode::Digit4) { "sit" }
-    else if input.just_pressed(KeyCode::Digit5) { "prone" }
-    else if input.just_pressed(KeyCode::Digit6) { "ladder" }
-    else if input.just_pressed(KeyCode::Digit7) { "rope" }
-    else if input.just_pressed(KeyCode::Digit8) { "fly" }
-    else if input.just_pressed(KeyCode::Digit9) { "alert" }
-    else if input.just_pressed(KeyCode::Digit0) { "dead" }
-    else if input.just_pressed(KeyCode::KeyQ) { "swingO1" }
-    else if input.just_pressed(KeyCode::KeyW) { "swingP1" }
-    else if input.just_pressed(KeyCode::KeyE) { "shoot1" }
-    else if input.just_pressed(KeyCode::KeyR) { "magic1" }
-    else { return };
-
-    commands.trigger(SetAction { entity, action: action.to_string() });
+    let anim = match trigger.event().0 {
+        KeyAction::Stand1 => "stand1",
+        KeyAction::Walk1 => "walk1",
+        KeyAction::Jump | KeyAction::JumpAction => "jump",
+        KeyAction::Sit => "sit",
+        KeyAction::Prone => "prone",
+        KeyAction::Ladder => "ladder",
+        KeyAction::Rope => "rope",
+        KeyAction::Fly => "fly",
+        KeyAction::Alert => "alert",
+        KeyAction::Dead => "dead",
+        KeyAction::SwingO1 => "swingO1",
+        KeyAction::SwingP1 => "swingP1",
+        KeyAction::Shoot1 => "shoot1",
+        KeyAction::Magic1 => "magic1",
+        _ => return,
+    };
+    commands.trigger(SetAction { entity, action: anim.to_string() });
 }
 
 pub fn animate_characters(
@@ -273,23 +278,6 @@ pub fn animate_characters(
                 update_part_sprite(child, layer, pos, &mut part_query);
             }
         }
-    }
-}
-
-pub fn character_movement_input(
-    input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut PhysicsState, With<CharacterRoot>>,
-) {
-    let mut ps = match query.iter_mut().next() {
-        Some(p) => p,
-        None => return,
-    };
-    ps.left = input.pressed(KeyCode::ArrowLeft);
-    ps.right = input.pressed(KeyCode::ArrowRight);
-    ps.up = input.pressed(KeyCode::ArrowUp);
-    ps.down = input.pressed(KeyCode::ArrowDown);
-    if input.just_pressed(KeyCode::Space) {
-        ps.jump_request = true;
     }
 }
 

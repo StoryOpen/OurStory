@@ -25,7 +25,8 @@ impl Plugin for MobPlugin {
             .insert_resource(MobAssetRegistry::new(self.cache_capacity))
             .insert_resource(PendingSpawns::default())
             .add_systems(Startup, spawn_test_mob)
-            .add_systems(Update, (animation::tick_mob_animations, animation::process_pending_spawns, debug_cycle_actions))
+            .add_observer(on_debug_mob_action)
+            .add_systems(Update, (animation::tick_mob_animations, animation::process_pending_spawns))
             .add_observer(animation::spawn_mob)
             .add_observer(animation::handle_switch_action);
     }
@@ -35,27 +36,23 @@ fn spawn_test_mob(mut commands: Commands) {
     commands.trigger(events::SpawnMob { mob_id: 100100, x: 0.0, y: 0.0, z: 100 });
 }
 
-fn debug_cycle_actions(
-    keys: Res<ButtonInput<KeyCode>>,
+fn on_debug_mob_action(
+    trigger: On<crate::input::ActionEvent>,
     mut commands: Commands,
 ) {
-    let actions = ["stand", "move", "hit1", "die1"];
-    for (i, action) in actions.iter().enumerate() {
-        let key = match i {
-            0 => KeyCode::Digit1,
-            1 => KeyCode::Digit2,
-            2 => KeyCode::Digit3,
-            3 => KeyCode::Digit4,
-            _ => continue,
-        };
-        if keys.just_pressed(key) {
-            commands.trigger(events::SwitchMobAction {
-                mob_id: 100100,
-                action: action.to_string(),
-            });
-            bevy::log::info!("switch Snail to {action}");
-        }
-    }
+    use crate::input::KeyAction;
+    let mob_action = match trigger.event().0 {
+        KeyAction::DebugMobStand => "stand",
+        KeyAction::DebugMobMove => "move",
+        KeyAction::DebugMobHit1 => "hit1",
+        KeyAction::DebugMobDie1 => "die1",
+        _ => return,
+    };
+    commands.trigger(events::SwitchMobAction {
+        mob_id: 100100,
+        action: mob_action.to_string(),
+    });
+    bevy::log::info!("switch Snail to {mob_action}");
 }
 
 #[derive(Default, Resource)]

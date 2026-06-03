@@ -1,6 +1,7 @@
 #[cfg(feature = "character")]
 mod character;
 mod camera;
+mod input;
 mod physics;
 mod wz;
 
@@ -25,6 +26,7 @@ use bevy::dev_tools::diagnostics_overlay::{
 #[cfg(feature = "character")]
 use character::CharacterPlugin;
 use camera::CameraPlugin;
+use input::InputPlugin;
 use wz::asset_source::WzAssetSourcePlugin;
 use wz::get_cached_base;
 
@@ -60,6 +62,7 @@ fn main() {
     #[cfg(feature = "character")]
     app.add_plugins(CharacterPlugin);
     app.add_plugins(CameraPlugin)
+       .add_plugins(InputPlugin)
        .add_plugins(physics::PhysicsPlugin);
     #[cfg(feature = "map")]
     app.add_plugins(MapPlugin::default());
