@@ -86,6 +86,7 @@ fn setup(mut commands: Commands) {
             scaling_mode: ScalingMode::FixedVertical { viewport_height: 768.0 },
             ..OrthographicProjection::default_2d()
         }),
+        Transform::from_xyz(0.0, -384.0, 0.0),
     ));
     commands.insert_resource(camera::resources::BaseResolution { width: 1024.0, height: 768.0 });
     commands.insert_resource(physics::load_physics(get_cached_base()));

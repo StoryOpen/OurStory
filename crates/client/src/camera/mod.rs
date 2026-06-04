@@ -11,6 +11,7 @@ impl Plugin for CameraPlugin {
             .add_observer(systems::reset_camera)
             .add_systems(Startup, systems::apply_resolution)
             .add_systems(Update, (
+                systems::follow_player.after(crate::physics::PhysicsSet::Simulate),
                 systems::drag_camera,
                 systems::clamp_camera.after(systems::drag_camera),
             ));
