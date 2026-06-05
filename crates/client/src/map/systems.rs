@@ -2,7 +2,7 @@ use bevy::{
     asset::AssetEvent,
     ecs::message::MessageReader,
     prelude::*,
-    sprite::{Anchor, SpriteImageMode},
+    sprite::SpriteImageMode,
 };
 use crate::physics::FootholdGraph;
 use crate::wz::asset_loader::{BackgroundData, TileData, ObjData, WzMapAsset};
@@ -113,7 +113,6 @@ fn compute_bounds(info: &crate::wz::asset_loader::MapInfo, footholds: &[crate::w
 fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity {
     let mut entity = commands.spawn((
         Sprite::from_image(tile.image.clone()),
-        Anchor::TOP_LEFT,
         Transform::from_xyz(tile.x - tile.origin.x, tile.y - tile.origin.y, z),
         MapSprite,
     ));
@@ -141,7 +140,6 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
             flip_x: obj.flip,
             ..default()
         },
-        Anchor::TOP_LEFT,
         Transform::from_xyz(obj.x - obj.origin.x, obj.y - obj.origin.y, z),
         MapSprite,
     ));
@@ -211,7 +209,6 @@ fn spawn_background_entity(b: &BackgroundData, commands: &mut Commands, z: f32) 
 
     let mut entity = commands.spawn((
         sprite,
-        Anchor::TOP_LEFT,
         Transform::from_xyz(b.x - b.origin.x, b.y - b.origin.y, z),
         MapParallaxBackground {
             base_x: b.x,
@@ -394,7 +391,7 @@ pub fn draw_background_gizmos(
                 .map(|i| i.size_f32())
                 .unwrap_or(Vec2::splat(64.0))
         });
-        // Anchor::TOP_LEFT: sprite extends right (+X) and down (-Y) from transform
+        // Anchor::BOTTOM_LEFT: sprite extends right (+X) and up (+Y) from transform
         let center = Vec2::new(
             transform.translation.x + size.x / 2.0,
             transform.translation.y - size.y / 2.0,

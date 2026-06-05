@@ -37,9 +37,10 @@ inside the `wz` crate. There are no Y-negations or origin-flip sign games
 in any runtime system. The client crate performs only trivial field copies
 (`Vector2D(i32,i32)` → `Vec2(f32,f32)` with no sign changes).
 
-**Origins** are loaded as Bevy-local pixel offsets (already Y-flipped). With
-`Anchor::TOP_LEFT`, the formula `bevy_translation = pos - origin` places the
-sprite's WZ pivot at the desired Bevy world position.
+**Origins** are loaded as Bevy-local pixel offsets (already Y-flipped),
+interpreted as offsets from the sprite's bottom-left corner. An observer
+overrides `Anchor::CENTER` to `Anchor::BOTTOM_LEFT` on every new `Sprite`,
+so the formula `bevy_translation = pos - origin` places the WZ pivot at `pos`.
 
 **Non-coordinate scalars** (`alpha`, `rx`, `ry`, `mag`, `delay`, `cy`,
 `mobTime`, `force`, `piece`, `cx`, layer indices) are read as raw `i32`/`f32`

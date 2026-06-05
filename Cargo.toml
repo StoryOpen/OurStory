@@ -10,9 +10,6 @@ members = [
 ]
 exclude = ["third_party/bevy"]
 
-[lints.rust]
-all = "allow"
-
 [profile.dev]
 opt-level = 1
 

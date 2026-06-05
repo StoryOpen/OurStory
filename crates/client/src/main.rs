@@ -73,7 +73,8 @@ fn main() {
     #[cfg(feature = "ui")]
     app.add_plugins(UiPlugin);
 
-    app.add_systems(Startup, (setup, draw_grid))
+    app.add_observer(wz::set_sprite_bottom_left)
+       .add_systems(Startup, (setup, draw_grid))
        .add_systems(Update, write_coords)
        .run();
 }

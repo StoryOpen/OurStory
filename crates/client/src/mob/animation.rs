@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy::sprite::Anchor;
 
 use super::asset::WzMobAsset;
 use super::events::{SpawnMob, SwitchMobAction};
@@ -163,7 +162,6 @@ fn spawn_one(commands: &mut Commands, ev: &SpawnMob, asset: &WzMobAsset) {
             base_y: ev.y,
         },
         Sprite::from_image(part.image_handle.clone()),
-        Anchor::TOP_LEFT,
         Transform::from_xyz(
             ev.x - part.origin.x,
             ev.y - part.origin.y,

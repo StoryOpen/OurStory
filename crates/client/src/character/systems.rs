@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use bevy::{prelude::*, sprite::Anchor};
+use bevy::prelude::*;
 
 use crate::character::components::*;
 use crate::character::events::*;
@@ -57,7 +57,6 @@ fn build_part_entity(
 ) -> Entity {
     commands.spawn((
         Sprite::from_image(layer.image.clone()),
-        Anchor::TOP_LEFT,
         Transform::from_translation(pos),
         CharacterPart {
             layer: layer.layer_name.clone(),
