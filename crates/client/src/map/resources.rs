@@ -51,7 +51,7 @@ impl MapBounds {
 pub enum MapState {
     None,
     Loading { path: String, handle: Handle<WzMapAsset> },
-    Loaded { path: String, sprites: Vec<Entity> },
+    Loaded { path: String, sprites: Vec<Entity>, handle: Handle<WzMapAsset> },
 }
 
 #[derive(Resource)]

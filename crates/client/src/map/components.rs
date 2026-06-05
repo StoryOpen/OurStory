@@ -7,16 +7,14 @@ pub struct MapAnimator {
     pub frames: Vec<AnimFrame>,
     pub current: usize,
     pub timer: Timer,
-    pub base_x: f32,
-    pub base_y: f32,
+    pub base: Vec2,
     pub flip: bool,
 }
 
 #[allow(dead_code)]
 #[derive(Component)]
 pub struct MapMoveEffect {
-    pub base_x: f32,
-    pub base_y: f32,
+    pub base: Vec2,
     pub move_type: i32,
     pub move_w: f32,
     pub move_h: f32,
@@ -32,10 +30,9 @@ pub struct MapMoveEffect {
 }
 
 #[allow(dead_code)]
-#[derive(Component)]
+#[derive(Clone, Component)]
 pub struct MapParallaxBackground {
-    pub base_x: f32,
-    pub base_y: f32,
+    pub pos: Vec2,
     pub origin: Vec2,
     pub rx: i32,
     pub ry: i32,
@@ -45,6 +42,16 @@ pub struct MapParallaxBackground {
     pub alpha: u8,
     pub flip: bool,
     pub front: bool,
+}
+
+#[derive(Component)]
+pub struct BackgroundTile {
+    pub grid_col: i32,
+    pub grid_row: i32,
+    pub num_cols: i32,
+    pub num_rows: i32,
+    pub spacing_x: f32,
+    pub spacing_y: f32,
 }
 
 /// Marker component for map sprites that should be despawned on map change.

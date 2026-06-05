@@ -49,7 +49,6 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(WzAssetSourcePlugin)
        .add_plugins(bevy::remote::RemotePlugin::default())
-       .add_plugins(bevy::remote::RemoteHttpPlugin::default())
        .add_plugins(DefaultPlugins.set(ImagePlugin::default_linear()).set(WindowPlugin {
            primary_window: Some(Window { title, ..default() }),
            ..default()
@@ -74,7 +73,7 @@ fn main() {
     app.add_plugins(UiPlugin);
 
     app.add_observer(wz::set_sprite_bottom_left)
-       .add_systems(Startup, (setup, draw_grid))
+       .add_systems(Startup, setup)
        .add_systems(Update, write_coords)
        .run();
 }
@@ -123,55 +122,6 @@ fn setup(mut commands: Commands) {
             },
         ],
     });
-}
-
-fn draw_grid(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    window: Query<&Window>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    let win = match window.iter().next() {
-        Some(w) => w,
-        None => return,
-    };
-    let height = win.height();
-    let width = win.width();
-
-    let short_v = meshes.add(Rectangle::new(5.0, 100.0));
-    let short_h = meshes.add(Rectangle::new(100.0, 5.0));
-    let long_v = meshes.add(Rectangle::new(1.0, height));
-    let long_h = meshes.add(Rectangle::new(width, 1.0));
-
-    commands.spawn((
-        Mesh2d(short_h),
-        MeshMaterial2d(materials.add(ColorMaterial::from_color(Srgba::RED))),
-        Transform::from_xyz(0.0, 0.0, 0.0),
-    ));
-    commands.spawn((
-        Mesh2d(short_v),
-        MeshMaterial2d(materials.add(ColorMaterial::from_color(Srgba::RED))),
-        Transform::from_xyz(0.0, 0.0, 0.0),
-    ));
-
-    let h2 = height as i32 / 2 / 100;
-    for i in -h2..h2 + 1 {
-        let y = i as f32 * 100.0;
-        commands.spawn((
-            Mesh2d(long_h.clone()),
-            MeshMaterial2d(materials.add(ColorMaterial::from_color(Srgba::WHITE))),
-            Transform::from_xyz(0.0, y, 0.0),
-        ));
-    }
-    let w2 = width as i32 / 2 / 100;
-    for i in -w2..w2 + 1 {
-        let x = i as f32 * 100.0;
-        commands.spawn((
-            Mesh2d(long_v.clone()),
-            MeshMaterial2d(materials.add(ColorMaterial::from_color(Srgba::WHITE))),
-            Transform::from_xyz(x, 0.0, 0.0),
-        ));
-    }
 }
 
 fn write_coords(

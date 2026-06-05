@@ -2,7 +2,6 @@ use bevy::{
     asset::AssetEvent,
     ecs::message::MessageReader,
     prelude::*,
-    sprite::SpriteImageMode,
 };
 use crate::physics::FootholdGraph;
 use crate::wz::asset_loader::{BackgroundData, TileData, ObjData, WzMapAsset};
@@ -67,6 +66,8 @@ pub fn spawn_map(
     trigger: On<MapReady>,
     mut commands: Commands,
     assets: Res<Assets<WzMapAsset>>,
+    images: Res<Assets<Image>>,
+    window: Query<&Window>,
     mut current_map: ResMut<CurrentMap>,
 ) {
     let ev = trigger.event();
@@ -85,18 +86,20 @@ pub fn spawn_map(
     commands.insert_resource(graph);
     commands.trigger(super::events::MapLoaded { path: ev.path.clone(), bounds });
 
-    let total = asset.backgrounds.len() + asset.objs.len() + asset.tiles.len();
-    let mut sprites = Vec::with_capacity(total);
-    let mut z = -1000.0;
+    let viewport = window.single().map(|w| Vec2::new(w.width(), w.height())).unwrap_or(Vec2::new(1920.0, 1080.0));
 
-    // TEMP: only render background 0 for inspection
-    if let Some(b) = asset.backgrounds.first() {
+    let mut z = -1000.0;
+    let mut sprites = Vec::new();
+
+    for b in &asset.backgrounds {
         z += 1.0;
-        sprites.push(spawn_background_entity(b, &mut commands, z));
+        let tex_size = images.get(&b.image).map(|i| i.size_f32()).unwrap_or(Vec2::splat(128.0));
+        let mut ents = spawn_background_entity(b, &mut commands, z, viewport, tex_size);
+        sprites.append(&mut ents);
     }
 
     info!("spawned {} sprites for map {}", sprites.len(), ev.path);
-    *current_map = CurrentMap(MapState::Loaded { path: ev.path.clone(), sprites });
+    *current_map = CurrentMap(MapState::Loaded { path: ev.path.clone(), sprites, handle: ev.handle.clone() });
 }
 
 fn compute_bounds(info: &crate::wz::asset_loader::MapInfo, footholds: &[crate::wz::asset_loader::Foothold]) -> super::resources::MapBounds {
@@ -113,7 +116,7 @@ fn compute_bounds(info: &crate::wz::asset_loader::MapInfo, footholds: &[crate::w
 fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity {
     let mut entity = commands.spawn((
         Sprite::from_image(tile.image.clone()),
-        Transform::from_xyz(tile.x - tile.origin.x, tile.y - tile.origin.y, z),
+        Transform::from_translation((tile.pos - tile.origin).extend(z)),
         MapSprite,
     ));
 
@@ -123,8 +126,7 @@ fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity
             frames: tile.animation_frames.clone(),
             current: 0,
             timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-            base_x: tile.x,
-            base_y: tile.y,
+            base: tile.pos,
             flip: false,
         });
     }
@@ -140,7 +142,7 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
             flip_x: obj.flip,
             ..default()
         },
-        Transform::from_xyz(obj.x - obj.origin.x, obj.y - obj.origin.y, z),
+        Transform::from_translation((obj.pos - obj.origin).extend(z)),
         MapSprite,
     ));
 
@@ -150,8 +152,7 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
             frames: obj.animation_frames.clone(),
             current: 0,
             timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-            base_x: obj.x,
-            base_y: obj.y,
+            base: obj.pos,
             flip: obj.flip,
         });
     }
@@ -180,8 +181,7 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
             .unwrap_or(1.0);
 
         entity.insert(MapMoveEffect {
-            base_x: obj.x,
-            base_y: obj.y,
+            base: obj.pos,
             move_type, move_w, move_h, move_p, move_r,
             a0, a1,
             flow: obj.flow,
@@ -193,59 +193,117 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
     entity.id()
 }
 
-fn spawn_background_entity(b: &BackgroundData, commands: &mut Commands, z: f32) -> Entity {
+fn spawn_background_entity(
+    b: &BackgroundData,
+    commands: &mut Commands,
+    z: f32,
+    viewport: Vec2,
+    tex_size: Vec2,
+) -> Vec<Entity> {
     let tile_x = matches!(b.btype, 1 | 3 | 4 | 6 | 7);
     let tile_y = matches!(b.btype, 2 | 3 | 5 | 6 | 7);
 
-    let mut sprite = Sprite {
-        image: b.image.clone(),
-        flip_x: b.flip,
-        ..default()
+    let bg = MapParallaxBackground {
+        pos: b.pos,
+        origin: b.origin,
+        rx: b.rx,
+        ry: b.ry,
+        btype: b.btype,
+        cx: b.cx,
+        cy: b.cy,
+        alpha: b.alpha,
+        flip: b.flip,
+        front: b.front,
     };
 
-    if tile_x || tile_y {
-        sprite.image_mode = SpriteImageMode::Tiled { tile_x, tile_y, stretch_value: 1.0 };
+    if !tile_x && !tile_y {
+        let mut entity = commands.spawn((
+            Sprite {
+                image: b.image.clone(),
+                flip_x: b.flip,
+                ..default()
+            },
+            Transform::from_translation((b.pos - b.origin).extend(z)),
+            bg,
+            MapSprite,
+        ));
+
+        if !b.animation_frames.is_empty() {
+            let delay = b.animation_frames[0].delay.max(50);
+            entity.insert(MapAnimator {
+                frames: b.animation_frames.clone(),
+                current: 0,
+                timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
+                base: b.pos,
+                flip: b.flip,
+            });
+        }
+
+        return vec![entity.id()];
     }
 
-    let mut entity = commands.spawn((
-        sprite,
-        Transform::from_xyz(b.x - b.origin.x, b.y - b.origin.y, z),
-        MapParallaxBackground {
-            base_x: b.x,
-            base_y: b.y,
-            origin: b.origin,
-            rx: b.rx,
-            ry: b.ry,
-            btype: b.btype,
-            cx: b.cx,
-            cy: b.cy,
-            alpha: b.alpha,
-            flip: b.flip,
-            front: b.front,
-        },
-        MapSprite,
-    ));
+    let spacing_x: f32 = if b.cx == 0 { tex_size.x } else { b.cx.unsigned_abs() as f32 };
+    let spacing_y: f32 = if b.cy == 0 { tex_size.y } else { b.cy.unsigned_abs() as f32 };
 
-    if !b.animation_frames.is_empty() {
-        let delay = b.animation_frames[0].delay.max(50);
-        entity.insert(MapAnimator {
-            frames: b.animation_frames.clone(),
-            current: 0,
-            timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-            base_x: b.x,
-            base_y: b.y,
-            flip: b.flip,
-        });
+    let num_cols = if tile_x { (viewport.x / spacing_x).ceil() as i32 + 2 } else { 1 };
+    let num_rows = if tile_y { (viewport.y / spacing_y).ceil() as i32 + 2 } else { 1 };
+
+    let grid_w = num_cols as f32 * spacing_x;
+    let grid_h = num_rows as f32 * spacing_y;
+    let center = b.pos - b.origin;
+
+    let mut entities = Vec::with_capacity((num_cols * num_rows) as usize);
+    for row in 0..num_rows {
+        for col in 0..num_cols {
+            let tx = col as f32 * spacing_x - grid_w / 2.0;
+            let ty = row as f32 * spacing_y - grid_h / 2.0;
+
+            let mut entity = commands.spawn((
+                Sprite {
+                    image: b.image.clone(),
+                    flip_x: b.flip,
+                    ..default()
+                },
+                Transform::from_translation(Vec3::new(
+                    center.x + tx,
+                    center.y + ty,
+                    z,
+                )),
+                bg.clone(),
+                BackgroundTile {
+                    grid_col: col,
+                    grid_row: row,
+                    num_cols,
+                    num_rows,
+                    spacing_x,
+                    spacing_y,
+                },
+                MapSprite,
+            ));
+
+            if !b.animation_frames.is_empty() {
+                let delay = b.animation_frames[0].delay.max(50);
+                entity.insert(MapAnimator {
+                    frames: b.animation_frames.clone(),
+                    current: 0,
+                    timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
+                    base: b.pos,
+                    flip: b.flip,
+                });
+            }
+
+            entities.push(entity.id());
+        }
     }
 
-    entity.id()
+    entities
 }
 
 pub fn tick_map_animations(
     time: Res<Time>,
-    mut query: Query<(&mut MapAnimator, &mut Sprite, &mut Transform)>,
+    mut query: Query<(&mut MapAnimator, &mut Sprite, &mut Transform, Option<&BackgroundTile>)>,
 ) {
-    for (mut anim, mut sprite, mut transform) in &mut query {
+    for (mut anim, mut sprite, mut transform, tile_opt) in &mut query {
         anim.timer.tick(time.delta());
         if !anim.timer.just_finished() {
             continue;
@@ -257,8 +315,10 @@ pub fn tick_map_animations(
         sprite.image = frame.image.clone();
         sprite.flip_x = anim.flip;
 
-        transform.translation.x = anim.base_x - frame.origin.x;
-        transform.translation.y = anim.base_y - frame.origin.y;
+        // Background tile positions are managed by tick_background_parallax — don't fight it
+        if tile_opt.is_none() {
+            transform.translation = (anim.base - frame.origin).extend(transform.translation.z);
+        }
 
         anim.timer = Timer::from_seconds(
             frame.delay.max(50) as f32 / 1000.0,
@@ -299,8 +359,7 @@ pub fn tick_move_effects(
             dy += effect.ry as f32 * 5.0 * elapsed;
         }
 
-        transform.translation.x = effect.base_x + dx;
-        transform.translation.y = effect.base_y + dy;
+        transform.translation = (effect.base + Vec2::new(dx, dy)).extend(transform.translation.z);
     }
 }
 
@@ -308,8 +367,7 @@ pub fn tick_background_parallax(
     camera: Query<(&Camera, &GlobalTransform)>,
     window: Query<&Window>,
     time: Res<Time>,
-    images: Res<Assets<Image>>,
-    mut backgrounds: Query<(&MapParallaxBackground, &mut Transform, &mut Sprite)>,
+    mut backgrounds: Query<(&MapParallaxBackground, &mut Transform, &mut Sprite, Option<&BackgroundTile>)>,
 ) {
     let Ok((_cam, cam_global)) = camera.single() else {
         return;
@@ -322,84 +380,102 @@ pub fn tick_background_parallax(
     let viewport = Vec2::new(window.width(), window.height());
     let elapsed = time.elapsed_secs();
 
-    for (bg, mut transform, mut sprite) in &mut backgrounds {
+    for (bg, mut transform, mut sprite, tile_opt) in &mut backgrounds {
         let rx = bg.rx as f32;
         let ry = bg.ry as f32;
 
         sprite.flip_x = bg.flip;
 
-        // Screen-space pivot offset matching NoLifeStory parallax:
-        //   shift_x = rx * view_x / 100 + viewport.x / 2     (X: same direction in both systems)
-        //   shift_y = ry * view_y / 100 + viewport.y / 2     (Y: view_y = -cam_y, Y-down → Y-up)
-        // NoLifeStory uses a biased viewport (300px UI bar, ymax = view_y+250),
-        // but our Bevy camera is centered with no UI bar, so we simplify:
-        //   shift_y = ry * (-cam_y) / 100 + viewport.y / 2 = -ry * cam_pos.y / 100 + viewport.y / 2
-        let shift_x = rx * cam_pos.x / 100.0 + viewport.x / 2.0;
-        let shift_y = -ry * cam_pos.y / 100.0 + viewport.y / 2.0;
+        let Some(tile) = tile_opt else {
+            // Non-tiled: compute exact world position from parallax (original behavior)
+            let shift_x = rx * cam_pos.x / 100.0 + viewport.x / 2.0;
+            let shift_y = -ry * cam_pos.y / 100.0 + viewport.y / 2.0;
 
-        // Reference screen-space pivot (dx, dy) matching NoLifeStory's per-type logic
-        let (pivot_screen_x, pivot_screen_y) = match bg.btype {
-            // Types 0-3: standard parallax (camera-based), optional tiling
-            0 | 1 | 2 | 3 => (bg.base_x + shift_x, -bg.base_y + shift_y),
-            // Types 4,6: time-based X, camera-based Y, tile X (+ optional tile Y)
-            4 | 6 => (
-                bg.base_x + rx * 5.0 * elapsed - cam_pos.x,
-                -bg.base_y + shift_y,
-            ),
-            // Types 5,7: camera-based X, time-based Y, tile Y (+ optional tile X)
-            5 | 7 => (
-                bg.base_x + shift_x,
-                -bg.base_y + ry * 5.0 * elapsed + cam_pos.y,
-            ),
-            _ => (bg.base_x, -bg.base_y),
+            let (pivot_screen_x, pivot_screen_y) = match bg.btype {
+                0 | 1 | 2 | 3 => (bg.pos.x + shift_x, -bg.pos.y + shift_y),
+                4 | 6 => (
+                    bg.pos.x + rx * 5.0 * elapsed - cam_pos.x,
+                    -bg.pos.y + shift_y,
+                ),
+                5 | 7 => (
+                    bg.pos.x + shift_x,
+                    -bg.pos.y + ry * 5.0 * elapsed + cam_pos.y,
+                ),
+                _ => (bg.pos.x, -bg.pos.y),
+            };
+
+            let bevy_x = pivot_screen_x + cam_pos.x - viewport.x / 2.0 - bg.origin.x;
+            let bevy_y = cam_pos.y + viewport.y / 2.0 - pivot_screen_y + bg.origin.y;
+
+            transform.translation.x = bevy_x;
+            transform.translation.y = bevy_y;
+            continue;
         };
 
-        // Convert reference screen pivot (Y-down) to Bevy world TOP_LEFT:
-        //   Reference draws pivot at screen (dx, dy), so top-left is (dx - ox, dy - oy).
-        //   Bevy screen (Y-down) = cam_pos.y + viewport.y/2 - world_y
-        //   Bevy world_x = screen_x + cam_pos.x - viewport.x/2
-        let mut bevy_x = pivot_screen_x + cam_pos.x - viewport.x / 2.0 - bg.origin.x;
-        let mut bevy_y = cam_pos.y + viewport.y / 2.0 - pivot_screen_y + bg.origin.y;
+        // Tiled background: grid is viewport-aligned so tiles always cover screen.
+        // Intra-grid scroll offset creates the parallax / auto-scroll effect.
+        let offset_x = match bg.btype {
+            0 | 1 | 2 | 3 | 5 | 7 => rx * cam_pos.x / 100.0,
+            4 | 6 => rx * 5.0 * elapsed,
+            _ => 0.0,
+        };
+        let offset_y = match bg.btype {
+            0 | 1 | 2 | 3 | 4 | 6 => -ry * cam_pos.y / 100.0,
+            5 | 7 => ry * 5.0 * elapsed,
+            _ => 0.0,
+        };
 
-        let tile_x = matches!(bg.btype, 1 | 3 | 4 | 6 | 7);
-        let tile_y = matches!(bg.btype, 2 | 3 | 5 | 6 | 7);
+        let grid_w = tile.num_cols as f32 * tile.spacing_x;
+        let grid_h = tile.num_rows as f32 * tile.spacing_y;
 
-        if tile_x || tile_y {
-            let tex_size = images.get(&sprite.image).map(|i| i.size_f32());
-            let margin = tex_size.unwrap_or(Vec2::splat(2000.0));
-            let tiled_size = viewport + margin;
-            sprite.custom_size = Some(tiled_size);
-            bevy_x -= tiled_size.x / 2.0;
-            bevy_y += tiled_size.y / 2.0;
+        // Use viewport center so grid stays visible regardless of camera position.
+        // Tile position wraps within the grid: when one scrolls past the edge it
+        // reappears on the opposite side, giving the illusion of infinite tiles.
+        let tx = (tile.grid_col as f32 * tile.spacing_x + offset_x).rem_euclid(grid_w.max(1.0));
+        let ty = (tile.grid_row as f32 * tile.spacing_y + offset_y).rem_euclid(grid_h.max(1.0));
 
-        }
-
-        transform.translation.x = bevy_x;
-        transform.translation.y = bevy_y;
+        transform.translation.x = cam_pos.x - grid_w / 2.0 + tx;
+        transform.translation.y = cam_pos.y - grid_h / 2.0 + ty;
     }
 }
 
 pub fn draw_background_gizmos(
     mut gizmos: Gizmos,
     images: Res<Assets<Image>>,
-    query: Query<(&MapParallaxBackground, &Transform, &Sprite)>,
+    backgrounds: Query<(&MapParallaxBackground, &Transform, &Sprite, Option<&BackgroundTile>)>,
 ) {
-    for (_bg, transform, sprite) in &query {
-        let size = sprite.custom_size.unwrap_or_else(|| {
-            images
-                .get(&sprite.image)
-                .map(|i| i.size_f32())
-                .unwrap_or(Vec2::splat(64.0))
-        });
-        // Anchor::BOTTOM_LEFT: sprite extends right (+X) and up (+Y) from transform
-        let center = Vec2::new(
-            transform.translation.x + size.x / 2.0,
-            transform.translation.y - size.y / 2.0,
-        );
-        gizmos.rect_2d(
-            Isometry2d::new(center, Rot2::default()),
-            size,
-            Color::srgba(0.0, 1.0, 0.0, 0.5),
-        );
+    const CROSS_HALF: f32 = 20.0;
+
+    for (bg, transform, sprite, tile_opt) in &backgrounds {
+        let color = bg_gizmo_color(bg.btype, bg.front);
+        let pos = transform.translation.truncate();
+
+        gizmos.line_2d(pos - Vec2::new(CROSS_HALF, 0.0), pos + Vec2::new(CROSS_HALF, 0.0), color);
+        gizmos.line_2d(pos - Vec2::new(0.0, CROSS_HALF), pos + Vec2::new(0.0, CROSS_HALF), color);
+
+        let (w, h) = if let Some(tile) = tile_opt {
+            (tile.spacing_x, tile.spacing_y)
+        } else {
+            let tex_size = images.get(&sprite.image).map(|i| i.size_f32()).unwrap_or(Vec2::splat(64.0));
+            (tex_size.x, tex_size.y)
+        };
+
+        gizmos.rect_2d(pos + Vec2::new(w, h) / 2.0, Vec2::new(w, h), color);
     }
+}
+
+fn bg_gizmo_color(btype: i32, front: bool) -> Color {
+    let (r, g, b) = match btype {
+        0 => (0.2, 1.0, 0.2),
+        1 => (1.0, 1.0, 0.2),
+        2 => (0.2, 0.6, 1.0),
+        3 => (0.2, 1.0, 1.0),
+        4 => (1.0, 0.6, 0.2),
+        5 => (1.0, 0.2, 0.2),
+        6 => (1.0, 0.2, 1.0),
+        7 => (1.0, 0.6, 0.8),
+        _ => (0.8, 0.8, 0.8),
+    };
+    let alpha = if front { 0.95 } else { 0.5 };
+    Color::srgba(r, g, b, alpha)
 }

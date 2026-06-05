@@ -57,8 +57,7 @@ pub struct MapInfo {
 #[derive(Debug)]
 pub struct TileData {
     pub image: Handle<Image>,
-    pub x: f32,
-    pub y: f32,
+    pub pos: Vec2,
     pub z: i32,
     pub layer: u8,
     #[allow(dead_code)]
@@ -70,8 +69,7 @@ pub struct TileData {
 #[derive(Debug)]
 pub struct ObjData {
     pub image: Handle<Image>,
-    pub x: f32,
-    pub y: f32,
+    pub pos: Vec2,
     pub z: i32,
     pub layer: u8,
     pub zid: i32,
@@ -159,8 +157,7 @@ pub struct BackgroundData {
     #[allow(dead_code)]
     pub alpha: u8,
     pub flip: bool,
-    pub x: f32,
-    pub y: f32,
+    pub pos: Vec2,
     pub origin: Vec2,
     pub index: i32,
     pub animation_frames: Vec<AnimFrame>,
@@ -170,8 +167,7 @@ pub struct BackgroundData {
 pub struct LifeSpawn {
     pub spawn_type: String,
     pub id: i32,
-    pub x: f32,
-    pub y: f32,
+    pub pos: Vec2,
     pub cy: i32,
     pub fh: i32,
     pub rx0: i32,
@@ -185,8 +181,7 @@ pub struct LifeSpawn {
 pub struct PortalData {
     pub pt: i32,
     pub pn: String,
-    pub x: f32,
-    pub y: f32,
+    pub pos: Vec2,
     pub tm: i32,
     pub tn: String,
     pub script: Option<String>,
@@ -208,8 +203,7 @@ pub struct LadderRopeData {
 
 #[derive(Debug)]
 pub struct SeatData {
-    pub x: f32,
-    pub y: f32,
+    pub pos: Vec2,
 }
 
 #[derive(Debug)]
@@ -371,7 +365,7 @@ fn load_tiles(
             for (name, tile_node) in children {
                 let variant: String = tile_node.required("u");
                 let index: i32 = tile_node.required("no");
-                let (x, y) = tile_node.read_pos().unwrap();
+                let pos = tile_node.read_pos().map(Vec2::from).unwrap();
                 let tile_id: i32 = name.as_str().parse().unwrap_or(0);
 
                 let img_path = format!("Map/Tile/{}.img/{}/{}", tile_set, variant, index);
@@ -382,7 +376,7 @@ fn load_tiles(
                     load_animated_node(&img_node, load_context, &img_path);
 
                 tiles.push(TileData {
-                    image, x, y, z, layer: i,
+                    image, pos, z, layer: i,
                     zid: tile_id, origin, animation_frames,
                 });
             }
@@ -411,7 +405,7 @@ fn load_objs(
                 let l0: String = obj_node.required("l0");
                 let l1: String = obj_node.required("l1");
                 let l2: String = obj_node.required("l2");
-                let (x, y) = obj_node.read_pos().unwrap();
+                let pos = obj_node.read_pos().map(Vec2::from).unwrap();
                 let z: i32 = obj_node.get_or("z", 0);
                 let zid: i32 = name.as_str().parse().unwrap_or(0);
                 let flip: bool = obj_node.get_or("f", false);
@@ -431,7 +425,7 @@ fn load_objs(
                     load_animated_node(&img_node, load_context, &img_path);
 
                 objs.push(ObjData {
-                    image, x, y, z, layer: i,
+                    image, pos, z, layer: i,
                     zid, origin, animation_frames,
                     flip, flow, rx, ry, cx, cy,
                 });
@@ -452,14 +446,8 @@ fn load_backgrounds(
         Err(_) => return Vec::new(),
     };
 
-    let mut children = back_root.children();
-    children.sort_by(|a, _, b, _| {
-        a.as_str().parse::<i32>().unwrap_or(0)
-            .cmp(&b.as_str().parse::<i32>().unwrap_or(0))
-    });
-
     let mut backgrounds = Vec::new();
-    for (name, back_node) in children {
+    for (name, back_node) in back_root.children() {
         let index: i32 = name.as_str().parse().unwrap_or(0);
         let b_s: String = match back_node.get_opt::<String>("bS") {
             Some(v) => v,
@@ -474,7 +462,7 @@ fn load_backgrounds(
         let cy: i32 = back_node.get_or("cy", 0);
         let alpha: i32 = back_node.get_or("a", 255);
         let flip: bool = back_node.get_or("f", false);
-        let (x, y) = back_node.read_pos().unwrap_or((0.0, 0.0));
+        let pos = back_node.read_pos().map(Vec2::from).unwrap_or(Vec2::ZERO);
 
         let img_path = format!("Map/Back/{}.img/back/{}", b_s, no);
         let img_node = match base.at_path(&img_path) {
@@ -489,7 +477,7 @@ fn load_backgrounds(
         backgrounds.push(BackgroundData {
             image, front, rx, ry, btype, cx, cy,
             alpha: alpha.clamp(0, 255) as u8, flip,
-            x, y, origin, index, animation_frames,
+            pos, origin, index, animation_frames,
         });
     }
 
@@ -509,7 +497,7 @@ fn load_life(map: &crate::wz::Node) -> Vec<LifeSpawn> {
             None => continue,
         };
         let id: i32 = life_node.get_or("id", 0);
-        let (x, y) = life_node.read_pos().unwrap_or((0.0, 0.0));
+        let pos = life_node.read_pos().map(Vec2::from).unwrap_or(Vec2::ZERO);
         let cy: i32 = life_node.get_or("cy", 0);
         let fh: i32 = life_node.get_or("fh", 0);
         let rx0: i32 = life_node.get_or("rx0", 0);
@@ -518,7 +506,7 @@ fn load_life(map: &crate::wz::Node) -> Vec<LifeSpawn> {
         let hide: bool = life_node.get_or::<bool>("hide", false);
         let flip: bool = life_node.get_or::<bool>("f", false);
 
-        life.push(LifeSpawn { spawn_type, id, x, y, cy, fh, rx0, rx1, mob_time, hide, flip });
+        life.push(LifeSpawn { spawn_type, id, pos, cy, fh, rx0, rx1, mob_time, hide, flip });
     }
 
     life
@@ -534,7 +522,7 @@ fn load_portals(map: &crate::wz::Node) -> Vec<PortalData> {
     for (_name, portal_node) in portal_root.children() {
         let pt: i32 = portal_node.get_or("pt", 0);
         let pn: String = portal_node.get_or("pn", String::new());
-        let (x, y) = portal_node.read_pos().unwrap_or((0.0, 0.0));
+        let pos = portal_node.read_pos().map(Vec2::from).unwrap_or(Vec2::ZERO);
         let tm: i32 = portal_node.get_or("tm", 0);
         let tn: String = portal_node.get_or("tn", String::new());
         let script: Option<String> = portal_node.get_opt("script");
@@ -543,7 +531,7 @@ fn load_portals(map: &crate::wz::Node) -> Vec<PortalData> {
         let vertical_impact: Option<i32> = portal_node.get_opt("verticalImpact");
         let only_once: Option<i32> = portal_node.get_opt("onlyOnce");
 
-        portals.push(PortalData { pt, pn, x, y, tm, tn, script, delay, horizontal_impact, vertical_impact, only_once });
+        portals.push(PortalData { pt, pn, pos, tm, tn, script, delay, horizontal_impact, vertical_impact, only_once });
     }
 
     portals
@@ -580,8 +568,8 @@ fn load_seats(map: &crate::wz::Node) -> Vec<SeatData> {
 
     let mut seats = Vec::new();
     for (_name, seat_node) in seat_root.children() {
-        let (x, y) = seat_node.read_pos().unwrap_or((0.0, 0.0));
-        seats.push(SeatData { x, y });
+        let pos = seat_node.read_pos().map(Vec2::from).unwrap_or(Vec2::ZERO);
+        seats.push(SeatData { pos });
     }
 
     seats
