@@ -1,13 +1,13 @@
-use std::collections::HashMap;
 use bevy::{
     asset::RenderAssetUsages,
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use image::DynamicImage;
+use std::collections::HashMap;
 
-use crate::wz::{Node, Vector2D};
 use crate::character::types::*;
+use crate::wz::{Node, Vector2D};
 
 #[derive(Resource, Default)]
 pub struct WzSpriteCache {
@@ -61,16 +61,16 @@ fn load_part(
 
     let mut map = HashMap::new();
     if let Ok(map_node) = part_node.at_path("map") {
-    for (child_name, _) in map_node.children() {
-        if let Some(val) = map_node
-            .at_path(child_name.as_str())
-            .ok()
-            .and_then(|n| -> Option<Vector2D> { n.try_into().ok() })
-            .map(|v| Vec2::new(v.0 as f32, v.1 as f32))
-        {
-            map.insert(child_name.to_string(), val);
+        for (child_name, _) in map_node.children() {
+            if let Some(val) = map_node
+                .at_path(child_name.as_str())
+                .ok()
+                .and_then(|n| -> Option<Vector2D> { n.try_into().ok() })
+                .map(|v| Vec2::new(v.0 as f32, v.1 as f32))
+            {
+                map.insert(child_name.to_string(), val);
+            }
         }
-    }
     }
 
     Some(SpriteLayer {
@@ -100,30 +100,69 @@ fn load_frame(
     let frame_path = format!("{}/{}", body_action_path, frame_idx);
     let frame_node = base.at_path(&frame_path).ok()?;
 
-    let delay: i32 = frame_node.at_path("delay").ok().and_then(|n| n.try_into().ok()).unwrap_or(100);
+    let delay: i32 = frame_node
+        .at_path("delay")
+        .ok()
+        .and_then(|n| n.try_into().ok())
+        .unwrap_or(100);
     let mut parts = Vec::new();
 
-    if let Some(layer) = load_part(&frame_node, "body", PartSource::Body, zmap, slot_map, cache, images) {
+    if let Some(layer) = load_part(
+        &frame_node,
+        "body",
+        PartSource::Body,
+        zmap,
+        slot_map,
+        cache,
+        images,
+    ) {
         parts.push(layer);
     }
-    if let Some(layer) = load_part(&frame_node, "arm", PartSource::Body, zmap, slot_map, cache, images) {
+    if let Some(layer) = load_part(
+        &frame_node,
+        "arm",
+        PartSource::Body,
+        zmap,
+        slot_map,
+        cache,
+        images,
+    ) {
         parts.push(layer);
     }
 
     if let Some(head_path) = head_action_path {
         let head_frame_path = format!("{}/{}", head_path, frame_idx);
         if let Ok(head_frame) = base.at_path(&head_frame_path) {
-            if let Some(layer) = load_part(&head_frame, "head", PartSource::Head, zmap, slot_map, cache, images) {
+            if let Some(layer) = load_part(
+                &head_frame,
+                "head",
+                PartSource::Head,
+                zmap,
+                slot_map,
+                cache,
+                images,
+            ) {
                 parts.push(layer);
             }
         }
     }
 
     if let Some(hid) = hair_id {
-        let hair_path = format!("Character/Hair/{:08}.img/{}/{}", hid, action_name, frame_idx);
+        let hair_path = format!(
+            "Character/Hair/{:08}.img/{}/{}",
+            hid, action_name, frame_idx
+        );
         if let Ok(hair_node) = base.at_path(&hair_path) {
             for part_name in &["hair", "hairBelowBody", "hairOverHead"] {
-                if let Some(layer) = load_part(&hair_node, part_name, PartSource::Hair, zmap, slot_map, cache, images) {
+                if let Some(layer) = load_part(
+                    &hair_node,
+                    part_name,
+                    PartSource::Hair,
+                    zmap,
+                    slot_map,
+                    cache,
+                    images,
+                ) {
                     parts.push(layer);
                 }
             }
@@ -135,14 +174,25 @@ fn load_frame(
         let item_action_path = format!("{}/{}/{}", item_path, action_name, frame_idx);
         if let Ok(item_frame) = base.at_path(&item_action_path) {
             for part_name in slot.part_names() {
-                if let Some(layer) = load_part(&item_frame, part_name, PartSource::Equipment(*slot), zmap, slot_map, cache, images) {
+                if let Some(layer) = load_part(
+                    &item_frame,
+                    part_name,
+                    PartSource::Equipment(*slot),
+                    zmap,
+                    slot_map,
+                    cache,
+                    images,
+                ) {
                     parts.push(layer);
                 }
             }
         }
     }
 
-    Some(FrameData { parts, delay: delay as u32 })
+    Some(FrameData {
+        parts,
+        delay: delay as u32,
+    })
 }
 
 fn preload_face_expressions(
@@ -163,20 +213,37 @@ fn preload_face_expressions(
 
     for (expr_name, _) in face_root.children() {
         let expr_name = String::from(expr_name);
-        if expr_name == "info" { continue; }
+        if expr_name == "info" {
+            continue;
+        }
 
         let expr_node = match face_root.at_path(&expr_name) {
             Ok(n) => n,
             Err(_) => continue,
         };
 
-        let child_keys: Vec<String> = expr_node.children().into_iter().map(|(n, _)| n.to_string()).collect();
+        let child_keys: Vec<String> = expr_node
+            .children()
+            .into_iter()
+            .map(|(n, _)| n.to_string())
+            .collect();
 
         let mut frames = Vec::new();
 
         if child_keys.iter().any(|k| k == "face") {
-            if let Some(layer) = load_part(&expr_node, "face", PartSource::Face, zmap, slot_map, cache, images) {
-                frames.push(FrameData { parts: vec![layer], delay: 2000 });
+            if let Some(layer) = load_part(
+                &expr_node,
+                "face",
+                PartSource::Face,
+                zmap,
+                slot_map,
+                cache,
+                images,
+            ) {
+                frames.push(FrameData {
+                    parts: vec![layer],
+                    delay: 2000,
+                });
             }
         } else if child_keys.iter().any(|k| k.parse::<u32>().is_ok()) {
             for key in &child_keys {
@@ -185,8 +252,19 @@ fn preload_face_expressions(
                         if let Ok(delay_node) = frame_node.at_path("delay") {
                             let delay: Result<i32, _> = delay_node.try_into();
                             if let Ok(delay) = delay {
-                                if let Some(layer) = load_part(&frame_node, "face", PartSource::Face, zmap, slot_map, cache, images) {
-                                    frames.push(FrameData { parts: vec![layer], delay: delay as u32 });
+                                if let Some(layer) = load_part(
+                                    &frame_node,
+                                    "face",
+                                    PartSource::Face,
+                                    zmap,
+                                    slot_map,
+                                    cache,
+                                    images,
+                                ) {
+                                    frames.push(FrameData {
+                                        parts: vec![layer],
+                                        delay: delay as u32,
+                                    });
                                 }
                             }
                         }
@@ -254,7 +332,9 @@ pub fn preload_character_frames(
 
         let mut frames = Vec::new();
         let body_action_path = format!("{}/{}", body_path, action_name);
-        let head_action_path = head_root.as_ref().map(|_| format!("{}/{}", head_path, action_name));
+        let head_action_path = head_root
+            .as_ref()
+            .map(|_| format!("{}/{}", head_path, action_name));
 
         for frame_idx in 0..frame_count as u32 {
             if let Some(frame_data) = load_frame(
@@ -283,5 +363,8 @@ pub fn preload_character_frames(
         .map(|fid| preload_face_expressions(base, fid, zmap, slot_map, cache, images))
         .unwrap_or_default();
 
-    LoadedCharacterData { actions, face_expressions }
+    LoadedCharacterData {
+        actions,
+        face_expressions,
+    }
 }

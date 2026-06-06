@@ -119,7 +119,8 @@ impl Node {
 
     pub fn children(&self) -> IndexMap<NodeName, Node> {
         let guard = self.wz_node.read().expect("lock poisoned");
-        guard.children
+        guard
+            .children
             .iter()
             .map(|(k, v)| (k.clone().into(), v.clone().into()))
             .collect()
@@ -135,11 +136,19 @@ impl Node {
     }
 
     pub fn has(&self, name: &str) -> bool {
-        self.wz_node.read().expect("lock poisoned").children.contains_key(name)
+        self.wz_node
+            .read()
+            .expect("lock poisoned")
+            .children
+            .contains_key(name)
     }
 
     pub fn path(&self) -> String {
-        self.wz_node.read().expect("lock poisoned").get_full_path().to_string()
+        self.wz_node
+            .read()
+            .expect("lock poisoned")
+            .get_full_path()
+            .to_string()
     }
 
     /// Reads scalar `x` and `y` children and returns them with Y negated
@@ -161,7 +170,8 @@ impl Node {
     /// Reads a child node at `path` and tries to convert it to `T`,
     /// falling back to `default` on any failure.
     pub fn get_or<T: TryFrom<Node, Error = NodeError>>(&self, path: &str, default: T) -> T {
-        self.at_path(path).ok()
+        self.at_path(path)
+            .ok()
             .and_then(|n| T::try_from(n).ok())
             .unwrap_or(default)
     }
@@ -169,16 +179,17 @@ impl Node {
     /// Reads a child node at `path` and tries to convert it to `T`,
     /// returning `None` if the path doesn't exist or the type doesn't match.
     pub fn get_opt<T: TryFrom<Node, Error = NodeError>>(&self, path: &str) -> Option<T> {
-        self.at_path(path).ok()
-            .and_then(|n| T::try_from(n).ok())
+        self.at_path(path).ok().and_then(|n| T::try_from(n).ok())
     }
 
     /// Reads a required child at `path` and converts to `T`.
     /// Panics with a descriptive message if the path doesn't exist
     /// or the type doesn't match.
     pub fn required<T: TryFrom<Node, Error = NodeError>>(&self, path: &str) -> T {
-        self.at_path(path).unwrap_or_else(|_| panic!("required child '{path}' not found"))
-            .try_into().unwrap_or_else(|_| panic!("required child '{path}' type mismatch"))
+        self.at_path(path)
+            .unwrap_or_else(|_| panic!("required child '{path}' not found"))
+            .try_into()
+            .unwrap_or_else(|_| panic!("required child '{path}' type mismatch"))
     }
 
     /// Reads a child at `path` as an `i32` Y-coordinate and negates it
@@ -199,7 +210,8 @@ impl TryFrom<Node> for i32 {
 
     fn try_from(node: Node) -> Result<Self, Self::Error> {
         let guard = node.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
-        guard.try_as_int()
+        guard
+            .try_as_int()
             .copied()
             .or_else(|| guard.try_as_string()?.get_string().ok()?.parse().ok())
             .ok_or(NodeError::TypeMismatch("i32"))
@@ -229,8 +241,12 @@ impl TryFrom<Node> for String {
 
     fn try_from(node: Node) -> Result<Self, Self::Error> {
         let guard = node.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
-        let wz_string = guard.try_as_string().ok_or(NodeError::TypeMismatch("String"))?;
-        wz_string.get_string().map_err(|_| NodeError::ValueError("failed to decode string".into()))
+        let wz_string = guard
+            .try_as_string()
+            .ok_or(NodeError::TypeMismatch("String"))?;
+        wz_string
+            .get_string()
+            .map_err(|_| NodeError::ValueError("failed to decode string".into()))
     }
 }
 
@@ -239,8 +255,11 @@ impl TryFrom<Node> for DynamicImage {
 
     fn try_from(node: Node) -> Result<Self, Self::Error> {
         let guard = node.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
-        let png = guard.try_as_png().ok_or(NodeError::TypeMismatch("PNG image"))?;
-        png.extract_png().map_err(|_| NodeError::ValueError("failed to extract PNG".into()))
+        let png = guard
+            .try_as_png()
+            .ok_or(NodeError::TypeMismatch("PNG image"))?;
+        png.extract_png()
+            .map_err(|_| NodeError::ValueError("failed to extract PNG".into()))
     }
 }
 
@@ -330,7 +349,9 @@ impl TryFrom<Node> for Vector2D {
 
     fn try_from(node: Node) -> Result<Self, Self::Error> {
         let guard = node.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
-        let Vector2D(x, y) = guard.try_as_vector2d().ok_or(NodeError::TypeMismatch("Vector2D"))?;
+        let Vector2D(x, y) = guard
+            .try_as_vector2d()
+            .ok_or(NodeError::TypeMismatch("Vector2D"))?;
         Ok(Vector2D(*x, -*y))
     }
 }

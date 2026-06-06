@@ -15,9 +15,7 @@ pub struct WorldInfo {
 
 impl Login {
     pub fn new() -> Self {
-        Self {
-            worlds: Vec::new(),
-        }
+        Self { worlds: Vec::new() }
     }
 
     pub fn add_world(&mut self, info: WorldInfo) {

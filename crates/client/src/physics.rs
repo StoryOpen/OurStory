@@ -131,7 +131,11 @@ impl FootholdGraph {
                 }
             }
         }
-        Self { footholds, next_idx, prev_idx }
+        Self {
+            footholds,
+            next_idx,
+            prev_idx,
+        }
     }
 
     pub fn find_by_id(&self, id: i32) -> Option<usize> {
@@ -143,22 +147,21 @@ pub struct PhysicsPlugin;
 
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .init_resource::<PhysicsAccumulator>()
+        app.init_resource::<PhysicsAccumulator>()
             .configure_sets(Update, PhysicsSet::Simulate)
-            .add_systems(Update, (
-                physics_update.in_set(PhysicsSet::Simulate),
-                sync_physics_to_transform.after(PhysicsSet::Simulate),
-                // TEMP: foothold gizmos disabled
-                // draw_foothold_gizmos,
-            ));
+            .add_systems(
+                Update,
+                (
+                    physics_update.in_set(PhysicsSet::Simulate),
+                    sync_physics_to_transform.after(PhysicsSet::Simulate),
+                    // TEMP: foothold gizmos disabled
+                    // draw_foothold_gizmos,
+                ),
+            );
     }
 }
 
-pub fn draw_foothold_gizmos(
-    graph: Option<Res<FootholdGraph>>,
-    mut gizmos: Gizmos,
-) {
+pub fn draw_foothold_gizmos(graph: Option<Res<FootholdGraph>>, mut gizmos: Gizmos) {
     let Some(graph) = graph else { return };
     for fh in &graph.footholds {
         gizmos.line_2d(
@@ -186,7 +189,12 @@ pub fn physics_update(
     }
 }
 
-fn step_physics(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants: &PhysicsConstants, dt: f32) {
+fn step_physics(
+    ps: &mut PhysicsState,
+    graph: Option<&FootholdGraph>,
+    constants: &PhysicsConstants,
+    dt: f32,
+) {
     if ps.jump_request {
         do_jump(ps, graph, constants);
         ps.jump_request = false;
@@ -258,7 +266,12 @@ fn do_jump(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants: &Phy
     ps.fh_id = 0;
 }
 
-fn update_on_fh(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants: &PhysicsConstants, dt: f32) {
+fn update_on_fh(
+    ps: &mut PhysicsState,
+    graph: Option<&FootholdGraph>,
+    constants: &PhysicsConstants,
+    dt: f32,
+) {
     let graph = match graph {
         Some(g) => g,
         None => {
@@ -292,15 +305,24 @@ fn update_on_fh(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants:
 
     mvr -= fh.force.unwrap_or(0) as f32;
 
-    let fs = constants.walk_drag.max(constants.min_friction).min(constants.max_friction) / SHOE_MASS * dt;
+    let fs = constants
+        .walk_drag
+        .max(constants.min_friction)
+        .min(constants.max_friction)
+        / SHOE_MASS
+        * dt;
     let maxf = constants.walk_speed;
     let slip = fy / len;
 
     if slip.abs() > SHOE_WALK_SLANT {
         let sf = constants.slip_force * slip;
         let ss = constants.slip_speed * slip;
-        if ps.left { mvr -= fs; }
-        if ps.right { mvr += fs; }
+        if ps.left {
+            mvr -= fs;
+        }
+        if ps.right {
+            mvr += fs;
+        }
         mvr = if ss > 0.0 {
             ss.min(mvr + sf * dt)
         } else {
@@ -411,7 +433,12 @@ fn handle_fh_exit_left(ps: &mut PhysicsState, graph: &FootholdGraph, idx: usize,
     }
 }
 
-fn update_in_air(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants: &PhysicsConstants, dt: f32) {
+fn update_in_air(
+    ps: &mut PhysicsState,
+    graph: Option<&FootholdGraph>,
+    constants: &PhysicsConstants,
+    dt: f32,
+) {
     if ps.enable_gravity {
         ps.vy -= constants.gravity_acc * dt;
         ps.vy = ps.vy.max(-constants.fall_speed);
@@ -427,9 +454,17 @@ fn update_in_air(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants
     } else {
         if ps.vy > -constants.fall_speed {
             let f = constants.float_coefficient * drag_factor;
-            ps.vx = if ps.vx > 0.0 { (0.0f32).max(ps.vx - f) } else { (0.0f32).min(ps.vx + f) };
+            ps.vx = if ps.vx > 0.0 {
+                (0.0f32).max(ps.vx - f)
+            } else {
+                (0.0f32).min(ps.vx + f)
+            };
         } else {
-            ps.vx = if ps.vx > 0.0 { (0.0f32).max(ps.vx - drag_factor) } else { (0.0f32).min(ps.vx + drag_factor) };
+            ps.vx = if ps.vx > 0.0 {
+                (0.0f32).max(ps.vx - drag_factor)
+            } else {
+                (0.0f32).min(ps.vx + drag_factor)
+            };
         }
     }
 

@@ -32,5 +32,7 @@ impl WzNodeExt for crate::wz::Node {
 /// to `Anchor::BOTTOM_LEFT`. WZ origins are loaded as bottom-left-relative offsets in
 /// Bevy Y-up space, so `BOTTOM_LEFT` is the correct anchor for the `pos - origin` formula.
 pub fn set_sprite_bottom_left(trigger: On<Add, Sprite>, mut commands: Commands) {
-    commands.entity(trigger.event().entity).insert(Anchor::BOTTOM_LEFT);
+    commands
+        .entity(trigger.event().entity)
+        .insert(Anchor::BOTTOM_LEFT);
 }

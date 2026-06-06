@@ -1,13 +1,9 @@
-use bevy::{
-    asset::AssetEvent,
-    ecs::message::MessageReader,
-    prelude::*,
-};
-use crate::physics::FootholdGraph;
-use crate::wz::asset_loader::{BackgroundData, TileData, ObjData, WzMapAsset};
 use super::components::*;
 use super::events::*;
 use super::resources::*;
+use crate::physics::FootholdGraph;
+use crate::wz::asset_loader::{BackgroundData, ObjData, TileData, WzMapAsset};
+use bevy::{asset::AssetEvent, ecs::message::MessageReader, prelude::*};
 
 pub fn handle_request_map(
     event: On<RequestMap>,
@@ -25,7 +21,10 @@ pub fn handle_request_map(
     }
 
     if let Some(handle) = cache.get(path) {
-        commands.trigger(MapReady { path: path.clone(), handle });
+        commands.trigger(MapReady {
+            path: path.clone(),
+            handle,
+        });
         return;
     }
 
@@ -37,7 +36,10 @@ pub fn handle_request_map(
 
     let asset_path = format!("wz://{}.map", path);
     let handle = asset_server.load::<WzMapAsset>(&asset_path);
-    *current_map = CurrentMap(MapState::Loading { path: path.clone(), handle });
+    *current_map = CurrentMap(MapState::Loading {
+        path: path.clone(),
+        handle,
+    });
 }
 
 pub fn on_asset_loaded(
@@ -55,7 +57,10 @@ pub fn on_asset_loaded(
         if let AssetEvent::LoadedWithDependencies { id } = ev {
             if *id == loading_handle.id() {
                 cache.insert(loading_path.clone(), loading_handle.clone());
-                commands.trigger(MapReady { path: loading_path, handle: loading_handle });
+                commands.trigger(MapReady {
+                    path: loading_path,
+                    handle: loading_handle,
+                });
                 break;
             }
         }
@@ -84,31 +89,51 @@ pub fn spawn_map(
     commands.insert_resource(bounds);
     let graph = FootholdGraph::from_footholds(asset.footholds.clone());
     commands.insert_resource(graph);
-    commands.trigger(super::events::MapLoaded { path: ev.path.clone(), bounds });
+    commands.trigger(super::events::MapLoaded {
+        path: ev.path.clone(),
+        bounds,
+    });
 
-    let viewport = window.single().map(|w| Vec2::new(w.width(), w.height())).unwrap_or(Vec2::new(1920.0, 1080.0));
+    let viewport = window
+        .single()
+        .map(|w| Vec2::new(w.width(), w.height()))
+        .unwrap_or(Vec2::new(1920.0, 1080.0));
 
-    let mut z = -1000.0;
     let mut sprites = Vec::new();
 
-    for b in &asset.backgrounds {
-        z += 1.0;
-        let tex_size = images.get(&b.image).map(|i| i.size_f32()).unwrap_or(Vec2::splat(128.0));
-        let mut ents = spawn_background_entity(b, &mut commands, z, viewport, tex_size);
+    for b in asset.backgrounds.iter() {
+        let tex_size = images.get(&b.image).map(|i| i.size_f32()).unwrap();
+        let mut ents =
+            spawn_background_entity(b, &mut commands, b.index as f32, viewport, tex_size);
+        info!("index {} type {} pos {} ", b.index, b.btype, b.pos);
         sprites.append(&mut ents);
     }
 
     info!("spawned {} sprites for map {}", sprites.len(), ev.path);
-    *current_map = CurrentMap(MapState::Loaded { path: ev.path.clone(), sprites, handle: ev.handle.clone() });
+    *current_map = CurrentMap(MapState::Loaded {
+        path: ev.path.clone(),
+        sprites,
+        handle: ev.handle.clone(),
+    });
 }
 
-fn compute_bounds(info: &crate::wz::asset_loader::MapInfo, footholds: &[crate::wz::asset_loader::Foothold]) -> super::resources::MapBounds {
-    if let (Some(l), Some(r), Some(t), Some(b)) = (info.vr_left, info.vr_right, info.vr_top, info.vr_bottom) {
+fn compute_bounds(
+    info: &crate::wz::asset_loader::MapInfo,
+    footholds: &[crate::wz::asset_loader::Foothold],
+) -> super::resources::MapBounds {
+    if let (Some(l), Some(r), Some(t), Some(b)) =
+        (info.vr_left, info.vr_right, info.vr_top, info.vr_bottom)
+    {
         super::resources::MapBounds::from_vr(l, r, t, b)
     } else if !footholds.is_empty() {
         super::resources::MapBounds::from_footholds(footholds)
     } else {
-        super::resources::MapBounds { left: -1000.0, right: 1000.0, top: 1000.0, bottom: -1000.0 }
+        super::resources::MapBounds {
+            left: -1000.0,
+            right: 1000.0,
+            top: 1000.0,
+            bottom: -1000.0,
+        }
     }
 }
 
@@ -158,35 +183,48 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
     }
 
     if obj.flow != 0 || obj.animation_frames.iter().any(|f| f.move_type != 0) {
-        let move_type = obj.animation_frames.first()
+        let move_type = obj
+            .animation_frames
+            .first()
             .map(|f| f.move_type)
             .unwrap_or(0);
-        let move_w = obj.animation_frames.first()
+        let move_w = obj
+            .animation_frames
+            .first()
             .map(|f| f.move_w)
             .unwrap_or(0.0);
-        let move_h = obj.animation_frames.first()
+        let move_h = obj
+            .animation_frames
+            .first()
             .map(|f| f.move_h)
             .unwrap_or(0.0);
-        let move_p = obj.animation_frames.first()
+        let move_p = obj
+            .animation_frames
+            .first()
             .map(|f| f.move_p)
             .unwrap_or(6283.0);
-        let move_r = obj.animation_frames.first()
+        let move_r = obj
+            .animation_frames
+            .first()
             .map(|f| f.move_r)
             .unwrap_or(0.0);
-        let a0 = obj.animation_frames.first()
-            .map(|f| f.a0)
-            .unwrap_or(1.0);
-        let a1 = obj.animation_frames.first()
-            .map(|f| f.a1)
-            .unwrap_or(1.0);
+        let a0 = obj.animation_frames.first().map(|f| f.a0).unwrap_or(1.0);
+        let a1 = obj.animation_frames.first().map(|f| f.a1).unwrap_or(1.0);
 
         entity.insert(MapMoveEffect {
             base: obj.pos,
-            move_type, move_w, move_h, move_p, move_r,
-            a0, a1,
+            move_type,
+            move_w,
+            move_h,
+            move_p,
+            move_r,
+            a0,
+            a1,
             flow: obj.flow,
-            rx: obj.rx, ry: obj.ry,
-            cx: obj.cx, cy: obj.cy,
+            rx: obj.rx,
+            ry: obj.ry,
+            cx: obj.cx,
+            cy: obj.cy,
         });
     }
 
@@ -242,11 +280,27 @@ fn spawn_background_entity(
         return vec![entity.id()];
     }
 
-    let spacing_x: f32 = if b.cx == 0 { tex_size.x } else { b.cx.unsigned_abs() as f32 };
-    let spacing_y: f32 = if b.cy == 0 { tex_size.y } else { b.cy.unsigned_abs() as f32 };
+    let spacing_x: f32 = if b.cx == 0 {
+        tex_size.x
+    } else {
+        b.cx.unsigned_abs() as f32
+    };
+    let spacing_y: f32 = if b.cy == 0 {
+        tex_size.y
+    } else {
+        b.cy.unsigned_abs() as f32
+    };
 
-    let num_cols = if tile_x { (viewport.x / spacing_x).ceil() as i32 + 2 } else { 1 };
-    let num_rows = if tile_y { (viewport.y / spacing_y).ceil() as i32 + 2 } else { 1 };
+    let num_cols = if tile_x {
+        (viewport.x / spacing_x).ceil() as i32 + 2
+    } else {
+        1
+    };
+    let num_rows = if tile_y {
+        (viewport.y / spacing_y).ceil() as i32 + 2
+    } else {
+        1
+    };
 
     let grid_w = num_cols as f32 * spacing_x;
     let grid_h = num_rows as f32 * spacing_y;
@@ -264,11 +318,7 @@ fn spawn_background_entity(
                     flip_x: b.flip,
                     ..default()
                 },
-                Transform::from_translation(Vec3::new(
-                    center.x + tx,
-                    center.y + ty,
-                    z,
-                )),
+                Transform::from_translation(Vec3::new(center.x + tx, center.y + ty, z)),
                 bg.clone(),
                 BackgroundTile {
                     grid_col: col,
@@ -301,7 +351,12 @@ fn spawn_background_entity(
 
 pub fn tick_map_animations(
     time: Res<Time>,
-    mut query: Query<(&mut MapAnimator, &mut Sprite, &mut Transform, Option<&BackgroundTile>)>,
+    mut query: Query<(
+        &mut MapAnimator,
+        &mut Sprite,
+        &mut Transform,
+        Option<&BackgroundTile>,
+    )>,
 ) {
     for (mut anim, mut sprite, mut transform, tile_opt) in &mut query {
         anim.timer.tick(time.delta());
@@ -320,17 +375,11 @@ pub fn tick_map_animations(
             transform.translation = (anim.base - frame.origin).extend(transform.translation.z);
         }
 
-        anim.timer = Timer::from_seconds(
-            frame.delay.max(50) as f32 / 1000.0,
-            TimerMode::Repeating,
-        );
+        anim.timer = Timer::from_seconds(frame.delay.max(50) as f32 / 1000.0, TimerMode::Repeating);
     }
 }
 
-pub fn tick_move_effects(
-    time: Res<Time>,
-    mut query: Query<(&MapMoveEffect, &mut Transform)>,
-) {
+pub fn tick_move_effects(time: Res<Time>, mut query: Query<(&MapMoveEffect, &mut Transform)>) {
     let elapsed = time.elapsed_secs();
 
     for (effect, mut transform) in &mut query {
@@ -367,7 +416,12 @@ pub fn tick_background_parallax(
     camera: Query<(&Camera, &GlobalTransform)>,
     window: Query<&Window>,
     time: Res<Time>,
-    mut backgrounds: Query<(&MapParallaxBackground, &mut Transform, &mut Sprite, Option<&BackgroundTile>)>,
+    mut backgrounds: Query<(
+        &MapParallaxBackground,
+        &mut Transform,
+        &mut Sprite,
+        Option<&BackgroundTile>,
+    )>,
 ) {
     let Ok((_cam, cam_global)) = camera.single() else {
         return;
@@ -412,8 +466,8 @@ pub fn tick_background_parallax(
             continue;
         };
 
-        // Tiled background: grid is viewport-aligned so tiles always cover screen.
-        // Intra-grid scroll offset creates the parallax / auto-scroll effect.
+        // Tiled background: keep the repeated pattern anchored to the WZ position.
+        // The camera is only used to pick which repeated copies are near the viewport.
         let offset_x = match bg.btype {
             0 | 1 | 2 | 3 | 5 | 7 => rx * cam_pos.x / 100.0,
             4 | 6 => rx * 5.0 * elapsed,
@@ -425,57 +479,24 @@ pub fn tick_background_parallax(
             _ => 0.0,
         };
 
-        let grid_w = tile.num_cols as f32 * tile.spacing_x;
-        let grid_h = tile.num_rows as f32 * tile.spacing_y;
+        let anchor = bg.pos - bg.origin;
+        let viewport_left = cam_pos.x - viewport.x / 2.0;
+        let viewport_bottom = cam_pos.y - viewport.y / 2.0;
 
-        // Use viewport center so grid stays visible regardless of camera position.
-        // Tile position wraps within the grid: when one scrolls past the edge it
-        // reappears on the opposite side, giving the illusion of infinite tiles.
-        let tx = (tile.grid_col as f32 * tile.spacing_x + offset_x).rem_euclid(grid_w.max(1.0));
-        let ty = (tile.grid_row as f32 * tile.spacing_y + offset_y).rem_euclid(grid_h.max(1.0));
-
-        transform.translation.x = cam_pos.x - grid_w / 2.0 + tx;
-        transform.translation.y = cam_pos.y - grid_h / 2.0 + ty;
-    }
-}
-
-pub fn draw_background_gizmos(
-    mut gizmos: Gizmos,
-    images: Res<Assets<Image>>,
-    backgrounds: Query<(&MapParallaxBackground, &Transform, &Sprite, Option<&BackgroundTile>)>,
-) {
-    const CROSS_HALF: f32 = 20.0;
-
-    for (bg, transform, sprite, tile_opt) in &backgrounds {
-        let color = bg_gizmo_color(bg.btype, bg.front);
-        let pos = transform.translation.truncate();
-
-        gizmos.line_2d(pos - Vec2::new(CROSS_HALF, 0.0), pos + Vec2::new(CROSS_HALF, 0.0), color);
-        gizmos.line_2d(pos - Vec2::new(0.0, CROSS_HALF), pos + Vec2::new(0.0, CROSS_HALF), color);
-
-        let (w, h) = if let Some(tile) = tile_opt {
-            (tile.spacing_x, tile.spacing_y)
+        if tile.num_cols > 1 {
+            let base_col = ((viewport_left - anchor.x - offset_x) / tile.spacing_x).floor();
+            transform.translation.x =
+                anchor.x + (base_col + tile.grid_col as f32) * tile.spacing_x + offset_x;
         } else {
-            let tex_size = images.get(&sprite.image).map(|i| i.size_f32()).unwrap_or(Vec2::splat(64.0));
-            (tex_size.x, tex_size.y)
-        };
+            transform.translation.x = anchor.x + offset_x;
+        }
 
-        gizmos.rect_2d(pos + Vec2::new(w, h) / 2.0, Vec2::new(w, h), color);
+        if tile.num_rows > 1 {
+            let base_row = ((viewport_bottom - anchor.y - offset_y) / tile.spacing_y).floor();
+            transform.translation.y =
+                anchor.y + (base_row + tile.grid_row as f32) * tile.spacing_y + offset_y;
+        } else {
+            transform.translation.y = anchor.y + offset_y;
+        }
     }
-}
-
-fn bg_gizmo_color(btype: i32, front: bool) -> Color {
-    let (r, g, b) = match btype {
-        0 => (0.2, 1.0, 0.2),
-        1 => (1.0, 1.0, 0.2),
-        2 => (0.2, 0.6, 1.0),
-        3 => (0.2, 1.0, 1.0),
-        4 => (1.0, 0.6, 0.2),
-        5 => (1.0, 0.2, 0.2),
-        6 => (1.0, 0.2, 1.0),
-        7 => (1.0, 0.6, 0.8),
-        _ => (0.8, 0.8, 0.8),
-    };
-    let alpha = if front { 0.95 } else { 0.5 };
-    Color::srgba(r, g, b, alpha)
 }

@@ -11,19 +11,10 @@ pub mod handle {
     use std::sync::Arc;
 
     pub trait MapHandle: Send + Sync {
-        fn add_player(
-            &self,
-            snapshot: super::PlayerSnapshot,
-            session: SessionHandle,
-        );
+        fn add_player(&self, snapshot: super::PlayerSnapshot, session: SessionHandle);
         fn remove_player(&self, player_id: PlayerId);
         fn broadcast(&self, packet: &[u8], except: Option<PlayerId>);
-        fn move_player(
-            &self,
-            player_id: PlayerId,
-            position: Position,
-            moves: Vec<MoveAction>,
-        );
+        fn move_player(&self, player_id: PlayerId, position: Position, moves: Vec<MoveAction>);
         fn player_count(&self) -> usize;
     }
 
@@ -67,11 +58,7 @@ pub mod handle {
     }
 
     impl MapHandle for LocalMapHandle {
-        fn add_player(
-            &self,
-            snapshot: super::PlayerSnapshot,
-            session: SessionHandle,
-        ) {
+        fn add_player(&self, snapshot: super::PlayerSnapshot, session: SessionHandle) {
             let mut map = self.map.blocking_write();
             map.add_player(snapshot, session);
         }
@@ -86,12 +73,7 @@ pub mod handle {
             map.broadcast(packet, except);
         }
 
-        fn move_player(
-            &self,
-            player_id: PlayerId,
-            position: Position,
-            moves: Vec<MoveAction>,
-        ) {
+        fn move_player(&self, player_id: PlayerId, position: Position, moves: Vec<MoveAction>) {
             let mut map = self.map.blocking_write();
             map.move_player(player_id, position, moves);
         }

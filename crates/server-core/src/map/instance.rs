@@ -1,5 +1,5 @@
-use crate::map::handle::SessionHandle;
 use crate::map::PlayerSnapshot as Snapshot;
+use crate::map::handle::SessionHandle;
 use protocol::packets::MoveAction;
 use protocol::types::{MapId, PlayerId, Position};
 use std::collections::HashMap;

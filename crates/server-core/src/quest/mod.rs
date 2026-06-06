@@ -75,12 +75,13 @@ impl QuestRegistry {
         player: &mut Player,
         quest_id: u32,
     ) -> Result<QuestStartedResult, QuestError> {
-        let quest = self
-            .quests
-            .get(&quest_id)
-            .ok_or(QuestError::NotFound)?;
+        let quest = self.quests.get(&quest_id).ok_or(QuestError::NotFound)?;
 
-        if player.active_quests.iter().any(|aq| aq.quest_id == quest_id) {
+        if player
+            .active_quests
+            .iter()
+            .any(|aq| aq.quest_id == quest_id)
+        {
             return Err(QuestError::AlreadyActive);
         }
         if player.completed_quests.contains(&quest_id) {
@@ -95,7 +96,9 @@ impl QuestRegistry {
             eval::CheckResult::Pass => {}
             eval::CheckResult::Fail => {
                 let reason = eval::get_start_failed_reason(&quest.start_check, player);
-                return Err(QuestError::ConditionsNotMet(reason.unwrap_or("unknown").to_string()));
+                return Err(QuestError::ConditionsNotMet(
+                    reason.unwrap_or("unknown").to_string(),
+                ));
             }
             eval::CheckResult::HasScript => return Err(QuestError::ScriptedQuest),
         }
@@ -134,10 +137,7 @@ impl QuestRegistry {
         player: &mut Player,
         quest_id: u32,
     ) -> Result<QuestCompletedResult, QuestError> {
-        let quest = self
-            .quests
-            .get(&quest_id)
-            .ok_or(QuestError::NotFound)?;
+        let quest = self.quests.get(&quest_id).ok_or(QuestError::NotFound)?;
 
         let active_idx = player
             .active_quests
@@ -189,15 +189,8 @@ impl QuestRegistry {
         })
     }
 
-    pub fn forfeit_quest(
-        &self,
-        player: &mut Player,
-        quest_id: u32,
-    ) -> Result<(), QuestError> {
-        let quest = self
-            .quests
-            .get(&quest_id)
-            .ok_or(QuestError::NotFound)?;
+    pub fn forfeit_quest(&self, player: &mut Player, quest_id: u32) -> Result<(), QuestError> {
+        let quest = self.quests.get(&quest_id).ok_or(QuestError::NotFound)?;
 
         let active_idx = player
             .active_quests
@@ -221,18 +214,10 @@ impl QuestRegistry {
         Ok(())
     }
 
-    pub fn on_mob_killed(
-        &self,
-        player: &mut Player,
-        mob_id: u32,
-    ) -> Vec<QuestProgressUpdate> {
+    pub fn on_mob_killed(&self, player: &mut Player, mob_id: u32) -> Vec<QuestProgressUpdate> {
         let mut updates = Vec::new();
 
-        let quest_ids: Vec<u32> = player
-            .active_quests
-            .iter()
-            .map(|aq| aq.quest_id)
-            .collect();
+        let quest_ids: Vec<u32> = player.active_quests.iter().map(|aq| aq.quest_id).collect();
 
         for quest_id in quest_ids {
             if let Some(quest) = self.quests.get(&quest_id) {
@@ -263,11 +248,8 @@ impl QuestRegistry {
                         .and_then(|aq| aq.kill_counts.get(&mob_id).copied())
                         .unwrap_or(0);
                     let completable = aq.is_some_and(|aq| {
-                        eval::check_completion_conditions(
-                            &quest.complete_check,
-                            player,
-                            Some(aq),
-                        ) == eval::CheckResult::Pass
+                        eval::check_completion_conditions(&quest.complete_check, player, Some(aq))
+                            == eval::CheckResult::Pass
                     });
 
                     updates.push(QuestProgressUpdate {
@@ -335,7 +317,7 @@ impl QuestRegistry {
                     branch: DialogBranch::Stop {
                         reason: StopReason::Generic,
                     },
-                }
+                };
             }
         };
 
@@ -357,8 +339,7 @@ impl QuestRegistry {
                 }
                 None => false,
             };
-            let reason =
-                eval::get_complete_failed_reason(&quest.complete_check, player, aq);
+            let reason = eval::get_complete_failed_reason(&quest.complete_check, player, aq);
             dialog::complete_dialog(quest_id, completable, reason)
         }
     }

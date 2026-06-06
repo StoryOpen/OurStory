@@ -15,7 +15,9 @@ pub async fn handle_packet(
     opcode: u16,
     payload: &[u8],
 ) {
-    let Some(op) = RecvOpcode::from_u16(opcode) else { return };
+    let Some(op) = RecvOpcode::from_u16(opcode) else {
+        return;
+    };
     match op {
         RecvOpcode::LoginPassword => login::handle(world, db, session, payload).await,
         RecvOpcode::CharacterSelect => character::handle_select(world, db, session, payload).await,

@@ -16,6 +16,6 @@ pub struct SpawnMob {
 
 #[derive(Event)]
 pub struct SwitchMobAction {
-    pub mob_id: i32,  // target entity mob_id
+    pub mob_id: i32, // target entity mob_id
     pub action: String,
 }

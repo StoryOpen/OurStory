@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use super::asset::WzMobAsset;
 use super::events::{SpawnMob, SwitchMobAction};
 use super::{MobAnimator, MobAssetRegistry, MobId, PendingSpawns};
+use crate::layer::GameLayer;
 
 pub fn tick_mob_animations(
     time: Res<Time>,
@@ -29,10 +30,7 @@ pub fn tick_mob_animations(
         animator.frame = (animator.frame + 1) % action.frames.len();
         let frame = &action.frames[animator.frame];
 
-        animator.timer = Timer::from_seconds(
-            frame.delay as f32 / 1000.0,
-            TimerMode::Once,
-        );
+        animator.timer = Timer::from_seconds(frame.delay as f32 / 1000.0, TimerMode::Once);
 
         if let Some(part) = frame.parts.first() {
             sprite.image = part.image_handle.clone();
@@ -110,10 +108,7 @@ pub fn handle_switch_action(
 
         animator.action = ev.action.clone();
         animator.frame = 0;
-        animator.timer = Timer::from_seconds(
-            first_frame.delay as f32 / 1000.0,
-            TimerMode::Once,
-        );
+        animator.timer = Timer::from_seconds(first_frame.delay as f32 / 1000.0, TimerMode::Once);
         sprite.image = part.image_handle.clone();
         transform.translation = Vec3::new(
             animator.base_x - part.origin.x,
@@ -154,10 +149,7 @@ fn spawn_one(commands: &mut Commands, ev: &SpawnMob, asset: &WzMobAsset) {
         MobAnimator {
             action: action_name.to_string(),
             frame: 0,
-            timer: Timer::from_seconds(
-                first_frame.delay as f32 / 1000.0,
-                TimerMode::Once,
-            ),
+            timer: Timer::from_seconds(first_frame.delay as f32 / 1000.0, TimerMode::Once),
             base_x: ev.x,
             base_y: ev.y,
         },
@@ -165,9 +157,16 @@ fn spawn_one(commands: &mut Commands, ev: &SpawnMob, asset: &WzMobAsset) {
         Transform::from_xyz(
             ev.x - part.origin.x,
             ev.y - part.origin.y,
-            ev.z as f32,
+            GameLayer::Mob.with_offset(ev.z as f32),
         ),
     ));
 
-    bevy::log::info!("spawned mob {} ({}) at ({}, {}, {})", ev.mob_id, asset.info.name, ev.x, ev.y, ev.z);
+    bevy::log::info!(
+        "spawned mob {} ({}) at ({}, {}, {})",
+        ev.mob_id,
+        asset.info.name,
+        ev.x,
+        ev.y,
+        ev.z
+    );
 }

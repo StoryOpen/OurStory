@@ -42,7 +42,9 @@ pub fn spawn_stat_window(
                 ..default()
             },
             ImageNode::from(bg_left.handle),
-            UiWindow { name: "Stat".into() },
+            UiWindow {
+                name: "Stat".into(),
+            },
             UiStatWindow,
         ))
         .with_children(|parent| {
@@ -71,7 +73,13 @@ pub fn spawn_stat_window(
                     },
                     ImageNode::from(btn.normal.clone()),
                     Interaction::default(),
-                    UiButton { name: "BtAuto".into(), normal: btn.normal, hover: btn.hover, pressed: btn.pressed, disabled: btn.disabled },
+                    UiButton {
+                        name: "BtAuto".into(),
+                        normal: btn.normal,
+                        hover: btn.hover,
+                        pressed: btn.pressed,
+                        disabled: btn.disabled,
+                    },
                 ));
             }
         });
@@ -90,7 +98,9 @@ pub fn spawn_stat_window(
                     ..default()
                 },
                 ImageNode::from(right_bg.handle),
-                UiWindow { name: "StatDetail".into() },
+                UiWindow {
+                    name: "StatDetail".into(),
+                },
             ))
             .with_children(|parent| {
                 if let Some(btn) = bt_detail {
@@ -105,7 +115,13 @@ pub fn spawn_stat_window(
                         },
                         ImageNode::from(btn.normal.clone()),
                         Interaction::default(),
-                        UiButton { name: "BtDetail".into(), normal: btn.normal, hover: btn.hover, pressed: btn.pressed, disabled: btn.disabled },
+                        UiButton {
+                            name: "BtDetail".into(),
+                            normal: btn.normal,
+                            hover: btn.hover,
+                            pressed: btn.pressed,
+                            disabled: btn.disabled,
+                        },
                     ));
                 }
             });

@@ -33,18 +33,9 @@ impl Config {
                 id: 0,
                 name: "Scania".into(),
                 channels: vec![
-                    ChannelConfig {
-                        id: 1,
-                        port: 7575,
-                    },
-                    ChannelConfig {
-                        id: 2,
-                        port: 7576,
-                    },
-                    ChannelConfig {
-                        id: 3,
-                        port: 7577,
-                    },
+                    ChannelConfig { id: 1, port: 7575 },
+                    ChannelConfig { id: 2, port: 7576 },
+                    ChannelConfig { id: 3, port: 7577 },
                 ],
                 exp_rate: 1.0,
                 meso_rate: 1.0,

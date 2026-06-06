@@ -5,7 +5,7 @@ use server_core::db::Database;
 use server_core::world::World;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 pub struct SessionRegistry {
     map: HashMap<SessionId, OutboundTx>,
@@ -13,7 +13,9 @@ pub struct SessionRegistry {
 
 impl SessionRegistry {
     pub fn new() -> Self {
-        Self { map: HashMap::new() }
+        Self {
+            map: HashMap::new(),
+        }
     }
 
     #[allow(dead_code)]
@@ -42,7 +44,11 @@ pub async fn run(
 
     while let Some(event) = events.recv().await {
         match event {
-            GameEvent::Packet { session, opcode, payload } => {
+            GameEvent::Packet {
+                session,
+                opcode,
+                payload,
+            } => {
                 let mut w = world.write().await;
                 handlers::handle_packet(&mut w, &db, session, opcode, &payload).await;
             }

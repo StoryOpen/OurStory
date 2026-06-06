@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use bevy::{
-    asset::{io::Reader, AssetLoader, LoadContext, RenderAssetUsages},
+    asset::{AssetLoader, LoadContext, RenderAssetUsages, io::Reader},
     prelude::*,
     reflect::TypePath,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
@@ -73,7 +73,10 @@ impl AssetLoader for WzMobLoader {
         load_context: &mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
         let asset_path = load_context.path().path().to_string_lossy().to_string();
-        let wz_path = asset_path.strip_suffix(".mob").unwrap_or(&asset_path).to_string();
+        let wz_path = asset_path
+            .strip_suffix(".mob")
+            .unwrap_or(&asset_path)
+            .to_string();
 
         let base = crate::wz::get_cached_base();
         let mob_node = base.at_path(&wz_path)?;
@@ -116,8 +119,7 @@ impl AssetLoader for WzMobLoader {
 
                 if is_direct_sprite {
                     let label = format!("{wz_path}/{name}/{frame_index}");
-                    let image_handle =
-                        load_or_decode_image(&frame_node, load_context, label);
+                    let image_handle = load_or_decode_image(&frame_node, load_context, label);
                     let origin = frame_node
                         .try_get("origin")
                         .and_then(|n| -> Option<Vector2D> { n.try_into().ok() })
@@ -149,8 +151,7 @@ impl AssetLoader for WzMobLoader {
                             .unwrap_or(Vec2::ZERO);
 
                         let label = format!("{wz_path}/{name}/{frame_index}/{pn}");
-                        let image_handle =
-                            load_or_decode_image(&part_node, load_context, label);
+                        let image_handle = load_or_decode_image(&part_node, load_context, label);
 
                         parts.push(MobPart {
                             name: pn,
@@ -198,7 +199,10 @@ fn parse_mob_info(mob_node: &Node, mob_id: i32) -> Result<MobInfo, MobLoaderErro
         .unwrap_or_default();
 
     fn read_int(info: &Node, path: &str) -> i32 {
-        info.at_path(path).ok().and_then(|n| -> Option<i32> { n.try_into().ok() }).unwrap_or(0)
+        info.at_path(path)
+            .ok()
+            .and_then(|n| -> Option<i32> { n.try_into().ok() })
+            .unwrap_or(0)
     }
 
     Ok(MobInfo {
@@ -217,10 +221,26 @@ fn parse_mob_info(mob_node: &Node, mob_id: i32) -> Result<MobInfo, MobLoaderErro
 }
 
 fn sort_parts(parts: &mut Vec<MobPart>) {
-    const ORDER: &[&str] = &["back", "body", "arm", "armOverHair", "head", "headOverHair", "face", "weapon", "cap", "cape", "glove", "shoes"];
+    const ORDER: &[&str] = &[
+        "back",
+        "body",
+        "arm",
+        "armOverHair",
+        "head",
+        "headOverHair",
+        "face",
+        "weapon",
+        "cap",
+        "cape",
+        "glove",
+        "shoes",
+    ];
 
     parts.sort_by_key(|p| {
-        ORDER.iter().position(|&k| k == p.name).unwrap_or(usize::MAX)
+        ORDER
+            .iter()
+            .position(|&k| k == p.name)
+            .unwrap_or(usize::MAX)
     });
 }
 
@@ -251,15 +271,15 @@ fn load_or_decode_image(
 fn extract_image(node: &Node) -> DynamicImage {
     if let Some(inlink_node) = node.try_get("_inlink") {
         let path: String = inlink_node.try_into().expect("_inlink not a string");
-        let resolved = resolve_img_relative(node, &path)
-            .expect("failed to resolve _inlink target");
+        let resolved = resolve_img_relative(node, &path).expect("failed to resolve _inlink target");
         return extract_image(&resolved);
     }
 
     if let Some(outlink_node) = node.try_get("_outlink") {
         let path: String = outlink_node.try_into().expect("_outlink not a string");
         let base = crate::wz::get_cached_base();
-        let resolved = base.at_path(&path)
+        let resolved = base
+            .at_path(&path)
             .expect("failed to resolve _outlink target");
         return extract_image(&resolved);
     }
@@ -278,7 +298,9 @@ fn resolve_img_relative(node: &Node, rel_path: &str) -> Option<Node> {
 
     for part in rel_path.split('/') {
         match part {
-            ".." => { segs.pop(); }
+            ".." => {
+                segs.pop();
+            }
             "." => {}
             _ => segs.push(part),
         }

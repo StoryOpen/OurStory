@@ -19,27 +19,34 @@ impl Default for MobPlugin {
 
 impl Plugin for MobPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .init_asset::<WzMobAsset>()
+        app.init_asset::<WzMobAsset>()
             .init_asset_loader::<asset::WzMobLoader>()
             .insert_resource(MobAssetRegistry::new(self.cache_capacity))
             .insert_resource(PendingSpawns::default())
             .add_systems(Startup, spawn_test_mob)
             .add_observer(on_debug_mob_action)
-            .add_systems(Update, (animation::tick_mob_animations, animation::process_pending_spawns))
+            .add_systems(
+                Update,
+                (
+                    animation::tick_mob_animations,
+                    animation::process_pending_spawns,
+                ),
+            )
             .add_observer(animation::spawn_mob)
             .add_observer(animation::handle_switch_action);
     }
 }
 
 fn spawn_test_mob(mut commands: Commands) {
-    commands.trigger(events::SpawnMob { mob_id: 100100, x: 0.0, y: 0.0, z: 100 });
+    commands.trigger(events::SpawnMob {
+        mob_id: 100100,
+        x: 0.0,
+        y: 0.0,
+        z: 100,
+    });
 }
 
-fn on_debug_mob_action(
-    trigger: On<crate::input::ActionEvent>,
-    mut commands: Commands,
-) {
+fn on_debug_mob_action(trigger: On<crate::input::ActionEvent>, mut commands: Commands) {
     use crate::input::KeyAction;
     let mob_action = match trigger.event().0 {
         KeyAction::DebugMobStand => "stand",
@@ -66,7 +73,10 @@ pub struct MobAssetRegistry {
 
 impl MobAssetRegistry {
     pub fn new(capacity: usize) -> Self {
-        Self { entries: Vec::with_capacity(capacity), capacity }
+        Self {
+            entries: Vec::with_capacity(capacity),
+            capacity,
+        }
     }
 
     pub fn get_or_load(&mut self, mob_id: i32, asset_server: &AssetServer) -> Handle<WzMobAsset> {
@@ -85,7 +95,10 @@ impl MobAssetRegistry {
     }
 
     pub fn peek(&self, mob_id: &i32) -> Option<&Handle<WzMobAsset>> {
-        self.entries.iter().find(|(id, _)| id == mob_id).map(|(_, h)| h)
+        self.entries
+            .iter()
+            .find(|(id, _)| id == mob_id)
+            .map(|(_, h)| h)
     }
 }
 
@@ -100,5 +113,3 @@ pub struct MobAnimator {
     pub base_x: f32,
     pub base_y: f32,
 }
-
-

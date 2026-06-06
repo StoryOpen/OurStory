@@ -8,7 +8,7 @@ use server_core::map::{LocalMapHandle, Map};
 use server_core::world::World;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 

@@ -26,9 +26,9 @@ impl Channel {
     }
 
     pub fn get_or_create_map(&mut self, map_id: MapId) -> &mut Box<dyn MapHandle> {
-        self.maps.entry(map_id).or_insert_with(|| {
-            Box::new(LocalMapHandle::new(Map::new(map_id)))
-        })
+        self.maps
+            .entry(map_id)
+            .or_insert_with(|| Box::new(LocalMapHandle::new(Map::new(map_id))))
     }
 
     pub fn add_player(

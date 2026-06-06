@@ -108,14 +108,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match &cli.command {
         Commands::List { path, json } => {
-            let node = resolve_path(&base, path.as_deref().unwrap_or(""))
-                .ok_or("path not found")?;
+            let node =
+                resolve_path(&base, path.as_deref().unwrap_or("")).ok_or("path not found")?;
             let children = get_children(&node);
             if *json {
-                let items: Vec<NodeInfo> = children
-                    .iter()
-                    .map(|(_, n)| get_node_info(n))
-                    .collect();
+                let items: Vec<NodeInfo> = children.iter().map(|(_, n)| get_node_info(n)).collect();
                 println!("{}", serde_json::to_string_pretty(&items)?);
             } else {
                 for (name, child) in &children {
@@ -130,11 +127,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "MsImage" => "MSI",
                         _ => "???",
                     };
-                    let val = info
-                        .value
-                        .map(|v| format!(" = {}", v))
-                        .unwrap_or_default();
-                    println!("  [{:>4}] {} ({} children){val}", type_abbr, name, info.children_count);
+                    let val = info.value.map(|v| format!(" = {}", v)).unwrap_or_default();
+                    println!(
+                        "  [{:>4}] {} ({} children){val}",
+                        type_abbr, name, info.children_count
+                    );
                 }
                 if children.is_empty() {
                     let info = get_node_info(&node);
@@ -145,13 +142,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{} entries", children.len());
             }
         }
-        Commands::Tree {
-            path,
-            depth,
-            json,
-        } => {
-            let node = resolve_path(&base, path.as_deref().unwrap_or(""))
-                .ok_or("path not found")?;
+        Commands::Tree { path, depth, json } => {
+            let node =
+                resolve_path(&base, path.as_deref().unwrap_or("")).ok_or("path not found")?;
             let tree = collect_tree(&node, *depth, 0);
             if *json {
                 println!("{}", serde_json::to_string_pretty(&tree)?);
@@ -193,7 +186,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if !props.is_empty() {
                                     println!("Properties:");
                                     for (k, v) in props {
-                                        println!("  {} = {}", k, serde_json::to_string(v).unwrap_or_default());
+                                        println!(
+                                            "  {} = {}",
+                                            k,
+                                            serde_json::to_string(v).unwrap_or_default()
+                                        );
                                     }
                                 }
                             }
@@ -225,17 +222,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let guard = node.read().unwrap();
             let link_info = {
                 if guard.try_as_uol().is_some() {
-                    let p = guard.try_as_uol()
+                    let p = guard
+                        .try_as_uol()
                         .and_then(|s| s.get_string().ok())
                         .unwrap_or_default();
                     ("UOL", p)
                 } else if let Some(inlink) = guard.children.get("_inlink") {
-                    let p = inlink.read().ok()
+                    let p = inlink
+                        .read()
+                        .ok()
                         .and_then(|g| g.try_as_string().and_then(|s| s.get_string().ok()))
                         .unwrap_or_default();
                     ("_inlink", p)
                 } else if let Some(outlink) = guard.children.get("_outlink") {
-                    let p = outlink.read().ok()
+                    let p = outlink
+                        .read()
+                        .ok()
                         .and_then(|g| g.try_as_string().and_then(|s| s.get_string().ok()))
                         .unwrap_or_default();
                     ("_outlink", p)
@@ -246,7 +248,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             drop(guard);
             if *json {
                 let result = match link_info {
-                    ("", _) => serde_json::json!({"link_type": null, "link_path": null, "target": null}),
+                    ("", _) => {
+                        serde_json::json!({"link_type": null, "link_path": null, "target": null})
+                    }
                     (link_type, link_path) => {
                         serde_json::json!({
                             "link_type": link_type,

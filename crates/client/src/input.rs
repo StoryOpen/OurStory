@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use bevy::prelude::*;
+use std::collections::HashMap;
 
 use crate::physics::{PhysicsSet, PhysicsState};
 
@@ -66,7 +66,8 @@ impl KeyBindings {
     }
 
     pub fn keys_for(&self, action: KeyAction) -> Vec<KeyCode> {
-        self.inner.iter()
+        self.inner
+            .iter()
             .filter(|&(_, a)| *a == action)
             .map(|(&k, _)| k)
             .collect()
@@ -76,29 +77,29 @@ impl KeyBindings {
 impl Default for KeyBindings {
     fn default() -> Self {
         let mut inner = HashMap::new();
-        inner.insert(KeyCode::ArrowLeft,  KeyAction::MoveLeft);
+        inner.insert(KeyCode::ArrowLeft, KeyAction::MoveLeft);
         inner.insert(KeyCode::ArrowRight, KeyAction::MoveRight);
-        inner.insert(KeyCode::ArrowUp,    KeyAction::MoveUp);
-        inner.insert(KeyCode::ArrowDown,  KeyAction::MoveDown);
-        inner.insert(KeyCode::Space,      KeyAction::Jump);
-        inner.insert(KeyCode::Digit1,     KeyAction::Stand1);
-        inner.insert(KeyCode::Digit2,     KeyAction::Walk1);
-        inner.insert(KeyCode::Digit3,     KeyAction::JumpAction);
-        inner.insert(KeyCode::Digit4,     KeyAction::Sit);
-        inner.insert(KeyCode::Digit5,     KeyAction::Prone);
-        inner.insert(KeyCode::Digit6,     KeyAction::Ladder);
-        inner.insert(KeyCode::Digit7,     KeyAction::Rope);
-        inner.insert(KeyCode::Digit8,     KeyAction::Fly);
-        inner.insert(KeyCode::Digit9,     KeyAction::Alert);
-        inner.insert(KeyCode::Digit0,     KeyAction::Dead);
-        inner.insert(KeyCode::KeyQ,       KeyAction::SwingO1);
-        inner.insert(KeyCode::KeyW,       KeyAction::SwingP1);
-        inner.insert(KeyCode::KeyE,       KeyAction::Shoot1);
-        inner.insert(KeyCode::KeyR,       KeyAction::Magic1);
-        inner.insert(KeyCode::F5,         KeyAction::DebugMobStand);
-        inner.insert(KeyCode::F6,         KeyAction::DebugMobMove);
-        inner.insert(KeyCode::F7,         KeyAction::DebugMobHit1);
-        inner.insert(KeyCode::F8,         KeyAction::DebugMobDie1);
+        inner.insert(KeyCode::ArrowUp, KeyAction::MoveUp);
+        inner.insert(KeyCode::ArrowDown, KeyAction::MoveDown);
+        inner.insert(KeyCode::Space, KeyAction::Jump);
+        inner.insert(KeyCode::Digit1, KeyAction::Stand1);
+        inner.insert(KeyCode::Digit2, KeyAction::Walk1);
+        inner.insert(KeyCode::Digit3, KeyAction::JumpAction);
+        inner.insert(KeyCode::Digit4, KeyAction::Sit);
+        inner.insert(KeyCode::Digit5, KeyAction::Prone);
+        inner.insert(KeyCode::Digit6, KeyAction::Ladder);
+        inner.insert(KeyCode::Digit7, KeyAction::Rope);
+        inner.insert(KeyCode::Digit8, KeyAction::Fly);
+        inner.insert(KeyCode::Digit9, KeyAction::Alert);
+        inner.insert(KeyCode::Digit0, KeyAction::Dead);
+        inner.insert(KeyCode::KeyQ, KeyAction::SwingO1);
+        inner.insert(KeyCode::KeyW, KeyAction::SwingP1);
+        inner.insert(KeyCode::KeyE, KeyAction::Shoot1);
+        inner.insert(KeyCode::KeyR, KeyAction::Magic1);
+        inner.insert(KeyCode::F5, KeyAction::DebugMobStand);
+        inner.insert(KeyCode::F6, KeyAction::DebugMobMove);
+        inner.insert(KeyCode::F7, KeyAction::DebugMobHit1);
+        inner.insert(KeyCode::F8, KeyAction::DebugMobDie1);
         Self { inner }
     }
 }
@@ -128,10 +129,10 @@ pub fn dispatch_actions(
 
     for (&key, &action) in &bindings.inner {
         match action {
-            KeyAction::MoveLeft  => intent.left = keyboard.pressed(key),
+            KeyAction::MoveLeft => intent.left = keyboard.pressed(key),
             KeyAction::MoveRight => intent.right = keyboard.pressed(key),
-            KeyAction::MoveUp    => intent.up = keyboard.pressed(key),
-            KeyAction::MoveDown  => intent.down = keyboard.pressed(key),
+            KeyAction::MoveUp => intent.up = keyboard.pressed(key),
+            KeyAction::MoveDown => intent.down = keyboard.pressed(key),
             KeyAction::Jump => {
                 if keyboard.just_pressed(key) {
                     intent.jump_request = true;
@@ -149,9 +150,7 @@ pub fn dispatch_actions(
 
 /// Copies `CharacterIntent` into `PhysicsState` for every entity that has both.
 /// Runs before `PhysicsSet::Simulate` so the physics step consumes the latest intent.
-pub fn apply_intent(
-    mut query: Query<(&CharacterIntent, &mut PhysicsState)>,
-) {
+pub fn apply_intent(mut query: Query<(&CharacterIntent, &mut PhysicsState)>) {
     for (intent, mut ps) in &mut query {
         ps.left = intent.left;
         ps.right = intent.right;
@@ -165,10 +164,9 @@ pub struct InputPlugin;
 
 impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<KeyBindings>()
-           .add_systems(Update, (
-               dispatch_actions,
-               apply_intent.before(PhysicsSet::Simulate),
-           ));
+        app.init_resource::<KeyBindings>().add_systems(
+            Update,
+            (dispatch_actions, apply_intent.before(PhysicsSet::Simulate)),
+        );
     }
 }

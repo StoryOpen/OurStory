@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use bevy::prelude::*;
+use std::collections::HashMap;
 use wz_reader::WzNodeCast;
 
 #[derive(Resource)]
@@ -10,9 +10,11 @@ pub struct ZMap {
 const ZMAP_MAX: usize = 150;
 
 impl ZMap {
+    /// Returns a relative depth offset (0..=150). Callers should add a layer
+    /// base z (e.g. `GameLayer::Character.base_z()`) to get the final z.
     pub fn depth(&self, z: &str) -> f32 {
         let index = self.layers.get(z).copied().unwrap_or(ZMAP_MAX);
-        (ZMAP_MAX - index) as f32 + 50.0
+        (ZMAP_MAX - index) as f32
     }
 }
 
@@ -45,11 +47,11 @@ impl SlotMap {
     /// individual 2-character slot codes. Returns empty if `z` is unknown.
     pub fn slots_for(&self, z: &str) -> Vec<&str> {
         match self.layers.get(z) {
-            Some(s) if s.len() % 2 == 0 => {
-                s.as_bytes().chunks(2)
-                    .filter_map(|c| std::str::from_utf8(c).ok())
-                    .collect()
-            }
+            Some(s) if s.len() % 2 == 0 => s
+                .as_bytes()
+                .chunks(2)
+                .filter_map(|c| std::str::from_utf8(c).ok())
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -260,11 +262,7 @@ pub fn filter_hidden_sprites(
         .collect()
 }
 
-fn compute_connection_point(
-    part_local: Vec3,
-    origin: Vec2,
-    map_entry: Vec2,
-) -> Vec2 {
+fn compute_connection_point(part_local: Vec3, origin: Vec2, map_entry: Vec2) -> Vec2 {
     Vec2::new(
         part_local.x + origin.x + map_entry.x,
         part_local.y + origin.y + map_entry.y,
@@ -275,7 +273,10 @@ fn compute_connection_point(
 /// connection-point matching. Parts with `navel` attach to root center;
 /// parts without `navel` attach to the first matching named connection point
 /// from already-positioned parts.
-pub fn compute_frame_transforms(parts: &[SpriteLayer]) -> HashMap<String, Vec3> {
+///
+/// `z_base` is added to each part's relative z offset (from `SpriteLayer.z`).
+/// Pass `GameLayer::Character.base_z()` for game-semantic layering.
+pub fn compute_frame_transforms(parts: &[SpriteLayer], z_base: f32) -> HashMap<String, Vec3> {
     use std::collections::{HashMap, HashSet};
     let mut cpoints: HashMap<String, Vec2> = HashMap::new();
     cpoints.insert("navel".into(), Vec2::ZERO);
@@ -311,7 +312,7 @@ pub fn compute_frame_transforms(parts: &[SpriteLayer]) -> HashMap<String, Vec3> 
             let pos = Vec3::new(
                 target.x - part.origin.x - map_entry.x,
                 target.y - part.origin.y - map_entry.y,
-                part.z,
+                z_base + part.z,
             );
 
             transforms.insert(part.layer_name.clone(), pos);

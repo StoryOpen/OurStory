@@ -23,7 +23,11 @@ pub fn start_stop_dialog(quest_id: u32, reason: &str) -> QuestDialog {
     }
 }
 
-pub fn complete_dialog(quest_id: u32, completable: bool, failed_reason: Option<&str>) -> QuestDialog {
+pub fn complete_dialog(
+    quest_id: u32,
+    completable: bool,
+    failed_reason: Option<&str>,
+) -> QuestDialog {
     if completable {
         QuestDialog {
             quest_id,

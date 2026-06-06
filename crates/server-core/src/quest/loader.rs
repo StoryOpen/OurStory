@@ -1,7 +1,7 @@
 use super::types::*;
 use std::collections::HashMap;
-use wz_reader::node::WzNodeArc;
 use wz_reader::WzNodeCast;
+use wz_reader::node::WzNodeArc;
 
 pub fn load_quest_registry(base: &WzNodeArc) -> HashMap<u32, QuestDef> {
     let mut quests = HashMap::new();

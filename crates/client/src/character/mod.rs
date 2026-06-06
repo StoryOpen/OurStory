@@ -17,15 +17,13 @@ impl Plugin for CharacterPlugin {
     fn build(&self, app: &mut App) {
         let base = get_cached_base();
         app.insert_resource(load_zmap(base))
-           .insert_resource(load_smap(base))
-           .init_resource::<WzSpriteCache>()
-           .add_observer(spawn_character)
-           .add_observer(on_set_action)
-           .add_observer(on_character_action)
-           .add_systems(Update, (
-                animate_characters,
-            ))
-           .add_systems(Startup, spawn_test_character);
+            .insert_resource(load_smap(base))
+            .init_resource::<WzSpriteCache>()
+            .add_observer(spawn_character)
+            .add_observer(on_set_action)
+            .add_observer(on_character_action)
+            .add_systems(Update, (animate_characters,))
+            .add_systems(Startup, spawn_test_character);
     }
 }
 

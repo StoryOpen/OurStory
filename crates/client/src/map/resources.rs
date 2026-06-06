@@ -1,5 +1,5 @@
+use crate::wz::asset_loader::{Foothold, WzMapAsset};
 use bevy::prelude::*;
-use crate::wz::asset_loader::{WzMapAsset, Foothold};
 
 #[derive(Debug, Clone, Copy, Resource)]
 pub struct MapBounds {
@@ -32,7 +32,12 @@ impl MapBounds {
         }
         top += 75.0;
         bottom -= 300.0;
-        Self { left, right, top, bottom }
+        Self {
+            left,
+            right,
+            top,
+            bottom,
+        }
     }
 
     pub fn width(&self) -> f32 {
@@ -44,14 +49,24 @@ impl MapBounds {
     }
 
     pub fn center(&self) -> Vec2 {
-        Vec2::new((self.left + self.right) * 0.5, (self.top + self.bottom) * 0.5)
+        Vec2::new(
+            (self.left + self.right) * 0.5,
+            (self.top + self.bottom) * 0.5,
+        )
     }
 }
 
 pub enum MapState {
     None,
-    Loading { path: String, handle: Handle<WzMapAsset> },
-    Loaded { path: String, sprites: Vec<Entity>, handle: Handle<WzMapAsset> },
+    Loading {
+        path: String,
+        handle: Handle<WzMapAsset>,
+    },
+    Loaded {
+        path: String,
+        sprites: Vec<Entity>,
+        handle: Handle<WzMapAsset>,
+    },
 }
 
 #[derive(Resource)]
@@ -65,7 +80,10 @@ pub struct MapCache {
 
 impl MapCache {
     pub fn new(capacity: usize) -> Self {
-        Self { entries: Vec::with_capacity(capacity), capacity }
+        Self {
+            entries: Vec::with_capacity(capacity),
+            capacity,
+        }
     }
 
     pub fn get(&mut self, path: &str) -> Option<Handle<WzMapAsset>> {

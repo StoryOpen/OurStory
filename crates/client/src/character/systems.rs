@@ -1,11 +1,12 @@
-use std::collections::HashMap;
 use bevy::prelude::*;
+use std::collections::HashMap;
 
 use crate::character::components::*;
 use crate::character::events::*;
 use crate::character::loader::{self, WzSpriteCache};
 use crate::character::types::*;
 use crate::input::{CharacterIntent, IsLocalPlayer};
+use crate::layer::GameLayer;
 use crate::physics::PhysicsState;
 use crate::wz::get_cached_base;
 
@@ -34,7 +35,10 @@ fn apply_vslot_filter(
     actions: HashMap<String, Vec<FrameData>>,
     face_expressions: HashMap<String, Vec<FrameData>>,
     equipment: &[EquipmentEntry],
-) -> (HashMap<String, Vec<FrameData>>, HashMap<String, Vec<FrameData>>) {
+) -> (
+    HashMap<String, Vec<FrameData>>,
+    HashMap<String, Vec<FrameData>>,
+) {
     let filter_frame = |frame: FrameData| FrameData {
         parts: filter_hidden_sprites(frame.parts, equipment),
         delay: frame.delay,
@@ -50,19 +54,17 @@ fn apply_vslot_filter(
     (actions, face_expressions)
 }
 
-fn build_part_entity(
-    commands: &mut Commands,
-    layer: &SpriteLayer,
-    pos: Vec3,
-) -> Entity {
-    commands.spawn((
-        Sprite::from_image(layer.image.clone()),
-        Transform::from_translation(pos),
-        CharacterPart {
-            layer: layer.layer_name.clone(),
-            z_base: layer.z,
-        },
-    )).id()
+fn build_part_entity(commands: &mut Commands, layer: &SpriteLayer, pos: Vec3) -> Entity {
+    commands
+        .spawn((
+            Sprite::from_image(layer.image.clone()),
+            Transform::from_translation(pos),
+            CharacterPart {
+                layer: layer.layer_name.clone(),
+                z_base: layer.z,
+            },
+        ))
+        .id()
 }
 
 fn update_part_sprite(
@@ -102,13 +104,13 @@ pub fn spawn_character(
     );
 
     let equipment_entries = resolve_equipment(base, &ev.config.equipment);
-    let (actions, face_expressions) = apply_vslot_filter(
-        loaded.actions,
-        loaded.face_expressions,
-        &equipment_entries,
-    );
+    let (actions, face_expressions) =
+        apply_vslot_filter(loaded.actions, loaded.face_expressions, &equipment_entries);
 
-    let face_face_frames = face_expressions.get(&ev.face_expression).cloned().unwrap_or_default();
+    let face_face_frames = face_expressions
+        .get(&ev.face_expression)
+        .cloned()
+        .unwrap_or_default();
     let face_delay = face_face_frames.first().map(|f| f.delay).unwrap_or(2000);
     let first_frames = actions.get(&ev.action);
     let parts = first_frames
@@ -122,7 +124,7 @@ pub fn spawn_character(
     if let Some(face_frame) = face_face_frames.first() {
         merged_parts.extend(face_frame.parts.clone());
     }
-    let positions = compute_frame_transforms(&merged_parts);
+    let positions = compute_frame_transforms(&merged_parts, GameLayer::Character.base_z());
 
     let delay = first_frames
         .and_then(|frames| frames.first())
@@ -130,48 +132,60 @@ pub fn spawn_character(
         .unwrap_or(100);
 
     let pos = ev.transform.translation;
-    let root = commands.spawn((
-        CharacterRoot,
-        ev.config.clone(),
-        CharacterEquipment { entries: equipment_entries },
-        CharacterAnimation {
-            action: ev.action.clone(),
-            frame_idx: 0,
-            timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-            face_expression: ev.face_expression.clone(),
-            face_frame_idx: 0,
-            face_timer: Timer::from_seconds(face_delay as f32 / 1000.0, TimerMode::Repeating),
-        },
-        CharacterFrameData { actions, face_expressions },
-        PartEntities { map: HashMap::new() },
-        CharacterLayer(0),
-        ev.transform,
-        PhysicsState {
-            x: pos.x,
-            y: pos.y,
-            vx: 0.0,
-            vy: 0.0,
-            on_fh: false,
-            fh_id: 0,
-            fh_group: 0,
-            fh_layer: 0,
-            left: false,
-            right: false,
-            up: false,
-            down: false,
-            jump_request: false,
-            enable_gravity: true,
-            enable_footholds: true,
-        },
-        CharacterIntent::default(),
-        IsLocalPlayer,
-    )).id();
+    let root = commands
+        .spawn((
+            CharacterRoot,
+            ev.config.clone(),
+            CharacterEquipment {
+                entries: equipment_entries,
+            },
+            CharacterAnimation {
+                action: ev.action.clone(),
+                frame_idx: 0,
+                timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
+                face_expression: ev.face_expression.clone(),
+                face_frame_idx: 0,
+                face_timer: Timer::from_seconds(face_delay as f32 / 1000.0, TimerMode::Repeating),
+            },
+            CharacterFrameData {
+                actions,
+                face_expressions,
+            },
+            PartEntities {
+                map: HashMap::new(),
+            },
+            CharacterLayer(0),
+            ev.transform,
+            PhysicsState {
+                x: pos.x,
+                y: pos.y,
+                vx: 0.0,
+                vy: 0.0,
+                on_fh: false,
+                fh_id: 0,
+                fh_group: 0,
+                fh_layer: 0,
+                left: false,
+                right: false,
+                up: false,
+                down: false,
+                jump_request: false,
+                enable_gravity: true,
+                enable_footholds: true,
+            },
+            CharacterIntent::default(),
+            IsLocalPlayer,
+        ))
+        .id();
 
     let mut part_map = HashMap::new();
     let mut part_entities = Vec::new();
 
     for layer in &merged_parts {
-        let pos = positions.get(&layer.layer_name).copied().unwrap_or(Vec3::ZERO);
+        let pos = positions
+            .get(&layer.layer_name)
+            .copied()
+            .unwrap_or(Vec3::ZERO);
         let child = build_part_entity(&mut commands, layer, pos);
         part_map.insert(layer.layer_name.clone(), child);
         part_entities.push(child);
@@ -209,7 +223,10 @@ pub fn on_character_action(
         KeyAction::Magic1 => "magic1",
         _ => return,
     };
-    commands.trigger(SetAction { entity, action: anim.to_string() });
+    commands.trigger(SetAction {
+        entity,
+        action: anim.to_string(),
+    });
 }
 
 pub fn animate_characters(
@@ -231,7 +248,8 @@ pub fn animate_characters(
                 if !frames.is_empty() {
                     anim.frame_idx = (anim.frame_idx + 1) % frames.len();
                     let frame = &frames[anim.frame_idx];
-                    anim.timer = Timer::from_seconds(frame.delay as f32 / 1000.0, TimerMode::Repeating);
+                    anim.timer =
+                        Timer::from_seconds(frame.delay as f32 / 1000.0, TimerMode::Repeating);
                     animation_dirty = true;
                 }
             }
@@ -264,16 +282,21 @@ pub fn animate_characters(
 
         let mut merged_parts = frame.parts.clone();
         if let Some(face_frames) = frame_data.face_expressions.get(&anim.face_expression) {
-            if let Some(face_frame) = face_frames.get(anim.face_frame_idx.min(face_frames.len().saturating_sub(1))) {
+            if let Some(face_frame) =
+                face_frames.get(anim.face_frame_idx.min(face_frames.len().saturating_sub(1)))
+            {
                 merged_parts.extend(face_frame.parts.clone());
             }
         }
 
-        let positions = compute_frame_transforms(&merged_parts);
+        let positions = compute_frame_transforms(&merged_parts, GameLayer::Character.base_z());
 
         for layer in &merged_parts {
             if let Some(&child) = part_entities.map.get(&layer.layer_name) {
-                let pos = positions.get(&layer.layer_name).copied().unwrap_or(Vec3::ZERO);
+                let pos = positions
+                    .get(&layer.layer_name)
+                    .copied()
+                    .unwrap_or(Vec3::ZERO);
                 update_part_sprite(child, layer, pos, &mut part_query);
             }
         }
@@ -303,16 +326,21 @@ pub fn on_set_action(
 
         let mut merged_parts = first.parts.clone();
         if let Some(face_frames) = frame_data.face_expressions.get(&anim.face_expression) {
-            if let Some(face_frame) = face_frames.get(anim.face_frame_idx.min(face_frames.len().saturating_sub(1))) {
+            if let Some(face_frame) =
+                face_frames.get(anim.face_frame_idx.min(face_frames.len().saturating_sub(1)))
+            {
                 merged_parts.extend(face_frame.parts.clone());
             }
         }
 
-        let positions = compute_frame_transforms(&merged_parts);
+        let positions = compute_frame_transforms(&merged_parts, GameLayer::Character.base_z());
 
         for layer in &merged_parts {
             if let Some(&child) = part_entities.map.get(&layer.layer_name) {
-                let pos = positions.get(&layer.layer_name).copied().unwrap_or(Vec3::ZERO);
+                let pos = positions
+                    .get(&layer.layer_name)
+                    .copied()
+                    .unwrap_or(Vec3::ZERO);
                 update_part_sprite(child, layer, pos, &mut part_query);
             }
         }

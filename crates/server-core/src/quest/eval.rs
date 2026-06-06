@@ -100,10 +100,7 @@ pub fn check_completion_conditions(
     CheckResult::Pass
 }
 
-pub fn get_start_failed_reason(
-    conds: &CheckConditions,
-    player: &Player,
-) -> Option<&'static str> {
+pub fn get_start_failed_reason(conds: &CheckConditions, player: &Player) -> Option<&'static str> {
     if let Some(lvmin) = conds.level_min {
         if (player.level as u32) < lvmin {
             return Some("level");

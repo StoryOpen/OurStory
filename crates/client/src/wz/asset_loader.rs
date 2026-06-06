@@ -1,10 +1,10 @@
+use bevy::asset::RenderAssetUsages;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::{
-    asset::{io::Reader, AssetLoader, LoadContext},
+    asset::{AssetLoader, LoadContext, io::Reader},
     prelude::*,
     reflect::TypePath,
 };
-use bevy::asset::RenderAssetUsages;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use image::DynamicImage;
 
 use thiserror::Error;
@@ -261,8 +261,17 @@ impl AssetLoader for WzMapLoader {
         let minimap = load_minimap(&map, &base, load_context);
 
         Ok(WzMapAsset {
-            info, objs, tiles, footholds, backgrounds,
-            life, portals, ladder_ropes, seats, areas, minimap,
+            info,
+            objs,
+            tiles,
+            footholds,
+            backgrounds,
+            life,
+            portals,
+            ladder_ropes,
+            seats,
+            areas,
+            minimap,
         })
     }
 
@@ -328,11 +337,20 @@ fn load_footholds(map: &crate::wz::Node) -> Vec<Foothold> {
                     let cant_through: bool = fh.get_or("cantThrough", false);
                     let forbid_fall_down: bool = fh.get_or("forbidFallDown", false);
                     footholds.push(Foothold {
-                        id, group: group_num, layer: layer_num,
-                        x1, y1, x2, y2,
-                        force, forbid_fall, piece,
-                        next_id, prev_id,
-                        cant_through, forbid_fall_down,
+                        id,
+                        group: group_num,
+                        layer: layer_num,
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        force,
+                        forbid_fall,
+                        piece,
+                        next_id,
+                        prev_id,
+                        cant_through,
+                        forbid_fall_down,
                     });
                 }
             }
@@ -354,12 +372,16 @@ fn load_tiles(
             Err(_) => continue,
         };
 
-        let Some(tile_set) = layer.get_opt::<String>("info/tS") else { continue; };
+        let Some(tile_set) = layer.get_opt::<String>("info/tS") else {
+            continue;
+        };
 
         if let Ok(tile_root) = layer.at_path("tile") {
             let mut children = tile_root.children();
             children.sort_by(|x1, _x2, x3, _x4| {
-                x1.as_str().parse::<i32>().unwrap()
+                x1.as_str()
+                    .parse::<i32>()
+                    .unwrap()
                     .cmp(&x3.as_str().parse::<i32>().unwrap())
             });
             for (name, tile_node) in children {
@@ -376,8 +398,13 @@ fn load_tiles(
                     load_animated_node(&img_node, load_context, &img_path);
 
                 tiles.push(TileData {
-                    image, pos, z, layer: i,
-                    zid: tile_id, origin, animation_frames,
+                    image,
+                    pos,
+                    z,
+                    layer: i,
+                    zid: tile_id,
+                    origin,
+                    animation_frames,
                 });
             }
         }
@@ -415,8 +442,12 @@ fn load_objs(
                 let mut cx: i32 = obj_node.get_or("cx", 0);
                 let mut cy: i32 = obj_node.get_or("cy", 0);
 
-                if flow & 1 != 0 && cx == 0 { cx = 1000; }
-                if flow & 2 != 0 && cy == 0 { cy = 1000; }
+                if flow & 1 != 0 && cx == 0 {
+                    cx = 1000;
+                }
+                if flow & 2 != 0 && cy == 0 {
+                    cy = 1000;
+                }
 
                 let img_path = format!("Map/Obj/{}.img/{}/{}/{}/0", obj_set, l0, l1, l2);
                 let img_node = base.at_path(&img_path).unwrap();
@@ -425,9 +456,19 @@ fn load_objs(
                     load_animated_node(&img_node, load_context, &img_path);
 
                 objs.push(ObjData {
-                    image, pos, z, layer: i,
-                    zid, origin, animation_frames,
-                    flip, flow, rx, ry, cx, cy,
+                    image,
+                    pos,
+                    z,
+                    layer: i,
+                    zid,
+                    origin,
+                    animation_frames,
+                    flip,
+                    flow,
+                    rx,
+                    ry,
+                    cx,
+                    cy,
                 });
             }
         }
@@ -475,12 +516,23 @@ fn load_backgrounds(
             load_animated_node(&img_node, load_context, &img_label);
 
         backgrounds.push(BackgroundData {
-            image, front, rx, ry, btype, cx, cy,
-            alpha: alpha.clamp(0, 255) as u8, flip,
-            pos, origin, index, animation_frames,
+            image,
+            front,
+            rx,
+            ry,
+            btype,
+            cx,
+            cy,
+            alpha: alpha.clamp(0, 255) as u8,
+            flip,
+            pos,
+            origin,
+            index,
+            animation_frames,
         });
     }
 
+    backgrounds.sort_by_key(|b| b.index);
     backgrounds
 }
 
@@ -506,7 +558,18 @@ fn load_life(map: &crate::wz::Node) -> Vec<LifeSpawn> {
         let hide: bool = life_node.get_or::<bool>("hide", false);
         let flip: bool = life_node.get_or::<bool>("f", false);
 
-        life.push(LifeSpawn { spawn_type, id, pos, cy, fh, rx0, rx1, mob_time, hide, flip });
+        life.push(LifeSpawn {
+            spawn_type,
+            id,
+            pos,
+            cy,
+            fh,
+            rx0,
+            rx1,
+            mob_time,
+            hide,
+            flip,
+        });
     }
 
     life
@@ -531,7 +594,18 @@ fn load_portals(map: &crate::wz::Node) -> Vec<PortalData> {
         let vertical_impact: Option<i32> = portal_node.get_opt("verticalImpact");
         let only_once: Option<i32> = portal_node.get_opt("onlyOnce");
 
-        portals.push(PortalData { pt, pn, pos, tm, tn, script, delay, horizontal_impact, vertical_impact, only_once });
+        portals.push(PortalData {
+            pt,
+            pn,
+            pos,
+            tm,
+            tn,
+            script,
+            delay,
+            horizontal_impact,
+            vertical_impact,
+            only_once,
+        });
     }
 
     portals
@@ -554,7 +628,14 @@ fn load_ladder_ropes(map: &crate::wz::Node) -> Vec<LadderRopeData> {
         let uf: i32 = lr_node.get_or("uf", 0);
         let page: i32 = lr_node.get_or("page", 0);
 
-        lrs.push(LadderRopeData { x, y1, y2, is_ladder, uf, page });
+        lrs.push(LadderRopeData {
+            x,
+            y1,
+            y2,
+            is_ladder,
+            uf,
+            page,
+        });
     }
 
     lrs
@@ -587,7 +668,12 @@ fn load_areas(map: &crate::wz::Node) -> Vec<AreaData> {
         let raw_y1: i32 = area_node.get_or("y1", 0);
         let x2: i32 = area_node.get_or("x2", 0);
         let raw_y2: i32 = area_node.get_or("y2", 0);
-        areas.push(AreaData { x1, y1: -raw_y1, x2, y2: -raw_y2 });
+        areas.push(AreaData {
+            x1,
+            y1: -raw_y1,
+            x2,
+            y2: -raw_y2,
+        });
     }
 
     areas
@@ -601,7 +687,11 @@ fn load_minimap(
     let mm_node = map.at_path("miniMap").ok()?;
 
     let canvas_node = mm_node.at_path("canvas").ok()?;
-    let handle = load_or_decode_image(&canvas_node, load_context, format!("{}/miniMap/canvas", map.path()));
+    let handle = load_or_decode_image(
+        &canvas_node,
+        load_context,
+        format!("{}/miniMap/canvas", map.path()),
+    );
 
     let x: Option<i32> = mm_node.get_opt("x");
     let y: Option<i32> = mm_node.get_opt::<i32>("y").map(|v| -v);
@@ -609,7 +699,14 @@ fn load_minimap(
     let height: Option<i32> = mm_node.get_opt("height");
     let mag: Option<i32> = mm_node.get_opt("mag");
 
-    Some(MiniMapData { image: handle, x, y, width, height, mag })
+    Some(MiniMapData {
+        image: handle,
+        x,
+        y,
+        width,
+        height,
+        mag,
+    })
 }
 
 fn load_or_decode_image(
@@ -643,8 +740,7 @@ fn load_animated_node(
     load_context: &mut LoadContext<'_>,
     base_path: &str,
 ) -> (Vec<AnimFrame>, Handle<Image>, Vec2) {
-    let is_animated = node.has("0")
-        && TryInto::<DynamicImage>::try_into(node.clone()).is_err();
+    let is_animated = node.has("0") && TryInto::<DynamicImage>::try_into(node.clone()).is_err();
 
     if !is_animated {
         let handle = load_or_decode_image(node, load_context, base_path.to_string());
@@ -658,7 +754,9 @@ fn load_animated_node(
 
     let mut children = node.children();
     children.sort_by(|a, _, b, _| {
-        a.as_str().parse::<i32>().unwrap_or(0)
+        a.as_str()
+            .parse::<i32>()
+            .unwrap_or(0)
             .cmp(&b.as_str().parse::<i32>().unwrap_or(0))
     });
 
@@ -690,14 +788,20 @@ fn load_animated_node(
         }
 
         frames.push(AnimFrame {
-            image: handle, origin, delay,
-            move_type, move_w, move_h, move_p, move_r,
-            a0, a1,
+            image: handle,
+            origin,
+            delay,
+            move_type,
+            move_w,
+            move_h,
+            move_p,
+            move_r,
+            a0,
+            a1,
         });
     }
 
-    let handle = first_handle.unwrap_or_else(|| {
-        load_or_decode_image(node, load_context, base_path.to_string())
-    });
+    let handle = first_handle
+        .unwrap_or_else(|| load_or_decode_image(node, load_context, base_path.to_string()));
     (frames, handle, first_origin)
 }

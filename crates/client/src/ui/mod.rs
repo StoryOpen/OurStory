@@ -27,9 +27,7 @@ fn setup_ui(
     stat::spawn_stat_window(&mut commands, &mut cache, &mut images);
 }
 
-fn update_button_sprites(
-    mut query: Query<(&Interaction, &mut UiButton, &mut ImageNode)>,
-) {
+fn update_button_sprites(mut query: Query<(&Interaction, &mut UiButton, &mut ImageNode)>) {
     for (interaction, button, mut image_node) in query.iter_mut() {
         let new_image = match interaction {
             Interaction::None => button.normal.clone(),

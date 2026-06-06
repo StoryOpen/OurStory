@@ -8,8 +8,8 @@
 #   Or install mold:       brew install mold
 
 [target.x86_64-unknown-linux-gnu]
-linker = "gcc"
-# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=/usr/bin/mold"]
 
 # macOS: uncomment after installing a fast linker:
 # [target.aarch64-apple-darwin]

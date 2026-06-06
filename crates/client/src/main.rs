@@ -1,7 +1,8 @@
+mod camera;
 #[cfg(feature = "character")]
 mod character;
-mod camera;
 mod input;
+mod layer;
 mod physics;
 mod wz;
 
@@ -17,15 +18,18 @@ const WORLD_Y: DiagnosticPath = DiagnosticPath::const_new("world/y");
 const SCREEN_X: DiagnosticPath = DiagnosticPath::const_new("screen/x");
 const SCREEN_Y: DiagnosticPath = DiagnosticPath::const_new("screen/y");
 
-use bevy::prelude::*;
 use bevy::camera::ScalingMode;
-use bevy::diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, FrameTimeDiagnosticsPlugin, RegisterDiagnostic};
 use bevy::dev_tools::diagnostics_overlay::{
-    DiagnosticsOverlay, DiagnosticsOverlayItem, DiagnosticsOverlayPlugin, DiagnosticsOverlayStatistic,
+    DiagnosticsOverlay, DiagnosticsOverlayItem, DiagnosticsOverlayPlugin,
+    DiagnosticsOverlayStatistic,
 };
+use bevy::diagnostic::{
+    Diagnostic, DiagnosticPath, Diagnostics, FrameTimeDiagnosticsPlugin, RegisterDiagnostic,
+};
+use bevy::prelude::*;
+use camera::CameraPlugin;
 #[cfg(feature = "character")]
 use character::CharacterPlugin;
-use camera::CameraPlugin;
 use input::InputPlugin;
 use wz::asset_source::WzAssetSourcePlugin;
 use wz::get_cached_base;
@@ -36,6 +40,12 @@ use map::MapPlugin;
 use mob::MobPlugin;
 #[cfg(feature = "ui")]
 use ui::UiPlugin;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ClientSet {
+    Camera,
+    Visuals,
+}
 
 fn main() {
     let workspace_id: String = std::env::var("WORKSPACE_ID").unwrap_or_default();
@@ -48,23 +58,49 @@ fn main() {
 
     let mut app = App::new();
     app.add_plugins(WzAssetSourcePlugin)
-       .add_plugins(bevy::remote::RemotePlugin::default())
-       .add_plugins(DefaultPlugins.set(ImagePlugin::default_linear()).set(WindowPlugin {
-           primary_window: Some(Window { title, ..default() }),
-           ..default()
-       }))
-       .add_plugins(FrameTimeDiagnosticsPlugin::default())
-       .add_plugins(DiagnosticsOverlayPlugin)
-       .register_diagnostic(Diagnostic::new(WORLD_X).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
-       .register_diagnostic(Diagnostic::new(WORLD_Y).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
-       .register_diagnostic(Diagnostic::new(SCREEN_X).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0))
-       .register_diagnostic(Diagnostic::new(SCREEN_Y).with_suffix("px").with_max_history_length(1).with_smoothing_factor(0.0));
+        .add_plugins(bevy::remote::RemotePlugin::default())
+        .add_plugins(bevy::remote::http::RemoteHttpPlugin::default())
+        .add_plugins(
+            DefaultPlugins
+                .set(ImagePlugin::default_linear())
+                .set(WindowPlugin {
+                    primary_window: Some(Window { title, ..default() }),
+                    ..default()
+                }),
+        )
+        .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(DiagnosticsOverlayPlugin)
+        .register_diagnostic(
+            Diagnostic::new(WORLD_X)
+                .with_suffix("px")
+                .with_max_history_length(1)
+                .with_smoothing_factor(0.0),
+        )
+        .register_diagnostic(
+            Diagnostic::new(WORLD_Y)
+                .with_suffix("px")
+                .with_max_history_length(1)
+                .with_smoothing_factor(0.0),
+        )
+        .register_diagnostic(
+            Diagnostic::new(SCREEN_X)
+                .with_suffix("px")
+                .with_max_history_length(1)
+                .with_smoothing_factor(0.0),
+        )
+        .register_diagnostic(
+            Diagnostic::new(SCREEN_Y)
+                .with_suffix("px")
+                .with_max_history_length(1)
+                .with_smoothing_factor(0.0),
+        )
+        .configure_sets(Update, (ClientSet::Camera, ClientSet::Visuals).chain());
 
     #[cfg(feature = "character")]
     app.add_plugins(CharacterPlugin);
     app.add_plugins(CameraPlugin)
-       .add_plugins(InputPlugin)
-       .add_plugins(physics::PhysicsPlugin);
+        .add_plugins(InputPlugin)
+        .add_plugins(physics::PhysicsPlugin);
     #[cfg(feature = "map")]
     app.add_plugins(MapPlugin::default());
     #[cfg(feature = "mob")]
@@ -73,22 +109,26 @@ fn main() {
     app.add_plugins(UiPlugin);
 
     app.add_observer(wz::set_sprite_bottom_left)
-       .add_systems(Startup, setup)
-       .add_systems(Update, write_coords)
-       .run();
+        .add_systems(Startup, setup)
+        .add_systems(Update, (write_coords, draw_entity_gizmos))
+        .run();
 }
 
 fn setup(mut commands: Commands) {
+    let viewport_height = 768.0f32;
     commands.spawn((
         Camera2d,
         camera::resources::MainCamera,
         Projection::Orthographic(OrthographicProjection {
-            scaling_mode: ScalingMode::FixedVertical { viewport_height: 768.0 },
+            scaling_mode: ScalingMode::FixedVertical { viewport_height },
             ..OrthographicProjection::default_2d()
         }),
-        Transform::from_xyz(0.0, -384.0, 0.0),
+        Transform::from_xyz(0.0, viewport_height * 0.5, 0.0),
     ));
-    commands.insert_resource(camera::resources::BaseResolution { width: 1024.0, height: 768.0 });
+    commands.insert_resource(camera::resources::BaseResolution {
+        width: 1024.0,
+        height: 768.0,
+    });
     commands.insert_resource(physics::load_physics(get_cached_base()));
     commands.spawn(DiagnosticsOverlay {
         title: "Debug".into(),
@@ -148,5 +188,20 @@ fn write_coords(
     if let Some(cursor_position) = window.cursor_position() {
         diagnostics.add_measurement(&SCREEN_X, || cursor_position.x as f64);
         diagnostics.add_measurement(&SCREEN_Y, || cursor_position.y as f64);
+    }
+}
+
+fn draw_entity_gizmos(
+    mut gizmos: Gizmos,
+    query: Query<(&Transform, &Sprite)>,
+    images: Res<Assets<Image>>,
+) {
+    for (transform, sprite) in &query {
+        let size = sprite
+            .custom_size
+            .or_else(|| images.get(&sprite.image).map(|i| i.size_f32()))
+            .unwrap_or(Vec2::splat(32.0));
+        let pos = transform.translation.truncate() + size * 0.5;
+        gizmos.rect_2d(pos, size, Color::srgba(0.0, 1.0, 0.0, 0.3));
     }
 }

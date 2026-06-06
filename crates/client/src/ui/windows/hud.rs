@@ -134,7 +134,13 @@ pub fn spawn_hud(
                                     },
                                     ImageNode::from(btn.normal.clone()),
                                     Interaction::default(),
-                                    UiButton { name: name.into(), normal: btn.normal, hover: btn.hover, pressed: btn.pressed, disabled: btn.disabled },
+                                    UiButton {
+                                        name: name.into(),
+                                        normal: btn.normal,
+                                        hover: btn.hover,
+                                        pressed: btn.pressed,
+                                        disabled: btn.disabled,
+                                    },
                                 ));
                             }
                         }
@@ -150,85 +156,107 @@ pub fn spawn_hud(
                     })
                     .with_children(|center| {
                         // Gauge row (flex-row)
-                        center.spawn(Node {
-                            flex_direction: FlexDirection::Row,
-                            column_gap: Val::Px(2.0),
-                            align_items: AlignItems::Center,
-                            ..default()
-                        })
-                        .with_children(|gauge_row| {
-                            // Gray background
-                            if let Some(gray) = gauge_gray {
-                                gauge_row.spawn((
-                                    Node { width: Val::Px(340.0), height: Val::Px(16.0), ..default() },
-                                    ImageNode::from(gray.handle),
-                                ));
-                            }
-                            // Bar overlay
-                            if let Some(bar) = gauge_bar {
-                                gauge_row.spawn((
-                                    Node {
-                                        width: Val::Px(340.0),
-                                        height: Val::Px(31.0),
-                                        position_type: PositionType::Absolute,
-                                        left: Val::Px(0.0),
-                                        top: Val::Px(0.0),
-                                        ..default()
-                                    },
-                                    ImageNode::from(bar.handle),
-                                ));
-                            }
-                            // Graduation marks
-                            if let Some(grad) = gauge_graduation {
-                                gauge_row.spawn((
-                                    Node {
-                                        width: Val::Px(340.0),
-                                        height: Val::Px(31.0),
-                                        position_type: PositionType::Absolute,
-                                        left: Val::Px(0.0),
-                                        top: Val::Px(0.0),
-                                        ..default()
-                                    },
-                                    ImageNode::from(grad.handle),
-                                ));
-                            }
-                        });
-
-                        // Menu row (flex-row)
-                        center.spawn(Node {
-                            flex_direction: FlexDirection::Row,
-                            column_gap: Val::Px(2.0),
-                            align_items: AlignItems::Center,
-                            ..default()
-                        })
-                        .with_children(|menu_row| {
-                            for (name, btn_data) in [
-                                ("BtMenu", bt_menu),
-                                ("BtShort", bt_short),
-                            ] {
-                                if let Some(btn) = btn_data {
-                                    menu_row.spawn((
-                                        Node { width: Val::Px(54.0), height: Val::Px(34.0), ..default() },
-                                        ImageNode::from(btn.normal.clone()),
-                                        Interaction::default(),
-                                        UiButton { name: name.into(), normal: btn.normal, hover: btn.hover, pressed: btn.pressed, disabled: btn.disabled },
+                        center
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(2.0),
+                                align_items: AlignItems::Center,
+                                ..default()
+                            })
+                            .with_children(|gauge_row| {
+                                // Gray background
+                                if let Some(gray) = gauge_gray {
+                                    gauge_row.spawn((
+                                        Node {
+                                            width: Val::Px(340.0),
+                                            height: Val::Px(16.0),
+                                            ..default()
+                                        },
+                                        ImageNode::from(gray.handle),
                                     ));
                                 }
-                            }
+                                // Bar overlay
+                                if let Some(bar) = gauge_bar {
+                                    gauge_row.spawn((
+                                        Node {
+                                            width: Val::Px(340.0),
+                                            height: Val::Px(31.0),
+                                            position_type: PositionType::Absolute,
+                                            left: Val::Px(0.0),
+                                            top: Val::Px(0.0),
+                                            ..default()
+                                        },
+                                        ImageNode::from(bar.handle),
+                                    ));
+                                }
+                                // Graduation marks
+                                if let Some(grad) = gauge_graduation {
+                                    gauge_row.spawn((
+                                        Node {
+                                            width: Val::Px(340.0),
+                                            height: Val::Px(31.0),
+                                            position_type: PositionType::Absolute,
+                                            left: Val::Px(0.0),
+                                            top: Val::Px(0.0),
+                                            ..default()
+                                        },
+                                        ImageNode::from(grad.handle),
+                                    ));
+                                }
+                            });
 
-                            // Chat target
-                            if let Some(ct) = chat_target {
-                                menu_row.spawn((
-                                    Node { width: Val::Px(81.0), height: Val::Px(20.0), ..default() },
-                                    ImageNode::from(ct.handle),
-                                ));
-                            }
-                        });
+                        // Menu row (flex-row)
+                        center
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(2.0),
+                                align_items: AlignItems::Center,
+                                ..default()
+                            })
+                            .with_children(|menu_row| {
+                                for (name, btn_data) in [("BtMenu", bt_menu), ("BtShort", bt_short)]
+                                {
+                                    if let Some(btn) = btn_data {
+                                        menu_row.spawn((
+                                            Node {
+                                                width: Val::Px(54.0),
+                                                height: Val::Px(34.0),
+                                                ..default()
+                                            },
+                                            ImageNode::from(btn.normal.clone()),
+                                            Interaction::default(),
+                                            UiButton {
+                                                name: name.into(),
+                                                normal: btn.normal,
+                                                hover: btn.hover,
+                                                pressed: btn.pressed,
+                                                disabled: btn.disabled,
+                                            },
+                                        ));
+                                    }
+                                }
+
+                                // Chat target
+                                if let Some(ct) = chat_target {
+                                    menu_row.spawn((
+                                        Node {
+                                            width: Val::Px(81.0),
+                                            height: Val::Px(20.0),
+                                            ..default()
+                                        },
+                                        ImageNode::from(ct.handle),
+                                    ));
+                                }
+                            });
 
                         // Chat line
                         if let Some(chat) = chat_line {
                             center.spawn((
-                                Node { width: Val::Px(566.0), height: Val::Px(5.0), ..default() },
+                                Node {
+                                    width: Val::Px(566.0),
+                                    height: Val::Px(5.0),
+                                    ..default()
+                                },
                                 ImageNode::from(chat.handle),
                             ));
                         }
@@ -243,61 +271,86 @@ pub fn spawn_hud(
                     })
                     .with_children(|right| {
                         // Shop buttons column
-                        right.spawn(Node {
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(2.0),
-                            ..default()
-                        })
-                        .with_children(|shop_col| {
-                            // Top row: Shop + NPT
-                            shop_col.spawn(Node {
-                                flex_direction: FlexDirection::Row,
-                                column_gap: Val::Px(2.0),
+                        right
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(2.0),
                                 ..default()
                             })
-                            .with_children(|top_row| {
-                                for (name, btn_data) in [
-                                    ("BtShop", bt_shop),
-                                    ("BtNPT", bt_npt),
-                                ] {
-                                    if let Some(btn) = btn_data {
-                                        top_row.spawn((
-                                            Node { width: Val::Px(54.0), height: Val::Px(34.0), ..default() },
-                                            ImageNode::from(btn.normal.clone()),
-                                            Interaction::default(),
-                                            UiButton { name: name.into(), normal: btn.normal, hover: btn.hover, pressed: btn.pressed, disabled: btn.disabled },
-                                        ));
-                                    }
-                                }
-                            });
+                            .with_children(|shop_col| {
+                                // Top row: Shop + NPT
+                                shop_col
+                                    .spawn(Node {
+                                        flex_direction: FlexDirection::Row,
+                                        column_gap: Val::Px(2.0),
+                                        ..default()
+                                    })
+                                    .with_children(|top_row| {
+                                        for (name, btn_data) in
+                                            [("BtShop", bt_shop), ("BtNPT", bt_npt)]
+                                        {
+                                            if let Some(btn) = btn_data {
+                                                top_row.spawn((
+                                                    Node {
+                                                        width: Val::Px(54.0),
+                                                        height: Val::Px(34.0),
+                                                        ..default()
+                                                    },
+                                                    ImageNode::from(btn.normal.clone()),
+                                                    Interaction::default(),
+                                                    UiButton {
+                                                        name: name.into(),
+                                                        normal: btn.normal,
+                                                        hover: btn.hover,
+                                                        pressed: btn.pressed,
+                                                        disabled: btn.disabled,
+                                                    },
+                                                ));
+                                            }
+                                        }
+                                    });
 
-                            // Bottom row: Claim + Whisper
-                            shop_col.spawn(Node {
-                                flex_direction: FlexDirection::Row,
-                                column_gap: Val::Px(2.0),
-                                ..default()
-                            })
-                            .with_children(|bot_row| {
-                                for (name, btn_data) in [
-                                    ("BtClaim", bt_claim),
-                                    ("BtWhisper", bt_whisper),
-                                ] {
-                                    if let Some(btn) = btn_data {
-                                        bot_row.spawn((
-                                            Node { width: Val::Px(20.0), height: Val::Px(19.0), ..default() },
-                                            ImageNode::from(btn.normal.clone()),
-                                            Interaction::default(),
-                                            UiButton { name: name.into(), normal: btn.normal, hover: btn.hover, pressed: btn.pressed, disabled: btn.disabled },
-                                        ));
-                                    }
-                                }
+                                // Bottom row: Claim + Whisper
+                                shop_col
+                                    .spawn(Node {
+                                        flex_direction: FlexDirection::Row,
+                                        column_gap: Val::Px(2.0),
+                                        ..default()
+                                    })
+                                    .with_children(|bot_row| {
+                                        for (name, btn_data) in
+                                            [("BtClaim", bt_claim), ("BtWhisper", bt_whisper)]
+                                        {
+                                            if let Some(btn) = btn_data {
+                                                bot_row.spawn((
+                                                    Node {
+                                                        width: Val::Px(20.0),
+                                                        height: Val::Px(19.0),
+                                                        ..default()
+                                                    },
+                                                    ImageNode::from(btn.normal.clone()),
+                                                    Interaction::default(),
+                                                    UiButton {
+                                                        name: name.into(),
+                                                        normal: btn.normal,
+                                                        hover: btn.hover,
+                                                        pressed: btn.pressed,
+                                                        disabled: btn.disabled,
+                                                    },
+                                                ));
+                                            }
+                                        }
+                                    });
                             });
-                        });
 
                         // Quickslot panel
                         if let Some(qs) = quickslot_bg {
                             right.spawn((
-                                Node { width: Val::Px(151.0), height: Val::Px(80.0), ..default() },
+                                Node {
+                                    width: Val::Px(151.0),
+                                    height: Val::Px(80.0),
+                                    ..default()
+                                },
                                 ImageNode::from(qs.handle),
                             ));
                         }
