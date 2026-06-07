@@ -42,8 +42,13 @@ use mob::MobPlugin;
 use ui::UiPlugin;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ClientSet {
+pub enum GameSet {
+    Input,
+    Physics,
+    Animation,
     Camera,
+    Audio,
+    Ui,
     Visuals,
 }
 
@@ -94,7 +99,19 @@ fn main() {
                 .with_max_history_length(1)
                 .with_smoothing_factor(0.0),
         )
-        .configure_sets(Update, (ClientSet::Camera, ClientSet::Visuals).chain());
+        .configure_sets(
+            Update,
+            (
+                GameSet::Input,
+                physics::PhysicsSet::Simulate,
+                GameSet::Animation,
+                GameSet::Camera,
+                GameSet::Audio,
+                GameSet::Ui,
+                GameSet::Visuals,
+            )
+                .chain(),
+        );
 
     #[cfg(feature = "character")]
     app.add_plugins(CharacterPlugin);
@@ -110,7 +127,10 @@ fn main() {
 
     app.add_observer(wz::set_sprite_bottom_left)
         .add_systems(Startup, setup)
-        .add_systems(Update, (write_coords, draw_entity_gizmos))
+        .add_systems(
+            Update,
+            (write_coords, draw_entity_gizmos).in_set(GameSet::Visuals),
+        )
         .run();
 }
 

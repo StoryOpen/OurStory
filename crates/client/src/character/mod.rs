@@ -10,6 +10,7 @@ use self::loader::WzSpriteCache;
 use self::systems::*;
 use self::types::{load_smap, load_zmap};
 use crate::wz::get_cached_base;
+use crate::GameSet;
 
 pub struct CharacterPlugin;
 
@@ -22,7 +23,7 @@ impl Plugin for CharacterPlugin {
             .add_observer(spawn_character)
             .add_observer(on_set_action)
             .add_observer(on_character_action)
-            .add_systems(Update, (animate_characters,))
+            .add_systems(Update, animate_characters.in_set(GameSet::Animation))
             .add_systems(Startup, spawn_test_character);
     }
 }

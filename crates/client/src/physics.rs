@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use wz_reader::WzNodeCast;
 
 use crate::wz::foothold::Foothold;
+use crate::GameSet;
 
 #[derive(Resource)]
 pub struct PhysicsConstants {
@@ -153,7 +154,9 @@ impl Plugin for PhysicsPlugin {
                 Update,
                 (
                     physics_update.in_set(PhysicsSet::Simulate),
-                    sync_physics_to_transform.after(PhysicsSet::Simulate),
+                    sync_physics_to_transform
+                        .after(PhysicsSet::Simulate)
+                        .before(GameSet::Animation),
                     // TEMP: foothold gizmos disabled
                     // draw_foothold_gizmos,
                 ),

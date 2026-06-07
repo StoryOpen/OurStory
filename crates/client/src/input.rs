@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-use crate::physics::{PhysicsSet, PhysicsState};
+use crate::physics::PhysicsState;
+use crate::GameSet;
 
 /// Marker for the local player's character entity.
 #[derive(Component)]
@@ -166,7 +167,7 @@ impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<KeyBindings>().add_systems(
             Update,
-            (dispatch_actions, apply_intent.before(PhysicsSet::Simulate)),
+            (dispatch_actions, apply_intent).in_set(GameSet::Input),
         );
     }
 }

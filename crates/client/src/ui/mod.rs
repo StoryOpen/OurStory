@@ -7,6 +7,7 @@ use bevy::prelude::*;
 use components::UiButton;
 use loader::WzUiSpriteCache;
 use windows::{hud, stat};
+use crate::GameSet;
 
 pub struct UiPlugin;
 
@@ -14,7 +15,7 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WzUiSpriteCache>()
             .add_systems(Startup, setup_ui)
-            .add_systems(Update, update_button_sprites);
+            .add_systems(Update, update_button_sprites.in_set(GameSet::Ui));
     }
 }
 

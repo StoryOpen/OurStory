@@ -5,7 +5,7 @@ pub mod resources;
 pub mod systems;
 
 use self::asset_loader::{WzMapAsset, WzMapLoader};
-use crate::ClientSet;
+use crate::GameSet;
 use bevy::prelude::*;
 
 pub struct MapPlugin {
@@ -44,7 +44,7 @@ impl Plugin for MapPlugin {
                         systems::tick_fully_tiled_horizontal_scrolling_backgrounds,
                         systems::tick_fully_tiled_vertical_scrolling_backgrounds,
                     )
-                        .in_set(ClientSet::Visuals),
+                        .in_set(GameSet::Visuals),
                 ),
             )
             .add_observer(systems::handle_request_map)

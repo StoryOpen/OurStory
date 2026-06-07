@@ -6,6 +6,7 @@ use bevy::asset::AssetServer;
 use bevy::prelude::*;
 
 use asset::WzMobAsset;
+use crate::GameSet;
 
 pub struct MobPlugin {
     pub cache_capacity: usize,
@@ -30,7 +31,8 @@ impl Plugin for MobPlugin {
                 (
                     animation::tick_mob_animations,
                     animation::process_pending_spawns,
-                ),
+                )
+                    .in_set(GameSet::Animation),
             )
             .add_observer(animation::spawn_mob)
             .add_observer(animation::handle_switch_action);
