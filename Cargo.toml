@@ -8,7 +8,7 @@ members = [
     "crates/server-core",
     "crates/server",
 ]
-exclude = ["third_party/bevy"]
+
 
 [profile.dev]
 opt-level = 1
