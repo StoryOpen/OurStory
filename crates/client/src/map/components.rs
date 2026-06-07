@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::wz::asset_loader::AnimFrame;
+use super::asset_loader::AnimFrame;
 
 #[derive(Component)]
 pub struct MapAnimator {
@@ -29,20 +29,37 @@ pub struct MapMoveEffect {
     pub cy: i32,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Component)]
-pub struct MapParallaxBackground {
+pub struct BackgroundMotion {
     pub pos: Vec2,
     pub origin: Vec2,
     pub rx: i32,
     pub ry: i32,
-    pub btype: i32,
-    pub cx: i32,
-    pub cy: i32,
-    pub alpha: u8,
-    pub flip: bool,
-    pub front: bool,
 }
+
+#[derive(Component)]
+pub struct ParallaxBackground;
+
+#[derive(Component)]
+pub struct HorizontalTiledParallaxBackground;
+
+#[derive(Component)]
+pub struct VerticalTiledParallaxBackground;
+
+#[derive(Component)]
+pub struct FullyTiledParallaxBackground;
+
+#[derive(Component)]
+pub struct HorizontalScrollingBackground;
+
+#[derive(Component)]
+pub struct VerticalScrollingBackground;
+
+#[derive(Component)]
+pub struct FullyTiledHorizontalScrollingBackground;
+
+#[derive(Component)]
+pub struct FullyTiledVerticalScrollingBackground;
 
 #[derive(Component)]
 pub struct BackgroundTile {

@@ -1,8 +1,9 @@
 use super::components::*;
 use super::events::*;
 use super::resources::*;
+use crate::layer::GameLayer;
 use crate::physics::FootholdGraph;
-use crate::wz::asset_loader::{BackgroundData, ObjData, TileData, WzMapAsset};
+use super::asset_loader::{BackgroundData, ObjData, TileData, WzMapAsset};
 use bevy::{asset::AssetEvent, ecs::message::MessageReader, prelude::*};
 
 pub fn handle_request_map(
@@ -101,13 +102,34 @@ pub fn spawn_map(
 
     let mut sprites = Vec::new();
 
-    for b in asset.backgrounds.iter() {
+    for b in asset.backgrounds.iter().take(1) {
+        info!("{:?}", b);
+        info!("{:?}", b.image);
         let tex_size = images.get(&b.image).map(|i| i.size_f32()).unwrap();
-        let mut ents =
-            spawn_background_entity(b, &mut commands, b.index as f32, viewport, tex_size);
-        info!("index {} type {} pos {} ", b.index, b.btype, b.pos);
+        let z = if b.front {
+            GameLayer::Foreground.with_offset(b.index as f32)
+        } else {
+            GameLayer::Background.with_offset(b.index as f32)
+        };
+        let mut ents = spawn_background_entity(b, &mut commands, z, viewport, tex_size);
         sprites.append(&mut ents);
     }
+
+    // for tile in asset.tiles.iter() {
+    //     let layer_offset = tile.layer as f32 * 100.0 + tile.z as f32 + tile.zid as f32 * 0.001;
+    //     let z = GameLayer::Tile.with_offset(layer_offset);
+    //     sprites.push(spawn_tile_entity(tile, &mut commands, z));
+    // }
+
+    // for obj in asset.objs.iter() {
+    //     let layer_offset = obj.layer as f32 * 100.0 + obj.z as f32 + obj.zid as f32 * 0.001;
+    //     let z = if obj.z < 0 {
+    //         GameLayer::ObjBehind.with_offset(layer_offset)
+    //     } else {
+    //         GameLayer::ObjFront.with_offset(layer_offset)
+    //     };
+    //     sprites.push(spawn_obj_entity(obj, &mut commands, z));
+    // }
 
     info!("spawned {} sprites for map {}", sprites.len(), ev.path);
     *current_map = CurrentMap(MapState::Loaded {
@@ -118,8 +140,8 @@ pub fn spawn_map(
 }
 
 fn compute_bounds(
-    info: &crate::wz::asset_loader::MapInfo,
-    footholds: &[crate::wz::asset_loader::Foothold],
+    info: &super::asset_loader::MapInfo,
+    footholds: &[crate::wz::foothold::Foothold],
 ) -> super::resources::MapBounds {
     if let (Some(l), Some(r), Some(t), Some(b)) =
         (info.vr_left, info.vr_right, info.vr_top, info.vr_bottom)
@@ -137,11 +159,11 @@ fn compute_bounds(
     }
 }
 
-#[allow(dead_code)]
 fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity {
+    let base = tile.pos - tile.origin;
     let mut entity = commands.spawn((
         Sprite::from_image(tile.image.clone()),
-        Transform::from_translation((tile.pos - tile.origin).extend(z)),
+        Transform::from_translation(base.extend(z)),
         MapSprite,
     ));
 
@@ -151,7 +173,7 @@ fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity
             frames: tile.animation_frames.clone(),
             current: 0,
             timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-            base: tile.pos,
+            base,
             flip: false,
         });
     }
@@ -159,15 +181,15 @@ fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity
     entity.id()
 }
 
-#[allow(dead_code)]
 fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
+    let base = obj.pos - obj.origin;
     let mut entity = commands.spawn((
         Sprite {
             image: obj.image.clone(),
             flip_x: obj.flip,
             ..default()
         },
-        Transform::from_translation((obj.pos - obj.origin).extend(z)),
+        Transform::from_translation(base.extend(z)),
         MapSprite,
     ));
 
@@ -177,7 +199,7 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
             frames: obj.animation_frames.clone(),
             current: 0,
             timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-            base: obj.pos,
+            base,
             flip: obj.flip,
         });
     }
@@ -212,7 +234,7 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
         let a1 = obj.animation_frames.first().map(|f| f.a1).unwrap_or(1.0);
 
         entity.insert(MapMoveEffect {
-            base: obj.pos,
+            base,
             move_type,
             move_w,
             move_h,
@@ -241,19 +263,6 @@ fn spawn_background_entity(
     let tile_x = matches!(b.btype, 1 | 3 | 4 | 6 | 7);
     let tile_y = matches!(b.btype, 2 | 3 | 5 | 6 | 7);
 
-    let bg = MapParallaxBackground {
-        pos: b.pos,
-        origin: b.origin,
-        rx: b.rx,
-        ry: b.ry,
-        btype: b.btype,
-        cx: b.cx,
-        cy: b.cy,
-        alpha: b.alpha,
-        flip: b.flip,
-        front: b.front,
-    };
-
     if !tile_x && !tile_y {
         let mut entity = commands.spawn((
             Sprite {
@@ -262,9 +271,10 @@ fn spawn_background_entity(
                 ..default()
             },
             Transform::from_translation((b.pos - b.origin).extend(z)),
-            bg,
             MapSprite,
         ));
+
+        insert_background_motion(&mut entity, b);
 
         if !b.animation_frames.is_empty() {
             let delay = b.animation_frames[0].delay.max(50);
@@ -319,7 +329,6 @@ fn spawn_background_entity(
                     ..default()
                 },
                 Transform::from_translation(Vec3::new(center.x + tx, center.y + ty, z)),
-                bg.clone(),
                 BackgroundTile {
                     grid_col: col,
                     grid_row: row,
@@ -330,6 +339,8 @@ fn spawn_background_entity(
                 },
                 MapSprite,
             ));
+
+            insert_background_motion(&mut entity, b);
 
             if !b.animation_frames.is_empty() {
                 let delay = b.animation_frames[0].delay.max(50);
@@ -349,16 +360,36 @@ fn spawn_background_entity(
     entities
 }
 
+fn insert_background_motion(entity: &mut EntityCommands, b: &BackgroundData) {
+    entity.insert(BackgroundMotion {
+        pos: b.pos,
+        origin: b.origin,
+        rx: b.rx,
+        ry: b.ry,
+    });
+
+    match b.btype {
+        1 => entity.insert(HorizontalTiledParallaxBackground),
+        2 => entity.insert(VerticalTiledParallaxBackground),
+        3 => entity.insert(FullyTiledParallaxBackground),
+        4 => entity.insert(HorizontalScrollingBackground),
+        5 => entity.insert(VerticalScrollingBackground),
+        6 => entity.insert(FullyTiledHorizontalScrollingBackground),
+        7 => entity.insert(FullyTiledVerticalScrollingBackground),
+        _ => entity.insert(ParallaxBackground),
+    };
+}
+
 pub fn tick_map_animations(
     time: Res<Time>,
     mut query: Query<(
         &mut MapAnimator,
         &mut Sprite,
         &mut Transform,
-        Option<&BackgroundTile>,
+        Option<&BackgroundMotion>,
     )>,
 ) {
-    for (mut anim, mut sprite, mut transform, tile_opt) in &mut query {
+    for (mut anim, mut sprite, mut transform, background) in &mut query {
         anim.timer.tick(time.delta());
         if !anim.timer.just_finished() {
             continue;
@@ -370,8 +401,8 @@ pub fn tick_map_animations(
         sprite.image = frame.image.clone();
         sprite.flip_x = anim.flip;
 
-        // Background tile positions are managed by tick_background_parallax — don't fight it
-        if tile_opt.is_none() {
+        // Background positions are managed by dedicated background systems.
+        if background.is_none() {
             transform.translation = (anim.base - frame.origin).extend(transform.translation.z);
         }
 
@@ -412,91 +443,264 @@ pub fn tick_move_effects(time: Res<Time>, mut query: Query<(&MapMoveEffect, &mut
     }
 }
 
-pub fn tick_background_parallax(
+pub fn tick_parallax_backgrounds(
     camera: Query<(&Camera, &GlobalTransform)>,
-    window: Query<&Window>,
-    time: Res<Time>,
-    mut backgrounds: Query<(
-        &MapParallaxBackground,
-        &mut Transform,
-        &mut Sprite,
-        Option<&BackgroundTile>,
-    )>,
+    mut backgrounds: Query<(&BackgroundMotion, &mut Transform), With<ParallaxBackground>>,
 ) {
     let Ok((_cam, cam_global)) = camera.single() else {
         return;
     };
-    let Ok(window) = window.single() else {
+
+    let cam_pos = cam_global.translation();
+    for (bg, mut transform) in &mut backgrounds {
+        let offset = parallax_offset(bg.rx, bg.ry, cam_pos);
+        transform.translation = (bg.pos - bg.origin + offset).extend(transform.translation.z);
+    }
+}
+
+pub fn tick_horizontal_tiled_parallax_backgrounds(
+    camera: Query<(&Camera, &GlobalTransform)>,
+    window: Query<&Window>,
+    mut backgrounds: Query<
+        (&BackgroundMotion, &BackgroundTile, &mut Transform),
+        With<HorizontalTiledParallaxBackground>,
+    >,
+) {
+    let Some((cam_pos, viewport)) = camera_view(&camera, &window) else {
         return;
     };
 
-    let cam_pos = cam_global.translation();
-    let viewport = Vec2::new(window.width(), window.height());
+    for (bg, tile, mut transform) in &mut backgrounds {
+        let offset = parallax_offset(bg.rx, bg.ry, cam_pos);
+        position_tiled_background(
+            &mut transform,
+            tile,
+            bg.pos - bg.origin,
+            offset,
+            cam_pos,
+            viewport,
+        );
+    }
+}
+
+pub fn tick_vertical_tiled_parallax_backgrounds(
+    camera: Query<(&Camera, &GlobalTransform)>,
+    window: Query<&Window>,
+    mut backgrounds: Query<
+        (&BackgroundMotion, &BackgroundTile, &mut Transform),
+        With<VerticalTiledParallaxBackground>,
+    >,
+) {
+    let Some((cam_pos, viewport)) = camera_view(&camera, &window) else {
+        return;
+    };
+
+    for (bg, tile, mut transform) in &mut backgrounds {
+        let offset = parallax_offset(bg.rx, bg.ry, cam_pos);
+        position_tiled_background(
+            &mut transform,
+            tile,
+            bg.pos - bg.origin,
+            offset,
+            cam_pos,
+            viewport,
+        );
+    }
+}
+
+pub fn tick_fully_tiled_parallax_backgrounds(
+    camera: Query<(&Camera, &GlobalTransform)>,
+    window: Query<&Window>,
+    mut backgrounds: Query<
+        (&BackgroundMotion, &BackgroundTile, &mut Transform),
+        With<FullyTiledParallaxBackground>,
+    >,
+) {
+    let Some((cam_pos, viewport)) = camera_view(&camera, &window) else {
+        return;
+    };
+
+    for (bg, tile, mut transform) in &mut backgrounds {
+        let offset = parallax_offset(bg.rx, bg.ry, cam_pos);
+        position_tiled_background(
+            &mut transform,
+            tile,
+            bg.pos - bg.origin,
+            offset,
+            cam_pos,
+            viewport,
+        );
+    }
+}
+
+pub fn tick_horizontal_scrolling_backgrounds(
+    camera: Query<(&Camera, &GlobalTransform)>,
+    window: Query<&Window>,
+    time: Res<Time>,
+    mut backgrounds: Query<
+        (&BackgroundMotion, &BackgroundTile, &mut Transform),
+        With<HorizontalScrollingBackground>,
+    >,
+) {
+    let Some((cam_pos, viewport)) = camera_view(&camera, &window) else {
+        return;
+    };
+
     let elapsed = time.elapsed_secs();
+    for (bg, tile, mut transform) in &mut backgrounds {
+        let offset = Vec2::new(
+            bg.rx as f32 * 5.0 * elapsed,
+            -(bg.ry as f32) * cam_pos.y / 100.0,
+        );
+        position_tiled_background(
+            &mut transform,
+            tile,
+            bg.pos - bg.origin,
+            offset,
+            cam_pos,
+            viewport,
+        );
+    }
+}
 
-    for (bg, mut transform, mut sprite, tile_opt) in &mut backgrounds {
-        let rx = bg.rx as f32;
-        let ry = bg.ry as f32;
+pub fn tick_vertical_scrolling_backgrounds(
+    camera: Query<(&Camera, &GlobalTransform)>,
+    window: Query<&Window>,
+    time: Res<Time>,
+    mut backgrounds: Query<
+        (&BackgroundMotion, &BackgroundTile, &mut Transform),
+        With<VerticalScrollingBackground>,
+    >,
+) {
+    let Some((cam_pos, viewport)) = camera_view(&camera, &window) else {
+        return;
+    };
 
-        sprite.flip_x = bg.flip;
+    let elapsed = time.elapsed_secs();
+    for (bg, tile, mut transform) in &mut backgrounds {
+        let offset = Vec2::new(
+            bg.rx as f32 * cam_pos.x / 100.0,
+            bg.ry as f32 * 5.0 * elapsed,
+        );
+        position_tiled_background(
+            &mut transform,
+            tile,
+            bg.pos - bg.origin,
+            offset,
+            cam_pos,
+            viewport,
+        );
+    }
+}
 
-        let Some(tile) = tile_opt else {
-            // Non-tiled: compute exact world position from parallax (original behavior)
-            let shift_x = rx * cam_pos.x / 100.0 + viewport.x / 2.0;
-            let shift_y = -ry * cam_pos.y / 100.0 + viewport.y / 2.0;
+pub fn tick_fully_tiled_horizontal_scrolling_backgrounds(
+    camera: Query<(&Camera, &GlobalTransform)>,
+    window: Query<&Window>,
+    time: Res<Time>,
+    mut backgrounds: Query<
+        (&BackgroundMotion, &BackgroundTile, &mut Transform),
+        With<FullyTiledHorizontalScrollingBackground>,
+    >,
+) {
+    let Some((cam_pos, viewport)) = camera_view(&camera, &window) else {
+        return;
+    };
 
-            let (pivot_screen_x, pivot_screen_y) = match bg.btype {
-                0 | 1 | 2 | 3 => (bg.pos.x + shift_x, -bg.pos.y + shift_y),
-                4 | 6 => (
-                    bg.pos.x + rx * 5.0 * elapsed - cam_pos.x,
-                    -bg.pos.y + shift_y,
-                ),
-                5 | 7 => (
-                    bg.pos.x + shift_x,
-                    -bg.pos.y + ry * 5.0 * elapsed + cam_pos.y,
-                ),
-                _ => (bg.pos.x, -bg.pos.y),
-            };
+    let elapsed = time.elapsed_secs();
+    for (bg, tile, mut transform) in &mut backgrounds {
+        let offset = Vec2::new(
+            bg.rx as f32 * 5.0 * elapsed,
+            -(bg.ry as f32) * cam_pos.y / 100.0,
+        );
+        position_tiled_background(
+            &mut transform,
+            tile,
+            bg.pos - bg.origin,
+            offset,
+            cam_pos,
+            viewport,
+        );
+    }
+}
 
-            let bevy_x = pivot_screen_x + cam_pos.x - viewport.x / 2.0 - bg.origin.x;
-            let bevy_y = cam_pos.y + viewport.y / 2.0 - pivot_screen_y + bg.origin.y;
+pub fn tick_fully_tiled_vertical_scrolling_backgrounds(
+    camera: Query<(&Camera, &GlobalTransform)>,
+    window: Query<&Window>,
+    time: Res<Time>,
+    mut backgrounds: Query<
+        (&BackgroundMotion, &BackgroundTile, &mut Transform),
+        With<FullyTiledVerticalScrollingBackground>,
+    >,
+) {
+    let Some((cam_pos, viewport)) = camera_view(&camera, &window) else {
+        return;
+    };
 
-            transform.translation.x = bevy_x;
-            transform.translation.y = bevy_y;
-            continue;
-        };
+    let elapsed = time.elapsed_secs();
+    for (bg, tile, mut transform) in &mut backgrounds {
+        let offset = Vec2::new(
+            bg.rx as f32 * cam_pos.x / 100.0,
+            bg.ry as f32 * 5.0 * elapsed,
+        );
+        position_tiled_background(
+            &mut transform,
+            tile,
+            bg.pos - bg.origin,
+            offset,
+            cam_pos,
+            viewport,
+        );
+    }
+}
 
-        // Tiled background: keep the repeated pattern anchored to the WZ position.
-        // The camera is only used to pick which repeated copies are near the viewport.
-        let offset_x = match bg.btype {
-            0 | 1 | 2 | 3 | 5 | 7 => rx * cam_pos.x / 100.0,
-            4 | 6 => rx * 5.0 * elapsed,
-            _ => 0.0,
-        };
-        let offset_y = match bg.btype {
-            0 | 1 | 2 | 3 | 4 | 6 => -ry * cam_pos.y / 100.0,
-            5 | 7 => ry * 5.0 * elapsed,
-            _ => 0.0,
-        };
+fn camera_view(
+    camera: &Query<(&Camera, &GlobalTransform)>,
+    window: &Query<&Window>,
+) -> Option<(Vec3, Vec2)> {
+    let Ok((_cam, cam_global)) = camera.single() else {
+        return None;
+    };
+    let Ok(window) = window.single() else {
+        return None;
+    };
 
-        let anchor = bg.pos - bg.origin;
-        let viewport_left = cam_pos.x - viewport.x / 2.0;
-        let viewport_bottom = cam_pos.y - viewport.y / 2.0;
+    Some((
+        cam_global.translation(),
+        Vec2::new(window.width(), window.height()),
+    ))
+}
 
-        if tile.num_cols > 1 {
-            let base_col = ((viewport_left - anchor.x - offset_x) / tile.spacing_x).floor();
-            transform.translation.x =
-                anchor.x + (base_col + tile.grid_col as f32) * tile.spacing_x + offset_x;
-        } else {
-            transform.translation.x = anchor.x + offset_x;
-        }
+fn parallax_offset(rx: i32, ry: i32, cam_pos: Vec3) -> Vec2 {
+    Vec2::new(
+        rx as f32 * cam_pos.x / 100.0,
+        -(ry as f32) * cam_pos.y / 100.0,
+    )
+}
 
-        if tile.num_rows > 1 {
-            let base_row = ((viewport_bottom - anchor.y - offset_y) / tile.spacing_y).floor();
-            transform.translation.y =
-                anchor.y + (base_row + tile.grid_row as f32) * tile.spacing_y + offset_y;
-        } else {
-            transform.translation.y = anchor.y + offset_y;
-        }
+fn position_tiled_background(
+    transform: &mut Transform,
+    tile: &BackgroundTile,
+    anchor: Vec2,
+    offset: Vec2,
+    cam_pos: Vec3,
+    viewport: Vec2,
+) {
+    let viewport_left = cam_pos.x - viewport.x / 2.0;
+    let viewport_bottom = cam_pos.y - viewport.y / 2.0;
+
+    if tile.num_cols > 1 {
+        let base_col = ((viewport_left - anchor.x - offset.x) / tile.spacing_x).floor();
+        transform.translation.x =
+            anchor.x + (base_col + tile.grid_col as f32) * tile.spacing_x + offset.x;
+    } else {
+        transform.translation.x = anchor.x + offset.x;
+    }
+
+    if tile.num_rows > 1 {
+        let base_row = ((viewport_bottom - anchor.y - offset.y) / tile.spacing_y).floor();
+        transform.translation.y =
+            anchor.y + (base_row + tile.grid_row as f32) * tile.spacing_y + offset.y;
+    } else {
+        transform.translation.y = anchor.y + offset.y;
     }
 }

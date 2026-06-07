@@ -1,10 +1,11 @@
+pub mod asset_loader;
 pub mod components;
 pub mod events;
 pub mod resources;
 pub mod systems;
 
+use self::asset_loader::{WzMapAsset, WzMapLoader};
 use crate::ClientSet;
-use crate::wz::asset_loader::{WzMapAsset, WzMapLoader};
 use bevy::prelude::*;
 
 pub struct MapPlugin {
@@ -33,7 +34,17 @@ impl Plugin for MapPlugin {
                     systems::on_asset_loaded,
                     systems::tick_map_animations,
                     systems::tick_move_effects,
-                    systems::tick_background_parallax.in_set(ClientSet::Visuals),
+                    (
+                        systems::tick_parallax_backgrounds,
+                        systems::tick_horizontal_tiled_parallax_backgrounds,
+                        systems::tick_vertical_tiled_parallax_backgrounds,
+                        systems::tick_fully_tiled_parallax_backgrounds,
+                        systems::tick_horizontal_scrolling_backgrounds,
+                        systems::tick_vertical_scrolling_backgrounds,
+                        systems::tick_fully_tiled_horizontal_scrolling_backgrounds,
+                        systems::tick_fully_tiled_vertical_scrolling_backgrounds,
+                    )
+                        .in_set(ClientSet::Visuals),
                 ),
             )
             .add_observer(systems::handle_request_map)

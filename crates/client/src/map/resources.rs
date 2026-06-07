@@ -1,4 +1,5 @@
-use crate::wz::asset_loader::{Foothold, WzMapAsset};
+use crate::wz::foothold::Foothold;
+use super::asset_loader::WzMapAsset;
 use bevy::prelude::*;
 
 #[derive(Debug, Clone, Copy, Resource)]

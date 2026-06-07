@@ -1,5 +1,5 @@
-pub mod asset_loader;
 pub mod asset_source;
+pub mod foothold;
 
 pub use wz::*;
 

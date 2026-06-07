@@ -1,5 +1,5 @@
 use super::resources::MapBounds;
-use crate::wz::asset_loader::WzMapAsset;
+use super::asset_loader::WzMapAsset;
 use bevy::prelude::*;
 
 #[derive(Event)]

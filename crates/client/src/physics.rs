@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use wz_reader::WzNodeCast;
 
-use crate::wz::asset_loader::Foothold;
+use crate::wz::foothold::Foothold;
 
 #[derive(Resource)]
 pub struct PhysicsConstants {
