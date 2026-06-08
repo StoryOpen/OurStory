@@ -1,6 +1,0 @@
-[submodule "third_party/wz_reader"]
-	path = third_party/wz_reader
-	url = https://github.com/spd789562/wz-reader-rs.git
-[submodule "third_party/bevy"]
-	path = third_party/bevy
-	url = https://github.com/bevyengine/bevy.git

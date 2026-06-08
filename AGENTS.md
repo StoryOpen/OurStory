@@ -23,38 +23,22 @@ A Rust workspace for MapleStory game tooling.
 
 ## Coordinate System
 
-WZ stores 2D pixel coordinates with Y increasing downward; Bevy uses Y-up.
-All WZ→Bevy conversion happens at the `crates/wz/src/lib.rs` boundary:
+Use the following methods to read position, offsets, vectors, etc when applicable
 
-- `TryFrom<Node> for Vector2D` reads WZ `Vector2D` values and negates Y.
-- `Node::read_pos()` reads scalar `x`/`y` children and negates Y.
-- `Node::read_pos_n(n)` reads `x{n}`/`y{n}` (footholds, areas) and negates Y.
+- `TryFrom<Node> for Vector2D` reads WZ `Vector2D` values
+- `Node::read_pos()` reads scalar `x`/`y` children
+- `Node::read_pos_n(n)` reads `x{n}`/`y{n}` (footholds, areas)
 
-Downstream consumers (`map`, `mob`, `character`, all `WzMapAsset` / `WzMobAsset`
-fields, all `Transform`s, all events) treat coordinates as native Bevy-space.
-The conversion formula `bevy_y = -wz_y` is applied exactly once per value,
-inside the `wz` crate. There are no Y-negations or origin-flip sign games
-in any runtime system. The client crate performs only trivial field copies
-(`Vector2D(i32,i32)` → `Vec2(f32,f32)` with no sign changes).
 
-**Origins** are loaded as Bevy-local pixel offsets (already Y-flipped),
-interpreted as offsets from the sprite's bottom-left corner. An observer
-overrides `Anchor::CENTER` to `Anchor::BOTTOM_LEFT` on every new `Sprite`,
+**Origins** are loaded as local pixel offsets interpreted as offsets
+from the sprite's bottom-left corner. 
 so the formula `bevy_translation = pos - origin` places the WZ pivot at `pos`.
 
 **Non-coordinate scalars** (`alpha`, `rx`, `ry`, `mag`, `delay`, `cy`,
 `mobTime`, `force`, `piece`, `cx`, layer indices) are read as raw `i32`/`f32`
-and untouched by the conversion.
 
-**Footholds:** `Foothold.{x1,y1,x2,y2}` are Bevy-space. `layer_at()` uses
-the inequality `f.y_at(x) >= y - 50.0` (foothold at or below entity, where
-"below" means smaller Bevy Y).
+**Footholds:** `Foothold.{x1,y1,x2,y2}` are Bevy-space. 
 
-**Network boundary** (future): `protocol::types::Position` uses WZ-Y
-convention for wire compatibility with classic clients. Any code that
-consumes inbound positions or emits outbound positions must negate Y at the
-network handler. The server stores `Position` opaquely; it has no Y-direction
-logic today.
 
 ## Client — Character Rendering (`crates/client/src/character/`)
 
@@ -106,9 +90,6 @@ curl -X POST http://127.0.0.1:15702 \
 `world.mutate_resources`, `world.list_resources`, `world.trigger_event`,
 `world.write_message`, `registry.schema`, `schedule.list`, `schedule.graph`,
 `rpc.discover`. Append `+watch` to streaming methods for SSE.
-
-**Clients:** VS Code extensions `splo/vscode-bevy-inspector` and `foxication/bevy-inspection`
-connect via BRP automatically.
 
 **Component types** use fully-qualified paths (e.g. `bevy_transform::components::transform::Transform`).
 Custom types must derive `Reflect` and be registered with `app.register_type::<T>()`.
