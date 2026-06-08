@@ -2,9 +2,13 @@ use super::resources::{BaseResolution, MainCamera};
 use crate::input::IsLocalPlayer;
 use crate::map::events::MapLoaded;
 use crate::map::resources::MapBounds;
-use bevy::input::mouse::AccumulatedMouseMotion;
+use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
 use bevy::ui::UiScale;
+
+const ZOOM_SPEED: f32 = 0.1;
+const ZOOM_MIN: f32 = 0.1;
+const ZOOM_MAX: f32 = 5.0;
 
 pub fn reset_camera(
     trigger: On<MapLoaded>,
@@ -99,4 +103,39 @@ pub fn apply_resolution(
         return;
     };
     ui_scale.0 = window.height() / base.height;
+}
+
+pub fn draw_camera_viewport(
+    mut gizmos: Gizmos,
+    base: Res<BaseResolution>,
+    camera: Query<&Transform, With<MainCamera>>,
+) {
+    let Ok(transform) = camera.single() else {
+        return;
+    };
+    let size = Vec2::new(base.width, base.height);
+    gizmos.rect_2d(transform.translation.truncate(), size, Color::srgba(1.0, 0.0, 0.0, 0.5));
+}
+
+pub fn zoom_camera(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mouse_wheel: Res<AccumulatedMouseScroll>,
+    mut camera: Query<&mut Projection, With<MainCamera>>,
+) {
+    if !keyboard.pressed(KeyCode::ControlLeft) && !keyboard.pressed(KeyCode::ControlRight) {
+        return;
+    }
+    let delta = mouse_wheel.delta.y;
+    if delta == 0.0 {
+        return;
+    }
+    let Ok(mut projection) = camera.single_mut() else {
+        return;
+    };
+    let Projection::Orthographic(ref mut orthographic) = *projection else {
+        return;
+    };
+    let delta_zoom = -delta * ZOOM_SPEED;
+    let multiplicative_zoom = 1.0 + delta_zoom;
+    orthographic.scale = (orthographic.scale * multiplicative_zoom).clamp(ZOOM_MIN, ZOOM_MAX);
 }

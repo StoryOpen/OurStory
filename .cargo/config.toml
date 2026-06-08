@@ -16,3 +16,6 @@ rustflags = ["-C", "link-arg=-fuse-ld=/usr/bin/mold"]
 # linker = "/opt/homebrew/bin/zld"
 # Or for mold:
 # linker = "/opt/homebrew/bin/mold"
+
+[env]
+RUST_BACKTRACE = "1"

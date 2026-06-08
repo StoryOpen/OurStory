@@ -7,7 +7,7 @@ pub struct MapAnimator {
     pub frames: Vec<AnimFrame>,
     pub current: usize,
     pub timer: Timer,
-    pub base: Vec2,
+    pub pos: Vec2,
     pub flip: bool,
 }
 

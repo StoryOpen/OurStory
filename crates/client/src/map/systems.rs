@@ -1,10 +1,44 @@
+use super::asset_loader::{BackgroundData, ObjData, TileData, WzMapAsset};
 use super::components::*;
 use super::events::*;
 use super::resources::*;
 use crate::layer::GameLayer;
 use crate::physics::FootholdGraph;
-use super::asset_loader::{BackgroundData, ObjData, TileData, WzMapAsset};
-use bevy::{asset::AssetEvent, ecs::message::MessageReader, prelude::*};
+use bevy::{
+    asset::{AssetEvent, AssetLoadFailedEvent},
+    ecs::message::MessageReader,
+    prelude::*,
+};
+use std::backtrace::Backtrace;
+use std::fs::OpenOptions;
+use std::io::Write;
+
+fn despawn_current_sprites(current_map: &mut CurrentMap, commands: &mut Commands) {
+    let old = std::mem::replace(current_map, CurrentMap(MapState::None));
+    if let CurrentMap(MapState::Loaded { sprites, .. }) = old {
+        for e in sprites {
+            commands.entity(e).despawn();
+        }
+    }
+}
+
+fn log_map_failure(path: &str, context: &str, message: &str) {
+    error!("failed to load map {}: {}: {}", path, context, message);
+
+    let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("map_panics.log")
+    else {
+        return;
+    };
+
+    let _ = writeln!(file, "map: {path}");
+    let _ = writeln!(file, "context: {context}");
+    let _ = writeln!(file, "message: {message}");
+    let _ = writeln!(file, "backtrace:\n{}", Backtrace::force_capture());
+    let _ = writeln!(file, "---");
+}
 
 pub fn handle_request_map(
     event: On<RequestMap>,
@@ -22,6 +56,11 @@ pub fn handle_request_map(
     }
 
     if let Some(handle) = cache.get(path) {
+        despawn_current_sprites(&mut current_map, &mut commands);
+        *current_map = CurrentMap(MapState::Loading {
+            path: path.clone(),
+            handle: handle.clone(),
+        });
         commands.trigger(MapReady {
             path: path.clone(),
             handle,
@@ -34,9 +73,15 @@ pub fn handle_request_map(
             return;
         }
     }
+    if let CurrentMap(MapState::Clearing { path: cur, .. }) = &*current_map {
+        if cur == path {
+            return;
+        }
+    }
 
     let asset_path = format!("wz://{}.map", path);
     let handle = asset_server.load::<WzMapAsset>(&asset_path);
+    despawn_current_sprites(&mut current_map, &mut commands);
     *current_map = CurrentMap(MapState::Loading {
         path: path.clone(),
         handle,
@@ -45,23 +90,45 @@ pub fn handle_request_map(
 
 pub fn on_asset_loaded(
     mut ev_asset: MessageReader<AssetEvent<WzMapAsset>>,
-    current_map: Res<CurrentMap>,
+    mut ev_failed: MessageReader<AssetLoadFailedEvent<WzMapAsset>>,
+    mut current_map: ResMut<CurrentMap>,
     mut cache: ResMut<MapCache>,
     mut commands: Commands,
 ) {
-    let (loading_path, loading_handle) = match &*current_map {
-        CurrentMap(MapState::Loading { path, handle }) => (path.clone(), handle.clone()),
+    let (loading_path, loading_handle, ready) = match &*current_map {
+        CurrentMap(MapState::Loading { path, handle }) => (path.clone(), handle.clone(), true),
+        CurrentMap(MapState::Clearing {
+            path,
+            handle,
+            ready,
+        }) => (path.clone(), handle.clone(), *ready),
         _ => return,
     };
+
+    for ev in ev_failed.read() {
+        if ev.id == loading_handle.id() {
+            log_map_failure(&loading_path, "asset load", &ev.error.to_string());
+            *current_map = CurrentMap(MapState::Failed { path: loading_path });
+            return;
+        }
+    }
 
     for ev in ev_asset.read() {
         if let AssetEvent::LoadedWithDependencies { id } = ev {
             if *id == loading_handle.id() {
                 cache.insert(loading_path.clone(), loading_handle.clone());
-                commands.trigger(MapReady {
-                    path: loading_path,
-                    handle: loading_handle,
-                });
+                if ready {
+                    commands.trigger(MapReady {
+                        path: loading_path,
+                        handle: loading_handle,
+                    });
+                } else {
+                    *current_map = CurrentMap(MapState::Clearing {
+                        path: loading_path,
+                        handle: loading_handle,
+                        ready: true,
+                    });
+                }
                 break;
             }
         }
@@ -98,13 +165,12 @@ pub fn spawn_map(
     let viewport = window
         .single()
         .map(|w| Vec2::new(w.width(), w.height()))
-        .unwrap_or(Vec2::new(1920.0, 1080.0));
+        .unwrap();
+    info!("{:?}", viewport);
 
     let mut sprites = Vec::new();
 
-    for b in asset.backgrounds.iter().take(1) {
-        info!("{:?}", b);
-        info!("{:?}", b.image);
+    for b in asset.backgrounds.iter() {
         let tex_size = images.get(&b.image).map(|i| i.size_f32()).unwrap();
         let z = if b.front {
             GameLayer::Foreground.with_offset(b.index as f32)
@@ -115,21 +181,41 @@ pub fn spawn_map(
         sprites.append(&mut ents);
     }
 
-    // for tile in asset.tiles.iter() {
-    //     let layer_offset = tile.layer as f32 * 100.0 + tile.z as f32 + tile.zid as f32 * 0.001;
-    //     let z = GameLayer::Tile.with_offset(layer_offset);
-    //     sprites.push(spawn_tile_entity(tile, &mut commands, z));
-    // }
+    let max_span = (0..8usize)
+        .map(|i| {
+            let objs = &asset.objs[i];
+            let tiles = &asset.tiles[i];
+            if objs.is_empty() && tiles.is_empty() {
+                return 0;
+            }
+            let obj_max = objs.iter().map(|o| o.z).max().unwrap_or(0);
+            let tile_max = tiles.iter().map(|t| t.z).max().unwrap_or(0);
+            ((obj_max + tile_max + 2) as f32).max(1.0) as i32
+        })
+        .max()
+        .unwrap_or(0) as f32;
+    if max_span == 0.0 {
+        return;
+    }
+    info!("max_span = {}", max_span);
 
-    // for obj in asset.objs.iter() {
-    //     let layer_offset = obj.layer as f32 * 100.0 + obj.z as f32 + obj.zid as f32 * 0.001;
-    //     let z = if obj.z < 0 {
-    //         GameLayer::ObjBehind.with_offset(layer_offset)
-    //     } else {
-    //         GameLayer::ObjFront.with_offset(layer_offset)
-    //     };
-    //     sprites.push(spawn_obj_entity(obj, &mut commands, z));
-    // }
+    for layer_idx in 0..8usize {
+        let objs = &asset.objs[layer_idx];
+        let tiles = &asset.tiles[layer_idx];
+        if objs.is_empty() && tiles.is_empty() {
+            continue;
+        }
+        let layer_z = layer_idx as f32 * max_span;
+        let obj_max_z = objs.iter().map(|o| o.z).max().unwrap_or(0) as f32;
+        let tile_base = if objs.is_empty() { 0.0 } else { obj_max_z + 1.0 };
+
+        for obj in objs {
+            sprites.push(spawn_obj_entity(obj, &mut commands, layer_z + obj.z as f32));
+        }
+        for tile in tiles {
+            sprites.push(spawn_tile_entity(tile, &mut commands, layer_z + tile_base + tile.z as f32 + 0.5));
+        }
+    }
 
     info!("spawned {} sprites for map {}", sprites.len(), ev.path);
     *current_map = CurrentMap(MapState::Loaded {
@@ -173,7 +259,7 @@ fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity
             frames: tile.animation_frames.clone(),
             current: 0,
             timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-            base,
+            pos: base,
             flip: false,
         });
     }
@@ -199,7 +285,7 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
             frames: obj.animation_frames.clone(),
             current: 0,
             timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-            base,
+            pos: base,
             flip: obj.flip,
         });
     }
@@ -254,51 +340,51 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
 }
 
 fn spawn_background_entity(
-    b: &BackgroundData,
+    bg: &BackgroundData,
     commands: &mut Commands,
     z: f32,
     viewport: Vec2,
     tex_size: Vec2,
 ) -> Vec<Entity> {
-    let tile_x = matches!(b.btype, 1 | 3 | 4 | 6 | 7);
-    let tile_y = matches!(b.btype, 2 | 3 | 5 | 6 | 7);
+    let tile_x = matches!(bg.btype, 1 | 3 | 4 | 6 | 7);
+    let tile_y = matches!(bg.btype, 2 | 3 | 5 | 6 | 7);
 
     if !tile_x && !tile_y {
         let mut entity = commands.spawn((
             Sprite {
-                image: b.image.clone(),
-                flip_x: b.flip,
+                image: bg.image.clone(),
+                flip_x: bg.flip,
                 ..default()
             },
-            Transform::from_translation((b.pos - b.origin).extend(z)),
+            Transform::from_translation((bg.pos - bg.origin).round().extend(z)),
             MapSprite,
         ));
 
-        insert_background_motion(&mut entity, b);
+        insert_background_motion(&mut entity, bg);
 
-        if !b.animation_frames.is_empty() {
-            let delay = b.animation_frames[0].delay.max(50);
+        if !bg.animation_frames.is_empty() {
+            let delay = bg.animation_frames[0].delay.max(50);
             entity.insert(MapAnimator {
-                frames: b.animation_frames.clone(),
+                frames: bg.animation_frames.clone(),
                 current: 0,
                 timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-                base: b.pos,
-                flip: b.flip,
+                pos: bg.pos,
+                flip: bg.flip,
             });
         }
 
         return vec![entity.id()];
     }
 
-    let spacing_x: f32 = if b.cx == 0 {
+    let spacing_x: f32 = if bg.cx == 0 {
         tex_size.x
     } else {
-        b.cx.unsigned_abs() as f32
+        bg.cx.unsigned_abs() as f32
     };
-    let spacing_y: f32 = if b.cy == 0 {
+    let spacing_y: f32 = if bg.cy == 0 {
         tex_size.y
     } else {
-        b.cy.unsigned_abs() as f32
+        bg.cy.unsigned_abs() as f32
     };
 
     let num_cols = if tile_x {
@@ -314,21 +400,19 @@ fn spawn_background_entity(
 
     let grid_w = num_cols as f32 * spacing_x;
     let grid_h = num_rows as f32 * spacing_y;
-    let center = b.pos - b.origin;
 
     let mut entities = Vec::with_capacity((num_cols * num_rows) as usize);
     for row in 0..num_rows {
         for col in 0..num_cols {
-            let tx = col as f32 * spacing_x - grid_w / 2.0;
-            let ty = row as f32 * spacing_y - grid_h / 2.0;
+            let t = Vec2::new(col as f32 * spacing_x, row as f32 * spacing_y);
 
             let mut entity = commands.spawn((
                 Sprite {
-                    image: b.image.clone(),
-                    flip_x: b.flip,
+                    image: bg.image.clone(),
+                    flip_x: bg.flip,
                     ..default()
                 },
-                Transform::from_translation(Vec3::new(center.x + tx, center.y + ty, z)),
+                Transform::from_translation(Vec2::from(bg.pos - bg.origin + t).extend(z)),
                 BackgroundTile {
                     grid_col: col,
                     grid_row: row,
@@ -340,16 +424,16 @@ fn spawn_background_entity(
                 MapSprite,
             ));
 
-            insert_background_motion(&mut entity, b);
+            insert_background_motion(&mut entity, bg);
 
-            if !b.animation_frames.is_empty() {
-                let delay = b.animation_frames[0].delay.max(50);
+            if !bg.animation_frames.is_empty() {
+                let delay = bg.animation_frames[0].delay.max(50);
                 entity.insert(MapAnimator {
-                    frames: b.animation_frames.clone(),
+                    frames: bg.animation_frames.clone(),
                     current: 0,
                     timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-                    base: b.pos,
-                    flip: b.flip,
+                    pos: bg.pos,
+                    flip: bg.flip,
                 });
             }
 
@@ -382,14 +466,9 @@ fn insert_background_motion(entity: &mut EntityCommands, b: &BackgroundData) {
 
 pub fn tick_map_animations(
     time: Res<Time>,
-    mut query: Query<(
-        &mut MapAnimator,
-        &mut Sprite,
-        &mut Transform,
-        Option<&BackgroundMotion>,
-    )>,
+    mut query: Query<(&mut MapAnimator, &mut Sprite, &mut Transform)>,
 ) {
-    for (mut anim, mut sprite, mut transform, background) in &mut query {
+    for (mut anim, mut sprite, mut transform) in &mut query {
         anim.timer.tick(time.delta());
         if !anim.timer.just_finished() {
             continue;
@@ -401,10 +480,7 @@ pub fn tick_map_animations(
         sprite.image = frame.image.clone();
         sprite.flip_x = anim.flip;
 
-        // Background positions are managed by dedicated background systems.
-        if background.is_none() {
-            transform.translation = (anim.base - frame.origin).extend(transform.translation.z);
-        }
+        transform.translation = (anim.pos - frame.origin).extend(transform.translation.z);
 
         anim.timer = Timer::from_seconds(frame.delay.max(50) as f32 / 1000.0, TimerMode::Repeating);
     }

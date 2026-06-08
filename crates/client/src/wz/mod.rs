@@ -9,22 +9,27 @@ use bevy::ecs::system::Commands;
 use bevy::prelude::Vec2;
 use bevy::sprite::{Anchor, Sprite};
 
+/// Extension trait for converting `Vector2D` to Bevy `Vec2`.
+pub trait Vector2DExt {
+    fn to_vec2(self) -> Vec2;
+}
+
+impl Vector2DExt for Vector2D {
+    fn to_vec2(self) -> Vec2 {
+        Vec2::new(self.0 as f32, self.1 as f32)
+    }
+}
+
 /// Extension methods on `wz::Node` for reading Bevy types from WZ properties.
 #[allow(dead_code)]
 pub trait WzNodeExt {
-    fn get_vec2_opt(&self, path: &str) -> Option<Vec2>;
-    fn get_vec2_or(&self, path: &str, default: Vec2) -> Vec2;
+    fn try_get_pos(&self) -> Result<Vec2, NodeError>;
 }
 
 impl WzNodeExt for crate::wz::Node {
-    fn get_vec2_opt(&self, path: &str) -> Option<Vec2> {
-        self.get_opt::<Vector2D>(path)
-            .map(|v| Vec2::new(v.0 as f32, v.1 as f32))
-    }
-
-    #[allow(dead_code)]
-    fn get_vec2_or(&self, path: &str, default: Vec2) -> Vec2 {
-        self.get_vec2_opt(path).unwrap_or(default)
+    fn try_get_pos(&self) -> Result<Vec2, NodeError> {
+        let v = self.read_pos()?;
+        Ok(Vec2::new(v.0 as f32, v.1 as f32))
     }
 }
 

@@ -15,9 +15,12 @@ impl Plugin for CameraPlugin {
                 (
                     systems::follow_player,
                     systems::drag_camera,
+                    systems::zoom_camera,
                     // TEMP: clamp_camera disabled — clamp_camera.after(systems::drag_camera),
                 )
                     .in_set(GameSet::Camera),
-            );
+            )
+            .add_systems(Update, systems::draw_camera_viewport.in_set(GameSet::Visuals))
+            .add_observer(systems::reset_camera);
     }
 }

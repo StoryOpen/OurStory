@@ -5,7 +5,7 @@ use bevy::{
 };
 use std::collections::HashMap;
 
-use crate::wz::{Node, Vector2D};
+use crate::wz::Node;
 
 #[derive(Resource, Default)]
 pub struct WzUiSpriteCache {
@@ -50,8 +50,9 @@ pub fn load_ui_sprite(
     cache: &mut WzUiSpriteCache,
     images: &mut Assets<Image>,
 ) -> Option<UiSprite> {
-    let Vector2D(ox, oy) = node.at_path("origin").ok()?.try_into().ok()?;
-    let origin = Vec2::new(ox as f32, oy as f32);
+    let origin_node = node.try_get("origin")?;
+    let origin_v = origin_node.read_origin(node).ok()?;
+    let origin = Vec2::new(origin_v.0 as f32, origin_v.1 as f32);
     let path = node.path();
     let handle = cache.get_or_load(node, &path, images);
     Some(UiSprite { handle, origin })

@@ -9,10 +9,10 @@
 pub enum GameLayer {
     /// Background scenery (sky, mountains, far objects).
     Background,
-    /// Map floor tiles and platforms.
-    Tile,
     /// Map objects that render behind characters.
     ObjBehind,
+    /// Map floor tiles and platforms.
+    Tile,
     /// Monsters.
     Mob,
     /// Players and NPCs.
@@ -27,9 +27,9 @@ impl GameLayer {
     /// Base z for this layer.
     pub fn base_z(self) -> f32 {
         match self {
-            Self::Background => -1000.0,
-            Self::Tile => -600.0,
-            Self::ObjBehind => -200.0,
+            Self::Background => -900.0,
+            Self::ObjBehind => -600.0,
+            Self::Tile => -200.0,
             Self::Mob => 200.0,
             Self::Character => 400.0,
             Self::ObjFront => 600.0,

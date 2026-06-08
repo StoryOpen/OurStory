@@ -10,7 +10,7 @@ use image::DynamicImage;
 use thiserror::Error;
 use wz_reader::WzNodeCast;
 
-use crate::wz::{Node, Vector2D};
+use crate::wz::Node;
 
 #[derive(Asset, TypePath, Debug)]
 pub struct WzMobAsset {
@@ -120,11 +120,10 @@ impl AssetLoader for WzMobLoader {
                 if is_direct_sprite {
                     let label = format!("{wz_path}/{name}/{frame_index}");
                     let image_handle = load_or_decode_image(&frame_node, load_context, label);
-                    let origin = frame_node
-                        .try_get("origin")
-                        .and_then(|n| -> Option<Vector2D> { n.try_into().ok() })
+                    let origin = frame_node.try_get("origin")
+                        .and_then(|n| n.read_origin(&frame_node).ok())
                         .map(|v| Vec2::new(v.0 as f32, v.1 as f32))
-                        .unwrap_or(Vec2::ZERO);
+                        .unwrap_or_default();
                     parts.push(MobPart {
                         name: "body".to_string(),
                         image_handle,
@@ -144,11 +143,10 @@ impl AssetLoader for WzMobLoader {
                             continue;
                         }
 
-                        let origin = part_node
-                            .try_get("origin")
-                            .and_then(|n| -> Option<Vector2D> { n.try_into().ok() })
+                        let origin = part_node.try_get("origin")
+                            .and_then(|n| n.read_origin(&part_node).ok())
                             .map(|v| Vec2::new(v.0 as f32, v.1 as f32))
-                            .unwrap_or(Vec2::ZERO);
+                            .unwrap_or_default();
 
                         let label = format!("{wz_path}/{name}/{frame_index}/{pn}");
                         let image_handle = load_or_decode_image(&part_node, load_context, label);

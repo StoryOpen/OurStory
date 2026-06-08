@@ -1,5 +1,5 @@
-use crate::wz::foothold::Foothold;
 use super::asset_loader::WzMapAsset;
+use crate::wz::foothold::Foothold;
 use bevy::prelude::*;
 
 #[derive(Debug, Clone, Copy, Resource)]
@@ -15,8 +15,8 @@ impl MapBounds {
         Self {
             left: vr_left as f32,
             right: vr_right as f32,
-            top: vr_top as f32,
-            bottom: vr_bottom as f32,
+            top: -(vr_top as f32),
+            bottom: -(vr_bottom as f32),
         }
     }
 
@@ -59,6 +59,11 @@ impl MapBounds {
 
 pub enum MapState {
     None,
+    Clearing {
+        path: String,
+        handle: Handle<WzMapAsset>,
+        ready: bool,
+    },
     Loading {
         path: String,
         handle: Handle<WzMapAsset>,
@@ -67,6 +72,9 @@ pub enum MapState {
         path: String,
         sprites: Vec<Entity>,
         handle: Handle<WzMapAsset>,
+    },
+    Failed {
+        path: String,
     },
 }
 

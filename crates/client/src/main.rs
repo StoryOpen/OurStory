@@ -30,9 +30,16 @@ use bevy::prelude::*;
 use camera::CameraPlugin;
 #[cfg(feature = "character")]
 use character::CharacterPlugin;
+use clap::Parser;
 use input::InputPlugin;
 use wz::asset_source::WzAssetSourcePlugin;
 use wz::get_cached_base;
+
+#[derive(Parser)]
+struct Args {
+    #[arg(long)]
+    map: Option<String>,
+}
 
 #[cfg(feature = "map")]
 use map::MapPlugin;
@@ -53,6 +60,7 @@ pub enum GameSet {
 }
 
 fn main() {
+    let args = Args::parse();
     let workspace_id: String = std::env::var("WORKSPACE_ID").unwrap_or_default();
 
     let title = if workspace_id.is_empty() {
@@ -69,7 +77,14 @@ fn main() {
             DefaultPlugins
                 .set(ImagePlugin::default_linear())
                 .set(WindowPlugin {
-                    primary_window: Some(Window { title, ..default() }),
+                    primary_window: Some(Window {
+                        title,
+                        resolution: bevy::window::WindowResolution::new(
+                            camera::resources::BaseResolution::default().width as u32,
+                            camera::resources::BaseResolution::default().height as u32,
+                        ),
+                        ..default()
+                    }),
                     ..default()
                 }),
         )
@@ -119,7 +134,7 @@ fn main() {
         .add_plugins(InputPlugin)
         .add_plugins(physics::PhysicsPlugin);
     #[cfg(feature = "map")]
-    app.add_plugins(MapPlugin::default());
+    app.add_plugins(MapPlugin { start_map: args.map.or_else(|| Some("Map/Map/Map1/100000000.img".into())), ..default() });
     #[cfg(feature = "mob")]
     app.add_plugins(MobPlugin::default());
     #[cfg(feature = "ui")]
@@ -135,20 +150,15 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
-    let viewport_height = 768.0f32;
+    let viewport_height = camera::resources::BaseResolution::default().height;
     commands.spawn((
         Camera2d,
         camera::resources::MainCamera,
         Projection::Orthographic(OrthographicProjection {
             scaling_mode: ScalingMode::FixedVertical { viewport_height },
             ..OrthographicProjection::default_2d()
-        }),
-        Transform::from_xyz(0.0, viewport_height * 0.5, 0.0),
+        })
     ));
-    commands.insert_resource(camera::resources::BaseResolution {
-        width: 1024.0,
-        height: 768.0,
-    });
     commands.insert_resource(physics::load_physics(get_cached_base()));
     commands.spawn(DiagnosticsOverlay {
         title: "Debug".into(),

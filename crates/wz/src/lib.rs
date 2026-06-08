@@ -153,18 +153,50 @@ impl Node {
 
     /// Reads scalar `x` and `y` children and returns them with Y negated
     /// (converting from WZ's Y-down to the canonical Y-up convention).
-    pub fn read_pos(&self) -> Result<(f32, f32), NodeError> {
+    pub fn read_pos(&self) -> Result<Vector2D, NodeError> {
         let x: f32 = self.at_path("x")?.try_into()?;
         let y: f32 = self.at_path("y")?.try_into()?;
-        Ok((x, -y))
+        Ok(Vector2D(x as i32, -(y as i32)))
+    }
+
+    /// Reads origin from this node (a native WZ `Vector2D` property) and
+    /// converts to a bottom-left anchor in Y-up space, using the PNG height
+    /// from `img_node`.
+    ///
+    /// WZ stores origin offsets as a `Vector2D` property with a top-left
+    /// anchor in Y-down coordinates. This reads the image height from
+    /// `img_node` and applies the anchor conversion: `result_y = h - y`
+    /// (top-left Y-down → bottom-left Y-up), with a half-pixel correction
+    /// for odd-height images.
+    pub fn read_origin(&self, img_node: &Node) -> Result<Vector2D, NodeError> {
+        let guard = self.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
+        let &Vector2D(x, y) = guard
+            .try_as_vector2d()
+            .ok_or(NodeError::TypeMismatch("Vector2D"))?;
+        let mut y_f = y as f32;
+
+        drop(guard);
+
+        if let Ok(img_guard) = img_node.wz_node.read() {
+            if let Some(png) = img_guard.try_as_png() {
+                let h = png.height as f32;
+                if h % 2.0 == 1.0 && y_f.abs() != 0.0 && y_f.abs() != h {
+                    y_f -= 1.0;
+                }
+                y_f = h - y_f;
+            }
+        }
+
+        Ok(Vector2D(x, y_f as i32))
     }
 
     /// Reads scalar `x{n}` and `y{n}` children (e.g. `x1`/`y1`, `x2`/`y2`
-    /// for footholds and areas) with Y negated.
-    pub fn read_pos_n(&self, n: u8) -> Result<(f32, f32), NodeError> {
+    /// for footholds and areas) with Y negated (converting from WZ's Y-down
+    /// to the canonical Y-up convention).
+    pub fn read_pos_n(&self, n: u8) -> Result<Vector2D, NodeError> {
         let x: f32 = self.at_path(&format!("x{n}"))?.try_into()?;
         let y: f32 = self.at_path(&format!("y{n}"))?.try_into()?;
-        Ok((x, -y))
+        Ok(Vector2D(x as i32, -(y as i32)))
     }
 
     /// Reads a child node at `path` and tries to convert it to `T`,
@@ -192,17 +224,6 @@ impl Node {
             .unwrap_or_else(|_| panic!("required child '{path}' type mismatch"))
     }
 
-    /// Reads a child at `path` as an `i32` Y-coordinate and negates it
-    /// (WZ Y-down → Bevy Y-up). Returns `None` if the path doesn't exist
-    /// or the value isn't an integer.
-    pub fn get_y_opt(&self, path: &str) -> Option<i32> {
-        self.get_opt::<i32>(path).map(|v| -v)
-    }
-
-    /// Like `get_y_opt` but falls back to `default` on any failure.
-    pub fn get_y_or(&self, path: &str, default: i32) -> i32 {
-        self.get_y_opt(path).unwrap_or(default)
-    }
 }
 
 impl TryFrom<Node> for i32 {
@@ -343,15 +364,4 @@ impl<T: TryFrom<Node>, K: TryFrom<NodeName> + Hash + Eq> TryFrom<Node> for Index
     }
 }
 
-/// Reads a WZ `Vector2D` and returns it with Y negated (WZ→canonical).
-impl TryFrom<Node> for Vector2D {
-    type Error = NodeError;
 
-    fn try_from(node: Node) -> Result<Self, Self::Error> {
-        let guard = node.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
-        let Vector2D(x, y) = guard
-            .try_as_vector2d()
-            .ok_or(NodeError::TypeMismatch("Vector2D"))?;
-        Ok(Vector2D(*x, -*y))
-    }
-}

@@ -7,7 +7,7 @@ use image::DynamicImage;
 use std::collections::HashMap;
 
 use crate::character::types::*;
-use crate::wz::{Node, Vector2D};
+use crate::wz::Node;
 
 #[derive(Resource, Default)]
 pub struct WzSpriteCache {
@@ -52,8 +52,9 @@ fn load_part(
     images: &mut Assets<Image>,
 ) -> Option<SpriteLayer> {
     let part_node = node.at_path(part_name).ok()?;
-    let Vector2D(ox, oy) = part_node.at_path("origin").ok()?.try_into().ok()?;
-    let origin = Vec2::new(ox as f32, oy as f32);
+    let origin_node = part_node.try_get("origin")?;
+    let origin_v = origin_node.read_origin(&part_node).ok()?;
+    let origin = Vec2::new(origin_v.0 as f32, origin_v.1 as f32);
     let z_str: String = part_node.at_path("z").ok()?.try_into().ok()?;
     let z = zmap.depth(&z_str);
     let path = part_node.path();
@@ -65,8 +66,11 @@ fn load_part(
             if let Some(val) = map_node
                 .at_path(child_name.as_str())
                 .ok()
-                .and_then(|n| -> Option<Vector2D> { n.try_into().ok() })
-                .map(|v| Vec2::new(v.0 as f32, v.1 as f32))
+                .and_then(|n| {
+                    let x: i32 = n.try_get("x")?.try_into().ok()?;
+                    let y: i32 = n.try_get("y")?.try_into().ok()?;
+                    Some(Vec2::new(x as f32, y as f32))
+                })
             {
                 map.insert(child_name.to_string(), val);
             }

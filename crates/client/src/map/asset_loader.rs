@@ -6,17 +6,22 @@ use bevy::{
     reflect::TypePath,
 };
 use image::DynamicImage;
+use std::backtrace::Backtrace;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use thiserror::Error;
 
+use crate::wz::Vector2D;
+use crate::wz::Vector2DExt;
 use crate::wz::foothold::Foothold;
-use crate::wz::WzNodeExt;
 
 #[derive(Asset, TypePath, Debug)]
 pub struct WzMapAsset {
     pub info: MapInfo,
-    pub objs: Vec<ObjData>,
-    pub tiles: Vec<TileData>,
+    pub objs: Vec<Vec<ObjData>>,
+    pub tiles: Vec<Vec<TileData>>,
     pub footholds: Vec<Foothold>,
     pub backgrounds: Vec<BackgroundData>,
     pub life: Vec<LifeSpawn>,
@@ -60,7 +65,6 @@ pub struct TileData {
     pub image: Handle<Image>,
     pub pos: Vec2,
     pub z: i32,
-    pub layer: u8,
     pub zid: i32,
     pub origin: Vec2,
     pub animation_frames: Vec<AnimFrame>,
@@ -71,7 +75,6 @@ pub struct ObjData {
     pub image: Handle<Image>,
     pub pos: Vec2,
     pub z: i32,
-    pub layer: u8,
     pub zid: i32,
     pub origin: Vec2,
     pub animation_frames: Vec<AnimFrame>,
@@ -178,7 +181,36 @@ pub struct MiniMapData {
 
 #[non_exhaustive]
 #[derive(Debug, Error)]
-pub enum MapLoaderError {}
+pub enum MapLoaderError {
+    #[error("map loader panicked: {0}")]
+    Panic(String),
+}
+
+fn panic_message(err: &(dyn std::any::Any + Send)) -> String {
+    if let Some(msg) = err.downcast_ref::<String>() {
+        msg.clone()
+    } else if let Some(msg) = err.downcast_ref::<&'static str>() {
+        msg.to_string()
+    } else {
+        "unknown panic".to_string()
+    }
+}
+
+fn log_map_failure(path: &str, message: &str) {
+    let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("map_panics.log")
+    else {
+        return;
+    };
+
+    let _ = writeln!(file, "map: {path}");
+    let _ = writeln!(file, "context: asset loader");
+    let _ = writeln!(file, "message: {message}");
+    let _ = writeln!(file, "backtrace:\n{}", Backtrace::force_capture());
+    let _ = writeln!(file, "---");
+}
 
 #[derive(Default, TypePath)]
 pub struct WzMapLoader;
@@ -205,6 +237,7 @@ impl AssetLoader for WzMapLoader {
         let tiles = load_tiles(&map, &base, load_context);
         let objs = load_objs(&map, &base, load_context);
         let backgrounds = load_backgrounds(&map, &base, load_context);
+
         let life = load_life(&map);
         let portals = load_portals(&map);
         let ladder_ropes = load_ladder_ropes(&map);
@@ -230,6 +263,22 @@ impl AssetLoader for WzMapLoader {
     fn extensions(&self) -> &[&str] {
         &["map"]
     }
+}
+
+fn resolve_linked_map(
+    map: &crate::wz::Node,
+    base: &crate::wz::Node,
+    wz_path: &str,
+) -> crate::wz::Node {
+    let Some(link) = map.get_opt::<String>("info/link") else {
+        return map.clone();
+    };
+    let Some((dir, _)) = wz_path.rsplit_once('/') else {
+        return map.clone();
+    };
+    let linked_path = format!("{dir}/{link}.img");
+    base.at_path(&linked_path)
+        .unwrap_or_else(|_| panic!("linked map not found: {linked_path}"))
 }
 
 fn load_info(map: &crate::wz::Node) -> MapInfo {
@@ -265,8 +314,8 @@ fn load_info(map: &crate::wz::Node) -> MapInfo {
         party_only: i("partyOnly"),
         vr_left: i("VRLeft"),
         vr_right: i("VRRight"),
-        vr_top: info_node.get_y_opt("VRTop"),
-        vr_bottom: info_node.get_y_opt("VRBottom"),
+        vr_top: i("VRTop"),
+        vr_bottom: i("VRBottom"),
     }
 }
 
@@ -278,8 +327,8 @@ fn load_footholds(map: &crate::wz::Node) -> Vec<Foothold> {
             for (group_name, id_node) in group_node.children() {
                 let group_num: i32 = group_name.as_str().parse().unwrap_or(0);
                 for (id_name, fh) in id_node.children() {
-                    let (x1, y1) = fh.read_pos_n(1).unwrap_or((0.0, 0.0));
-                    let (x2, y2) = fh.read_pos_n(2).unwrap_or((0.0, 0.0));
+                    let Vector2D(x1, y1) = fh.read_pos_n(1).unwrap_or(Vector2D(0, 0));
+                    let Vector2D(x2, y2) = fh.read_pos_n(2).unwrap_or(Vector2D(0, 0));
                     let id: i32 = id_name.as_str().parse().unwrap_or(0);
                     let force: Option<i32> = fh.get_opt("force");
                     let forbid_fall: Option<i32> = fh.get_opt("forbidFall");
@@ -292,10 +341,10 @@ fn load_footholds(map: &crate::wz::Node) -> Vec<Foothold> {
                         id,
                         group: group_num,
                         layer: layer_num,
-                        x1,
-                        y1,
-                        x2,
-                        y2,
+                        x1: x1 as f32,
+                        y1: y1 as f32,
+                        x2: x2 as f32,
+                        y2: y2 as f32,
                         force,
                         forbid_fall,
                         piece,
@@ -315,8 +364,8 @@ fn load_tiles(
     map: &crate::wz::Node,
     base: &crate::wz::Node,
     load_context: &mut LoadContext<'_>,
-) -> Vec<TileData> {
-    let mut tiles = Vec::new();
+) -> Vec<Vec<TileData>> {
+    let mut tiles_by_layer: Vec<Vec<TileData>> = (0..8).map(|_| Vec::new()).collect();
 
     for i in 0..8u8 {
         let layer = match map.at_path(&i.to_string()) {
@@ -331,29 +380,36 @@ fn load_tiles(
         if let Ok(tile_root) = layer.at_path("tile") {
             let mut children = tile_root.children();
             children.sort_by(|x1, _x2, x3, _x4| {
-                x1.as_str()
-                    .parse::<i32>()
-                    .unwrap()
-                    .cmp(&x3.as_str().parse::<i32>().unwrap())
+                let a = x1.as_str().parse::<i32>().unwrap_or(0);
+                let b = x3.as_str().parse::<i32>().unwrap_or(0);
+                a.cmp(&b)
             });
-            for (name, tile_node) in children {
+            for (name, tile_node) in children.iter() {
                 let variant: String = tile_node.required("u");
                 let index: i32 = tile_node.required("no");
-                let pos = tile_node.read_pos().map(Vec2::from).unwrap();
                 let tile_id: i32 = name.as_str().parse().unwrap_or(0);
 
                 let img_path = format!("Map/Tile/{}.img/{}/{}", tile_set, variant, index);
-                let img_node = base.at_path(&img_path).unwrap();
+                let Ok(img_node) = base.at_path(&img_path) else {
+                    continue;
+                };
                 let z: i32 = img_node.get_or("z", 0);
+                let pos = tile_node
+                    .read_pos()
+                    .map(Vector2D::to_vec2)
+                    .unwrap_or_else(|_| panic!("missing tile position at {}", tile_node.path()));
+
+                let Ok(pos) = tile_node.read_pos().map(Vector2D::to_vec2) else {
+                    continue;
+                };
 
                 let (animation_frames, image, origin) =
                     load_animated_node(&img_node, load_context, &img_path);
 
-                tiles.push(TileData {
+                tiles_by_layer[i as usize].push(TileData {
                     image,
                     pos,
                     z,
-                    layer: i,
                     zid: tile_id,
                     origin,
                     animation_frames,
@@ -362,15 +418,19 @@ fn load_tiles(
         }
     }
 
-    tiles
+    for layer in &mut tiles_by_layer {
+        layer.sort_by_key(|t| (t.z, t.zid));
+    }
+
+    tiles_by_layer
 }
 
 fn load_objs(
     map: &crate::wz::Node,
     base: &crate::wz::Node,
     load_context: &mut LoadContext<'_>,
-) -> Vec<ObjData> {
-    let mut objs = Vec::new();
+) -> Vec<Vec<ObjData>> {
+    let mut objs_by_layer: Vec<Vec<ObjData>> = (0..8).map(|_| Vec::new()).collect();
 
     for i in 0..8u8 {
         let layer = match map.at_path(&i.to_string()) {
@@ -384,7 +444,6 @@ fn load_objs(
                 let l0: String = obj_node.required("l0");
                 let l1: String = obj_node.required("l1");
                 let l2: String = obj_node.required("l2");
-                let pos = obj_node.read_pos().map(Vec2::from).unwrap();
                 let z: i32 = obj_node.get_or("z", 0);
                 let zid: i32 = name.as_str().parse().unwrap_or(0);
                 let flip: bool = obj_node.get_or("f", false);
@@ -402,16 +461,21 @@ fn load_objs(
                 }
 
                 let img_path = format!("Map/Obj/{}.img/{}/{}/{}/0", obj_set, l0, l1, l2);
-                let img_node = base.at_path(&img_path).unwrap();
+                let Ok(img_node) = base.at_path(&img_path) else {
+                    continue;
+                };
+
+                let Ok(pos) = obj_node.read_pos().map(Vector2D::to_vec2) else {
+                    continue;
+                };
 
                 let (animation_frames, image, origin) =
                     load_animated_node(&img_node, load_context, &img_path);
 
-                objs.push(ObjData {
+                objs_by_layer[i as usize].push(ObjData {
                     image,
                     pos,
                     z,
-                    layer: i,
                     zid,
                     origin,
                     animation_frames,
@@ -426,7 +490,11 @@ fn load_objs(
         }
     }
 
-    objs
+    for layer in &mut objs_by_layer {
+        layer.sort_by_key(|o| (o.z, o.zid));
+    }
+
+    objs_by_layer
 }
 
 fn load_backgrounds(
@@ -455,13 +523,14 @@ fn load_backgrounds(
         let cy: i32 = back_node.get_or("cy", 0);
         let alpha: i32 = back_node.get_or("a", 255);
         let flip: bool = back_node.get_or("f", false);
-        let pos = back_node.read_pos().map(Vec2::from).unwrap_or(Vec2::ZERO);
 
         let img_path = format!("Map/Back/{}.img/back/{}", b_s, no);
         let img_node = match base.at_path(&img_path) {
             Ok(n) => n,
             Err(_) => continue,
         };
+
+        let pos = back_node.read_pos().map(Vector2D::to_vec2).unwrap();
 
         let img_label = format!("{}/0", img_path);
         let (animation_frames, image, origin) =
@@ -501,7 +570,7 @@ fn load_life(map: &crate::wz::Node) -> Vec<LifeSpawn> {
             None => continue,
         };
         let id: i32 = life_node.get_or("id", 0);
-        let pos = life_node.read_pos().map(Vec2::from).unwrap_or(Vec2::ZERO);
+        let pos = life_node.read_pos().map(Vector2D::to_vec2).unwrap_or(Vec2::ZERO);
         let cy: i32 = life_node.get_or("cy", 0);
         let fh: i32 = life_node.get_or("fh", 0);
         let rx0: i32 = life_node.get_or("rx0", 0);
@@ -537,7 +606,7 @@ fn load_portals(map: &crate::wz::Node) -> Vec<PortalData> {
     for (_name, portal_node) in portal_root.children() {
         let pt: i32 = portal_node.get_or("pt", 0);
         let pn: String = portal_node.get_or("pn", String::new());
-        let pos = portal_node.read_pos().map(Vec2::from).unwrap_or(Vec2::ZERO);
+        let pos = portal_node.read_pos().map(Vector2D::to_vec2).unwrap_or(Vec2::ZERO);
         let tm: i32 = portal_node.get_or("tm", 0);
         let tn: String = portal_node.get_or("tn", String::new());
         let script: Option<String> = portal_node.get_opt("script");
@@ -601,7 +670,7 @@ fn load_seats(map: &crate::wz::Node) -> Vec<SeatData> {
 
     let mut seats = Vec::new();
     for (_name, seat_node) in seat_root.children() {
-        let pos = seat_node.read_pos().map(Vec2::from).unwrap_or(Vec2::ZERO);
+        let pos = seat_node.read_pos().map(Vector2D::to_vec2).unwrap_or(Vec2::ZERO);
         seats.push(SeatData { pos });
     }
 
@@ -670,14 +739,16 @@ fn load_or_decode_image(
         return load_context.get_label_handle::<Image>(&wz_path);
     }
     let dynamic_image: DynamicImage = node.clone().try_into().unwrap();
+    let rgba = dynamic_image.to_rgba8();
+    let (width, height) = rgba.dimensions();
     let image = Image::new(
         Extent3d {
-            width: dynamic_image.width(),
-            height: dynamic_image.height(),
+            width,
+            height,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        dynamic_image.into_bytes(),
+        rgba.into_raw(),
         TextureFormat::Rgba8Unorm,
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
@@ -696,7 +767,10 @@ fn load_animated_node(
 
     if !is_animated {
         let handle = load_or_decode_image(node, load_context, base_path.to_string());
-        let origin = node.get_vec2_opt("origin").unwrap();
+        let origin = node.try_get("origin")
+            .and_then(|n| n.read_origin(node).ok())
+            .map(|v| Vec2::new(v.0 as f32, v.1 as f32))
+            .unwrap_or(Vec2::ZERO);
         return (Vec::new(), handle, origin);
     }
 
@@ -724,7 +798,10 @@ fn load_animated_node(
 
         let frame_path = format!("{}/{}", base_path, frame_index);
         let handle = load_or_decode_image(&child, load_context, frame_path);
-        let origin = child.get_vec2_opt("origin").unwrap_or_default();
+        let origin = child.try_get("origin")
+            .and_then(|n| n.read_origin(&child).ok())
+            .map(|v| Vec2::new(v.0 as f32, v.1 as f32))
+            .unwrap_or(Vec2::ZERO);
         let delay: i32 = child.get_or("delay", 100);
         let move_type: i32 = child.get_or("moveType", 0);
         let move_w: f32 = child.get_or("moveW", 0.0f32);
