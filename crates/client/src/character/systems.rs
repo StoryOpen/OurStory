@@ -3,12 +3,78 @@ use std::collections::HashMap;
 
 use crate::character::components::*;
 use crate::character::events::*;
+use crate::character::job::Job;
 use crate::character::loader::{self, WzSpriteCache};
+use crate::character::skills::{LearnedSkills, SkillDatabase, SkillEffect, SkillEffectRoot, SkillType};
 use crate::character::types::*;
-use crate::input::{CharacterIntent, IsLocalPlayer};
+use crate::input::{CharacterIntent, IsLocalPlayer, KeyAction};
 use crate::layer::GameLayer;
 use crate::physics::PhysicsState;
 use crate::wz::get_cached_base;
+
+/// Tracks the current action index per category for cycling.
+#[derive(Resource, Default)]
+pub struct CharacterActionCycle {
+    pub stance: usize,
+    pub alert: usize,
+    pub swing: usize,
+    pub stab: usize,
+    pub multi_swing: usize,
+    pub ranged: usize,
+    pub magic: usize,
+    pub movement_skill: usize,
+    pub skill: usize,
+}
+
+/// Action lists per category, in the order they appear in WZ.
+pub const STANCE_ACTIONS: &[&str] = &[
+    "stand1", "stand2", "walk1", "walk2", "sit", "prone", "prone2",
+    "ladder", "ladder2", "rope", "rope2", "fly", "float",
+];
+
+pub const ALERT_ACTIONS: &[&str] = &[
+    "alert", "alert2", "alert3", "alert4", "alert5", "alert6",
+];
+
+pub const SWING_ACTIONS: &[&str] = &[
+    "swingO1", "swingO2", "swingO3", "swingOF",
+    "swingP1", "swingP2", "swingPF",
+    "swingT1", "swingT2", "swingT3", "swingTF",
+    "swingT2PoleArm", "swingP1PoleArm", "swingP2PoleArm",
+];
+
+pub const STAB_ACTIONS: &[&str] = &[
+    "stabO1", "stabO2", "stabOF", "stabT1", "stabT2", "stabTF", "proneStab",
+];
+
+pub const MULTI_SWING_ACTIONS: &[&str] = &[
+    "doubleSwing", "tripleSwing",
+    "overSwingDouble", "overSwingTriple",
+    "fullSwingDouble", "fullSwingTriple",
+];
+
+pub const RANGED_ACTIONS: &[&str] = &[
+    "shoot1", "shoot2", "shoot6", "shootF",
+    "shot", "handgun", "cannon", "torpedo",
+];
+
+pub const MAGIC_ACTIONS: &[&str] = &[
+    "magic1", "magic2", "magic3", "magic4", "magic5",
+    "magicmissile", "superMagicmissile",
+    "heal", "holyShield", "genesis", "sanctuary",
+    "resurrection", "timeleap", "meteor", "blizzard",
+    "chainlightning", "firestrike", "fireburner", "flamegear",
+    "icebreathe_prepare", "breathe_prepare",
+    "shockwave", "windspear", "windshot", "stormbreak", "wave",
+    "magicFlare", "magicBooster", "coolingeffect", "souldriver",
+];
+
+pub const MOVEMENT_SKILL_ACTIONS: &[&str] = &[
+    "dash", "combatStep", "straight", "somersault", "rollingSpin",
+    "backstep", "rush", "rush2",
+    "ghostfly", "ghostjump", "ghostladder", "ghostproneStab",
+    "ghostrope", "ghostsit", "ghoststand", "ghostwalk",
+];
 
 fn resolve_equipment(
     base: &crate::wz::Node,
@@ -42,6 +108,7 @@ fn apply_vslot_filter(
     let filter_frame = |frame: FrameData| FrameData {
         parts: filter_hidden_sprites(frame.parts, equipment),
         delay: frame.delay,
+        flip: frame.flip,
     };
     let actions = actions
         .into_iter()
@@ -71,11 +138,25 @@ fn update_part_sprite(
     part_entity: Entity,
     layer: &SpriteLayer,
     pos: Vec3,
+    flip: bool,
     part_query: &mut Query<(&mut Sprite, &mut Transform, &CharacterPart)>,
 ) {
     if let Ok((mut sprite, mut transform, _)) = part_query.get_mut(part_entity) {
         sprite.image = layer.image.clone();
-        transform.translation = pos;
+        transform.translation = if flip {
+            // Mirror the origin (connection point) around root center on the x axis:
+            //   origin_root = pos + origin
+            //   new_origin_root.x = -origin_root.x
+            //   new_pos.x + origin.x = -(pos.x + origin.x)
+            //   new_pos.x = -pos.x - 2 * origin.x
+            Vec3::new(
+                -pos.x - 2.0 * layer.origin.x,
+                pos.y,
+                pos.z,
+            )
+        } else {
+            pos
+        };
         transform.scale = Vec3::ONE;
     }
 }
@@ -89,6 +170,7 @@ pub fn spawn_character(
     slot_map: Res<SlotMap>,
 ) {
     let ev = trigger.event();
+    info!("spawn_character at {:?}", ev.transform.translation);
     let base = get_cached_base();
 
     let loaded = loader::preload_character_frames(
@@ -130,6 +212,10 @@ pub fn spawn_character(
         .and_then(|frames| frames.first())
         .map(|f| f.delay)
         .unwrap_or(100);
+    let first_flip = first_frames
+        .and_then(|frames| frames.first())
+        .map(|f| f.flip)
+        .unwrap_or(false);
 
     let pos = ev.transform.translation;
     let root = commands
@@ -146,11 +232,14 @@ pub fn spawn_character(
                 face_expression: ev.face_expression.clone(),
                 face_frame_idx: 0,
                 face_timer: Timer::from_seconds(face_delay as f32 / 1000.0, TimerMode::Repeating),
+                flip: first_flip,
             },
             CharacterFrameData {
                 actions,
                 face_expressions,
             },
+            ev.config.job,
+            LearnedSkills::default(),
             PartEntities {
                 map: HashMap::new(),
             },
@@ -194,13 +283,154 @@ pub fn spawn_character(
     commands.entity(root).add_children(&part_entities);
     commands.entity(root).insert(PartEntities { map: part_map });
 }
+    trigger: On<SetFlip>,
+    mut query: Query<(&mut CharacterAnimation, &CharacterFrameData, &PartEntities)>,
+    mut part_query: Query<(&mut Sprite, &mut Transform, &CharacterPart)>,
+) {
+    let ev = trigger.event();
+    let Ok((mut anim, frame_data, part_entities)) = query.get_mut(ev.entity) else {
+        return;
+    };
+
+    anim.flip = ev.facing_left;
+
+    let Some(frames) = frame_data.actions.get(&anim.action) else {
+        return;
+    };
+    let Some(frame) = frames.get(anim.frame_idx % frames.len().max(1)) else {
+        return;
+    };
+
+    let mut merged_parts = frame.parts.clone();
+    if let Some(face_frames) = frame_data.face_expressions.get(&anim.face_expression) {
+        if let Some(face_frame) =
+            face_frames.get(anim.face_frame_idx.min(face_frames.len().saturating_sub(1)))
+        {
+            merged_parts.extend(face_frame.parts.clone());
+        }
+    }
+
+        let positions = compute_frame_transforms(&merged_parts, GameLayer::Character.base_z());
+
+        for layer in &merged_parts {
+            if let Some(&child) = part_entities.map.get(&layer.layer_name) {
+                let pos = positions
+                    .get(&layer.layer_name)
+                    .copied()
+                    .unwrap_or(Vec3::ZERO);
+                update_part_sprite(child, layer, pos, anim.flip, &mut part_query);
+            }
+        }
+    }
+}
+
+pub fn on_use_skill(
+    trigger: On<UseSkill>,
+    mut commands: Commands,
+    skill_db: Res<SkillDatabase>,
+    char_query: Query<&Transform, With<CharacterRoot>>,
+) {
+    let ev = trigger.event();
+    let Some(skill) = skill_db.get(ev.skill_id) else {
+        warn!("skill {} not found in database", ev.skill_id);
+        return;
+    };
+    let Ok(char_transform) = char_query.get(ev.entity) else {
+        return;
+    };
+
+    // Play character animation if the skill has one
+    if let Some(action) = &skill.action {
+        commands.trigger(SetAction {
+            entity: ev.entity,
+            action: action.clone(),
+        });
+    }
+
+    // Spawn effect frames as children of character root
+    if !skill.effect_frames.is_empty() {
+        let effect_root = commands
+            .spawn((
+                SkillEffectRoot,
+                Transform::from_translation(Vec3::ZERO),
+                Visibility::Visible,
+            ))
+            .id();
+
+        commands.entity(ev.entity).add_child(effect_root);
+
+        let first_delay = skill.effect_frames.first().map(|f| f.delay).unwrap_or(100);
+        commands.entity(effect_root).insert(SkillEffect {
+            frames: skill.effect_frames.clone(),
+            frame_idx: 0,
+            timer: Timer::from_seconds(first_delay as f32 / 1000.0, TimerMode::Repeating),
+            finished: false,
+        });
+
+        // Spawn first frame's sprite as child of effect root
+        if let Some(first) = skill.effect_frames.first() {
+            let sprite_entity = commands
+                .spawn((
+                    Sprite::from_image(first.image.clone()),
+                    Transform::from_xyz(
+                        -first.origin.x,
+                        -first.origin.y,
+                        first.z as f32,
+                    ),
+                    Visibility::Visible,
+                ))
+                .id();
+            commands.entity(effect_root).add_child(sprite_entity);
+        }
+    }
+}
+
+pub fn animate_skill_effects(
+    time: Res<Time>,
+    mut effect_query: Query<(Entity, &mut SkillEffect, &Children), With<SkillEffectRoot>>,
+    mut sprite_query: Query<(&mut Sprite, &mut Transform)>,
+    mut commands: Commands,
+) {
+    for (entity, mut effect, children) in &mut effect_query {
+        effect.timer.tick(time.delta());
+        if !effect.timer.just_finished() {
+            continue;
+        }
+
+        effect.frame_idx += 1;
+        if effect.frame_idx >= effect.frames.len() {
+            for &child in children.iter() {
+                commands.entity(child).despawn();
+            }
+            commands.entity(entity).despawn();
+            continue;
+        }
+
+        let frame = &effect.frames[effect.frame_idx];
+        effect.timer =
+            Timer::from_seconds(frame.delay as f32 / 1000.0, TimerMode::Repeating);
+
+        if let Some(&child) = children.iter().next() {
+            if let Ok((mut sprite, mut child_transform)) = sprite_query.get_mut(child) {
+                sprite.image = frame.image.clone();
+                child_transform.translation = Vec3::new(
+                    -frame.origin.x,
+                    -frame.origin.y,
+                    frame.z as f32,
+                );
+            }
+        }
+    }
+}
 
 pub fn on_character_action(
     trigger: On<crate::input::ActionEvent>,
     query: Query<Entity, With<CharacterRoot>>,
+    query_job: Query<&Job, With<CharacterRoot>>,
+    mut cycle: ResMut<CharacterActionCycle>,
+    skill_db: Res<SkillDatabase>,
     mut commands: Commands,
 ) {
-    use crate::input::KeyAction;
     let entity = match query.iter().next() {
         Some(e) => e,
         None => return,
@@ -221,6 +451,82 @@ pub fn on_character_action(
         KeyAction::SwingP1 => "swingP1",
         KeyAction::Shoot1 => "shoot1",
         KeyAction::Magic1 => "magic1",
+        // Category cycling
+        KeyAction::CycleStance => {
+            let list = STANCE_ACTIONS;
+            let a = list[cycle.stance % list.len()];
+            cycle.stance = (cycle.stance + 1) % list.len();
+            a
+        }
+        KeyAction::CycleAlert => {
+            let list = ALERT_ACTIONS;
+            let a = list[cycle.alert % list.len()];
+            cycle.alert = (cycle.alert + 1) % list.len();
+            a
+        }
+        KeyAction::CycleSwing => {
+            let list = SWING_ACTIONS;
+            let a = list[cycle.swing % list.len()];
+            cycle.swing = (cycle.swing + 1) % list.len();
+            a
+        }
+        KeyAction::CycleStab => {
+            let list = STAB_ACTIONS;
+            let a = list[cycle.stab % list.len()];
+            cycle.stab = (cycle.stab + 1) % list.len();
+            a
+        }
+        KeyAction::CycleMultiSwing => {
+            let list = MULTI_SWING_ACTIONS;
+            let a = list[cycle.multi_swing % list.len()];
+            cycle.multi_swing = (cycle.multi_swing + 1) % list.len();
+            a
+        }
+        KeyAction::CycleRanged => {
+            let list = RANGED_ACTIONS;
+            let a = list[cycle.ranged % list.len()];
+            cycle.ranged = (cycle.ranged + 1) % list.len();
+            a
+        }
+        KeyAction::CycleMagic => {
+            let list = MAGIC_ACTIONS;
+            let a = list[cycle.magic % list.len()];
+            cycle.magic = (cycle.magic + 1) % list.len();
+            a
+        }
+        KeyAction::CycleMovementSkill => {
+            let list = MOVEMENT_SKILL_ACTIONS;
+            let a = list[cycle.movement_skill % list.len()];
+            cycle.movement_skill = (cycle.movement_skill + 1) % list.len();
+            a
+        }
+        KeyAction::CycleSkill => {
+            let skill_db = skill_db.as_ref();
+            let job = match query_job.get(entity) {
+                Ok(j) => j,
+                Err(_) => return,
+            };
+            let active = skill_db.active_skills_for_job(&job.lineage());
+            if active.is_empty() {
+                return;
+            }
+            let idx = cycle.skill % active.len();
+            cycle.skill = (cycle.skill + 1) % active.len();
+            let skill_entry = active[idx];
+            commands.trigger(UseSkill {
+                entity,
+                skill_id: skill_entry.id,
+            });
+            return;
+        }
+        KeyAction::FlipLeft => {
+            commands.trigger(SetFlip { entity, facing_left: true });
+            return;
+        }
+        KeyAction::FlipRight => {
+            commands.trigger(SetFlip { entity, facing_left: false });
+            return;
+        }
         _ => return,
     };
     commands.trigger(SetAction {
@@ -250,6 +556,7 @@ pub fn animate_characters(
                     let frame = &frames[anim.frame_idx];
                     anim.timer =
                         Timer::from_seconds(frame.delay as f32 / 1000.0, TimerMode::Repeating);
+                    anim.flip = frame.flip;
                     animation_dirty = true;
                 }
             }
@@ -297,7 +604,7 @@ pub fn animate_characters(
                     .get(&layer.layer_name)
                     .copied()
                     .unwrap_or(Vec3::ZERO);
-                update_part_sprite(child, layer, pos, &mut part_query);
+                update_part_sprite(child, layer, pos, anim.flip, &mut part_query);
             }
         }
     }
@@ -320,9 +627,11 @@ pub fn on_set_action(
 
     anim.action = ev.action.clone();
     anim.frame_idx = 0;
+    anim.flip = false;
 
     if let Some(first) = frames.first() {
         anim.timer = Timer::from_seconds(first.delay as f32 / 1000.0, TimerMode::Repeating);
+        anim.flip = first.flip;
 
         let mut merged_parts = first.parts.clone();
         if let Some(face_frames) = frame_data.face_expressions.get(&anim.face_expression) {
@@ -341,7 +650,7 @@ pub fn on_set_action(
                     .get(&layer.layer_name)
                     .copied()
                     .unwrap_or(Vec3::ZERO);
-                update_part_sprite(child, layer, pos, &mut part_query);
+                update_part_sprite(child, layer, pos, anim.flip, &mut part_query);
             }
         }
     }

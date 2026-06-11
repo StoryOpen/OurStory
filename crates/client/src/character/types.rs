@@ -175,6 +175,7 @@ pub enum PartSource {
 pub struct FrameData {
     pub parts: Vec<SpriteLayer>,
     pub delay: u32,
+    pub flip: bool,
 }
 
 #[derive(Debug, Clone)]

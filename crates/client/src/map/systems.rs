@@ -164,6 +164,7 @@ pub fn spawn_map(
     commands.trigger(super::events::MapLoaded {
         path: ev.path.clone(),
         bounds,
+        handle: ev.handle.clone(),
     });
 
     let viewport = window

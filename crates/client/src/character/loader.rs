@@ -109,29 +109,72 @@ fn load_frame(
         .ok()
         .and_then(|n| n.try_into().ok())
         .unwrap_or(100);
+
+    let flip: bool = frame_node
+        .at_path("flip")
+        .ok()
+        .and_then(|n| n.try_into().ok())
+        .unwrap_or(false);
+
+    // Check if this is a frame-reference action (references another action's frame)
+    if let (Ok(action_node), Ok(frame_node_val)) = (
+        frame_node.at_path("action"),
+        frame_node.at_path("frame"),
+    ) {
+        let ref_action: String = action_node.try_into().ok()?;
+        let ref_frame: i32 = frame_node_val.try_into().ok()?;
+        let ref_body_action_path = body_action_path
+            .rsplit_once('/')
+            .map(|(parent, _)| format!("{}/{}", parent, ref_action))
+            .unwrap_or_else(|| format!("{}/{}", body_action_path, ref_action));
+        let ref_head_path = head_action_path
+            .as_ref()
+            .and_then(|h| {
+                h.rsplit_once('/')
+                    .map(|(parent, _)| format!("{}/{}", parent, ref_action))
+            });
+
+        // Load the referenced frame, passing the original action_name for equipment/hair lookup
+        let mut frame = load_frame(
+            base,
+            &ref_body_action_path,
+            action_name,
+            ref_head_path.as_deref(),
+            equip_configs,
+            hair_id,
+            zmap,
+            slot_map,
+            ref_frame as u32,
+            cache,
+            images,
+        )?;
+        // Frame-reference delay overrides the referenced frame's delay
+        frame.delay = delay.unsigned_abs();
+        return Some(frame);
+    }
+
     let mut parts = Vec::new();
 
-    if let Some(layer) = load_part(
-        &frame_node,
-        "body",
-        PartSource::Body,
-        zmap,
-        slot_map,
-        cache,
-        images,
-    ) {
-        parts.push(layer);
-    }
-    if let Some(layer) = load_part(
-        &frame_node,
-        "arm",
-        PartSource::Body,
-        zmap,
-        slot_map,
-        cache,
-        images,
-    ) {
-        parts.push(layer);
+    for (child_name, _) in frame_node.children() {
+        let child_name = child_name.as_str();
+        // Skip non-sprite metadata children
+        if matches!(
+            child_name,
+            "face" | "delay" | "action" | "frame" | "move" | "flip" | "rotate" | "info"
+        ) {
+            continue;
+        }
+        if let Some(layer) = load_part(
+            &frame_node,
+            child_name,
+            PartSource::Body,
+            zmap,
+            slot_map,
+            cache,
+            images,
+        ) {
+            parts.push(layer);
+        }
     }
 
     if let Some(head_path) = head_action_path {
@@ -195,7 +238,8 @@ fn load_frame(
 
     Some(FrameData {
         parts,
-        delay: delay as u32,
+        delay: delay.unsigned_abs(),
+        flip,
     })
 }
 
@@ -247,6 +291,7 @@ fn preload_face_expressions(
                 frames.push(FrameData {
                     parts: vec![layer],
                     delay: 2000,
+                    flip: false,
                 });
             }
         } else if child_keys.iter().any(|k| k.parse::<u32>().is_ok()) {
@@ -268,6 +313,7 @@ fn preload_face_expressions(
                                     frames.push(FrameData {
                                         parts: vec![layer],
                                         delay: delay as u32,
+                                        flip: false,
                                     });
                                 }
                             }

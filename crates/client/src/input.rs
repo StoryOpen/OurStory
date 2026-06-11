@@ -31,6 +31,7 @@ pub enum KeyAction {
     // Discrete triggers
     Jump,
     JumpAction,
+    // Direct action keys (commonly used)
     Stand1,
     Walk1,
     Sit,
@@ -44,6 +45,19 @@ pub enum KeyAction {
     SwingP1,
     Shoot1,
     Magic1,
+    // Category cycling
+    CycleStance,
+    CycleAlert,
+    CycleSwing,
+    CycleStab,
+    CycleMultiSwing,
+    CycleRanged,
+    CycleMagic,
+    CycleMovementSkill,
+    CycleSkill,
+    // Facing direction
+    FlipLeft,
+    FlipRight,
     // Developer debug
     DebugMobStand,
     DebugMobMove,
@@ -85,6 +99,7 @@ impl Default for KeyBindings {
         inner.insert(KeyCode::ArrowUp, KeyAction::MoveUp);
         inner.insert(KeyCode::ArrowDown, KeyAction::MoveDown);
         inner.insert(KeyCode::Space, KeyAction::CycleMobAction);
+        // Direct action keys (most commonly used)
         inner.insert(KeyCode::Digit1, KeyAction::Stand1);
         inner.insert(KeyCode::Digit2, KeyAction::Walk1);
         inner.insert(KeyCode::Digit3, KeyAction::JumpAction);
@@ -99,6 +114,20 @@ impl Default for KeyBindings {
         inner.insert(KeyCode::KeyW, KeyAction::SwingP1);
         inner.insert(KeyCode::KeyE, KeyAction::Shoot1);
         inner.insert(KeyCode::KeyR, KeyAction::Magic1);
+        // Category cycling keys
+        inner.insert(KeyCode::KeyA, KeyAction::CycleStance);
+        inner.insert(KeyCode::KeyS, KeyAction::CycleSwing);
+        inner.insert(KeyCode::KeyD, KeyAction::CycleStab);
+        inner.insert(KeyCode::KeyF, KeyAction::CycleMultiSwing);
+        inner.insert(KeyCode::KeyZ, KeyAction::CycleRanged);
+        inner.insert(KeyCode::KeyX, KeyAction::CycleMagic);
+        inner.insert(KeyCode::KeyC, KeyAction::CycleMovementSkill);
+        inner.insert(KeyCode::KeyV, KeyAction::CycleSkill);
+        inner.insert(KeyCode::KeyB, KeyAction::CycleAlert);
+        // Facing direction
+        inner.insert(KeyCode::Comma, KeyAction::FlipLeft);
+        inner.insert(KeyCode::Period, KeyAction::FlipRight);
+        // Debug
         inner.insert(KeyCode::F5, KeyAction::DebugMobStand);
         inner.insert(KeyCode::F6, KeyAction::DebugMobMove);
         inner.insert(KeyCode::F7, KeyAction::DebugMobHit1);

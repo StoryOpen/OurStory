@@ -15,4 +15,5 @@ pub struct MapReady {
 pub struct MapLoaded {
     pub path: String,
     pub bounds: MapBounds,
+    pub handle: Handle<WzMapAsset>,
 }

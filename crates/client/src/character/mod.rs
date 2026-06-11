@@ -1,14 +1,19 @@
 pub mod components;
 pub mod events;
+pub mod job;
 pub mod loader;
+pub mod skill_loader;
+pub mod skills;
 pub mod systems;
 pub mod types;
 
 use bevy::prelude::*;
 
 use self::loader::WzSpriteCache;
+use self::skills::SkillDatabase;
 use self::systems::*;
 use self::types::{load_smap, load_zmap};
+use crate::map::events::MapLoaded;
 use crate::wz::get_cached_base;
 use crate::GameSet;
 
@@ -17,25 +22,62 @@ pub struct CharacterPlugin;
 impl Plugin for CharacterPlugin {
     fn build(&self, app: &mut App) {
         let base = get_cached_base();
+        let mut cache = WzSpriteCache::default();
+        let mut images = app.world_mut().resource_mut::<Assets<Image>>();
+        let skill_db = skill_loader::load_skill_database(base, &mut cache, &mut images);
         app.insert_resource(load_zmap(base))
             .insert_resource(load_smap(base))
-            .init_resource::<WzSpriteCache>()
+            .insert_resource(cache)
+            .insert_resource(skill_db)
+            .init_resource::<CharacterActionCycle>()
             .add_observer(spawn_character)
             .add_observer(on_set_action)
+            .add_observer(on_set_flip)
             .add_observer(on_character_action)
+            .add_observer(on_use_skill)
+            .add_observer(spawn_character_on_map)
             .add_systems(Update, animate_characters.in_set(GameSet::Animation))
-            .add_systems(Startup, spawn_test_character);
+            .add_systems(Update, animate_skill_effects.in_set(GameSet::Animation));
     }
 }
 
-fn spawn_test_character(mut commands: Commands) {
-    use crate::character::{components::CharacterConfig, events::SpawnCharacter, types::EquipSlot};
+fn spawn_character_on_map(
+    trigger: On<MapLoaded>,
+    mut commands: Commands,
+    assets: Res<Assets<crate::map::asset_loader::WzMapAsset>>,
+) {
+    let ev = trigger.event();
+    info!("MapLoaded: {}", ev.path);
+    let asset = match assets.get(&ev.handle) {
+        Some(a) => a,
+        None => {
+            warn!("Map asset not found for {}", ev.path);
+            return;
+        }
+    };
+
+    let spawn_pos = asset
+        .portals
+        .iter()
+        .find(|p| p.pt == 0)
+        .map(|p| p.pos)
+        .unwrap_or(Vec2::ZERO);
+
+    info!("Spawning character at spawn portal: {:?}", spawn_pos);
+
+    use crate::character::{
+        components::CharacterConfig,
+        events::SpawnCharacter,
+        job::Job,
+        types::EquipSlot,
+    };
     commands.trigger(SpawnCharacter {
-        transform: Transform::from_xyz(0.0, 0.0, 0.0),
+        transform: Transform::from_xyz(spawn_pos.x, spawn_pos.y, 0.0),
         config: CharacterConfig {
             skin_suffix: 2000,
             hair_id: 31200,
             face_id: 21405,
+            job: Job(112),
             equipment: vec![
                 (EquipSlot::Cap, 01002419),
                 (EquipSlot::Coat, 01042013),

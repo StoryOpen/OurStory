@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 
+use crate::character::job::Job;
 use crate::character::types::{EquipmentEntry, FrameData};
 
 #[derive(Component)]
@@ -11,6 +12,7 @@ pub struct CharacterConfig {
     pub skin_suffix: u32,
     pub hair_id: u32,
     pub face_id: u32,
+    pub job: Job,
     pub equipment: Vec<(crate::character::types::EquipSlot, u32)>,
 }
 
@@ -31,6 +33,7 @@ pub struct CharacterAnimation {
     pub face_expression: String,
     pub face_frame_idx: usize,
     pub face_timer: Timer,
+    pub flip: bool,
 }
 
 #[derive(Component)]

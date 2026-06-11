@@ -15,3 +15,15 @@ pub struct SetAction {
     pub entity: Entity,
     pub action: String,
 }
+
+#[derive(Event)]
+pub struct SetFlip {
+    pub entity: Entity,
+    pub facing_left: bool,
+}
+
+#[derive(Event)]
+pub struct UseSkill {
+    pub entity: Entity,
+    pub skill_id: u32,
+}

@@ -23,7 +23,8 @@ pub enum NodeError {
 }
 
 pub fn resolve_base() -> Result<Node, std::io::Error> {
-    let wz_node = wz_reader::util::resolve_base("./wz/Base.wz", None)?;
+    let path = std::env::var("WZ_PATH").unwrap_or_else(|_| "./wz/Base.wz".to_string());
+    let wz_node = wz_reader::util::resolve_base(&path, None)?;
     Ok(wz_node.into())
 }
 
