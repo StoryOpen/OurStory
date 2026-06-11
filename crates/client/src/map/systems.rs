@@ -626,7 +626,7 @@ pub fn tick_horizontal_scrolling_backgrounds(
     for (bg, tile, mut transform) in &mut backgrounds {
         let offset = Vec2::new(
             bg.rx as f32 * 5.0 * elapsed,
-            -(bg.ry as f32) * cam_pos.y / 100.0,
+            (bg.ry + 100) as f32 * cam_pos.y / 100.0,
         );
         position_tiled_background(
             &mut transform,
@@ -655,7 +655,7 @@ pub fn tick_vertical_scrolling_backgrounds(
     let elapsed = time.elapsed_secs();
     for (bg, tile, mut transform) in &mut backgrounds {
         let offset = Vec2::new(
-            bg.rx as f32 * cam_pos.x / 100.0,
+            (bg.rx + 100) as f32 * cam_pos.x / 100.0,
             bg.ry as f32 * 5.0 * elapsed,
         );
         position_tiled_background(
@@ -686,7 +686,7 @@ pub fn tick_fully_tiled_horizontal_scrolling_backgrounds(
     for (bg, tile, mut transform) in &mut backgrounds {
         let offset = Vec2::new(
             bg.rx as f32 * 5.0 * elapsed,
-            -(bg.ry as f32) * cam_pos.y / 100.0,
+            (bg.ry + 100) as f32 * cam_pos.y / 100.0,
         );
         position_tiled_background(
             &mut transform,
@@ -715,7 +715,7 @@ pub fn tick_fully_tiled_vertical_scrolling_backgrounds(
     let elapsed = time.elapsed_secs();
     for (bg, tile, mut transform) in &mut backgrounds {
         let offset = Vec2::new(
-            bg.rx as f32 * cam_pos.x / 100.0,
+            (bg.rx + 100) as f32 * cam_pos.x / 100.0,
             bg.ry as f32 * 5.0 * elapsed,
         );
         position_tiled_background(
@@ -748,8 +748,8 @@ fn camera_view(
 
 fn parallax_offset(rx: i32, ry: i32, cam_pos: Vec3) -> Vec2 {
     Vec2::new(
-        rx as f32 * cam_pos.x / 100.0,
-        -(ry as f32) * cam_pos.y / 100.0,
+        (rx + 100) as f32 * cam_pos.x / 100.0,
+        (ry + 100) as f32 * cam_pos.y / 100.0,
     )
 }
 
