@@ -138,7 +138,7 @@ fn main() {
         .add_plugins(InputPlugin)
         .add_plugins(physics::PhysicsPlugin);
     #[cfg(feature = "map")]
-    app.add_plugins(MapPlugin { start_map: args.map.or_else(|| Some("Map/Map/Map1/100000000.img".into())), ..default() });
+    app.add_plugins(MapPlugin { start_map: args.map.or_else(|| Some("Map/Map/Map1/100010000.img".into())), ..default() });
     #[cfg(feature = "mob")]
     app.add_plugins(MobPlugin::default());
     #[cfg(feature = "npc")]

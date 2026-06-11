@@ -49,6 +49,8 @@ pub enum KeyAction {
     DebugMobMove,
     DebugMobHit1,
     DebugMobDie1,
+    /// Cycle all mobs through their available actions.
+    CycleMobAction,
 }
 
 /// Live key → action mapping. Players can swap bindings at runtime.
@@ -82,7 +84,7 @@ impl Default for KeyBindings {
         inner.insert(KeyCode::ArrowRight, KeyAction::MoveRight);
         inner.insert(KeyCode::ArrowUp, KeyAction::MoveUp);
         inner.insert(KeyCode::ArrowDown, KeyAction::MoveDown);
-        inner.insert(KeyCode::Space, KeyAction::Jump);
+        inner.insert(KeyCode::Space, KeyAction::CycleMobAction);
         inner.insert(KeyCode::Digit1, KeyAction::Stand1);
         inner.insert(KeyCode::Digit2, KeyAction::Walk1);
         inner.insert(KeyCode::Digit3, KeyAction::JumpAction);
@@ -123,20 +125,26 @@ pub fn dispatch_actions(
     mut local_player: Query<&mut CharacterIntent, With<IsLocalPlayer>>,
     mut commands: Commands,
 ) {
-    let mut intent = match local_player.iter_mut().next() {
-        Some(i) => i,
-        None => return,
-    };
+    let mut intent = local_player.iter_mut().next();
 
     for (&key, &action) in &bindings.inner {
         match action {
-            KeyAction::MoveLeft => intent.left = keyboard.pressed(key),
-            KeyAction::MoveRight => intent.right = keyboard.pressed(key),
-            KeyAction::MoveUp => intent.up = keyboard.pressed(key),
-            KeyAction::MoveDown => intent.down = keyboard.pressed(key),
+            KeyAction::MoveLeft | KeyAction::MoveRight | KeyAction::MoveUp | KeyAction::MoveDown => {
+                if let Some(ref mut i) = intent {
+                    match action {
+                        KeyAction::MoveLeft => i.left = keyboard.pressed(key),
+                        KeyAction::MoveRight => i.right = keyboard.pressed(key),
+                        KeyAction::MoveUp => i.up = keyboard.pressed(key),
+                        KeyAction::MoveDown => i.down = keyboard.pressed(key),
+                        _ => {}
+                    }
+                }
+            }
             KeyAction::Jump => {
                 if keyboard.just_pressed(key) {
-                    intent.jump_request = true;
+                    if let Some(ref mut i) = intent {
+                        i.jump_request = true;
+                    }
                     commands.trigger(ActionEvent(action));
                 }
             }
