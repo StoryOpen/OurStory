@@ -13,8 +13,9 @@ thiserror = "2.0.18"
 clap = { version = "4", features = ["derive"] }
 
 [features]
-default = ["map"]
+default = ["map", "mob", "npc"]
 character = []
 map = []
 mob = []
+npc = []
 ui = []

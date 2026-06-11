@@ -1,8 +1,12 @@
-use super::asset_loader::{BackgroundData, ObjData, TileData, WzMapAsset};
+use super::asset_loader::{BackgroundData, LifeSpawn, ObjData, TileData, WzMapAsset};
 use super::components::*;
 use super::events::*;
 use super::resources::*;
 use crate::layer::GameLayer;
+#[cfg(feature = "mob")]
+use crate::mob::events::SpawnMob;
+#[cfg(feature = "npc")]
+use crate::npc::events::SpawnNpc;
 use crate::physics::FootholdGraph;
 use bevy::{
     asset::{AssetEvent, AssetLoadFailedEvent},
@@ -217,12 +221,42 @@ pub fn spawn_map(
         }
     }
 
+    spawn_life(&asset.life, &mut commands);
+
     info!("spawned {} sprites for map {}", sprites.len(), ev.path);
     *current_map = CurrentMap(MapState::Loaded {
         path: ev.path.clone(),
         sprites,
         handle: ev.handle.clone(),
     });
+}
+
+fn spawn_life(life: &[LifeSpawn], commands: &mut Commands) {
+    for entry in life {
+        let pos = entry.pos;
+        match entry.spawn_type.as_str() {
+            #[cfg(feature = "mob")]
+            "m" => {
+                commands.trigger(SpawnMob {
+                    mob_id: entry.id,
+                    x: pos.x,
+                    y: pos.y,
+                    z: 0,
+                });
+            }
+            #[cfg(feature = "npc")]
+            "n" => {
+                commands.trigger(SpawnNpc {
+                    npc_id: entry.id,
+                    x: pos.x,
+                    y: pos.y,
+                    z: 0,
+                    flip: entry.flip,
+                });
+            }
+            _ => {}
+        }
+    }
 }
 
 fn compute_bounds(

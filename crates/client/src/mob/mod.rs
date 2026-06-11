@@ -24,7 +24,7 @@ impl Plugin for MobPlugin {
             .init_asset_loader::<asset::WzMobLoader>()
             .insert_resource(MobAssetRegistry::new(self.cache_capacity))
             .insert_resource(PendingSpawns::default())
-            .add_systems(Startup, spawn_test_mob)
+            .register_type::<MobId>()
             .add_observer(on_debug_mob_action)
             .add_systems(
                 Update,
@@ -37,15 +37,6 @@ impl Plugin for MobPlugin {
             .add_observer(animation::spawn_mob)
             .add_observer(animation::handle_switch_action);
     }
-}
-
-fn spawn_test_mob(mut commands: Commands) {
-    commands.trigger(events::SpawnMob {
-        mob_id: 100100,
-        x: 0.0,
-        y: 0.0,
-        z: 100,
-    });
 }
 
 fn on_debug_mob_action(trigger: On<crate::input::ActionEvent>, mut commands: Commands) {
@@ -104,7 +95,7 @@ impl MobAssetRegistry {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct MobId(pub i32);
 
 #[derive(Component)]

@@ -569,9 +569,13 @@ fn load_life(map: &crate::wz::Node) -> Vec<LifeSpawn> {
             Some(v) => v,
             None => continue,
         };
-        let id: i32 = life_node.get_or("id", 0);
-        let pos = life_node.read_pos().map(Vector2D::to_vec2).unwrap_or(Vec2::ZERO);
+        let id: i32 = life_node
+            .get_opt::<String>("id")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let x: f32 = life_node.get_or("x", 0.0);
         let cy: i32 = life_node.get_or("cy", 0);
+        let pos = Vec2::new(x, -(cy as f32));
         let fh: i32 = life_node.get_or("fh", 0);
         let rx0: i32 = life_node.get_or("rx0", 0);
         let rx1: i32 = life_node.get_or("rx1", 0);

@@ -10,6 +10,8 @@ mod wz;
 mod map;
 #[cfg(feature = "mob")]
 mod mob;
+#[cfg(feature = "npc")]
+mod npc;
 #[cfg(feature = "ui")]
 mod ui;
 
@@ -45,6 +47,8 @@ struct Args {
 use map::MapPlugin;
 #[cfg(feature = "mob")]
 use mob::MobPlugin;
+#[cfg(feature = "npc")]
+use npc::NpcPlugin;
 #[cfg(feature = "ui")]
 use ui::UiPlugin;
 
@@ -137,6 +141,8 @@ fn main() {
     app.add_plugins(MapPlugin { start_map: args.map.or_else(|| Some("Map/Map/Map1/100000000.img".into())), ..default() });
     #[cfg(feature = "mob")]
     app.add_plugins(MobPlugin::default());
+    #[cfg(feature = "npc")]
+    app.add_plugins(NpcPlugin::default());
     #[cfg(feature = "ui")]
     app.add_plugins(UiPlugin);
 

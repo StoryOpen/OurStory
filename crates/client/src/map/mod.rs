@@ -16,7 +16,7 @@ pub struct MapPlugin {
 impl Default for MapPlugin {
     fn default() -> Self {
         Self {
-            start_map: Some("Map/Map/Map1/100000000.img".into()),
+            start_map: Some("Map/Map/Map1/100010000.img".into()),
             cache_capacity: 5,
         }
     }
