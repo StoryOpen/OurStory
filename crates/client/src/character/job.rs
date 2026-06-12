@@ -1,7 +1,85 @@
 use bevy::prelude::*;
 
+use crate::wz::Node;
+
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Job(pub u32);
+
+#[derive(Debug, Clone)]
+pub struct JobEntry {
+    pub job: Job,
+    pub label: String,
+}
+
+#[derive(Resource, Debug, Clone, Default)]
+pub struct JobCatalog {
+    pub entries: Vec<JobEntry>,
+}
+
+impl JobCatalog {
+    pub fn label_for(&self, job: Job) -> Option<&str> {
+        self.entries
+            .iter()
+            .find(|entry| entry.job == job)
+            .map(|entry| entry.label.as_str())
+    }
+
+    pub fn display_label(&self, job: Job) -> String {
+        self.label_for(job)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("Job {}", job.0))
+    }
+
+    pub fn next_after(&self, job: Job) -> Option<Job> {
+        if self.entries.is_empty() {
+            return None;
+        }
+
+        let next_idx = self
+            .entries
+            .iter()
+            .position(|entry| entry.job == job)
+            .map(|idx| (idx + 1) % self.entries.len())
+            .unwrap_or(0);
+        Some(self.entries[next_idx].job)
+    }
+}
+
+pub fn load_job_catalog(base: &Node) -> JobCatalog {
+    let Ok(skill_root) = base.at_path("Skill") else {
+        return JobCatalog::default();
+    };
+    let Ok(skill_strings) = base.at_path("String/Skill.img") else {
+        return JobCatalog::default();
+    };
+
+    let mut entries = Vec::new();
+    for (class_name, _) in skill_root.children() {
+        let Some(job_key) = class_name.as_str().strip_suffix(".img") else {
+            continue;
+        };
+        let Ok(job_id) = job_key.parse::<u32>() else {
+            continue;
+        };
+        let Some(label) = skill_strings
+            .at_path(&format!("{job_key}/bookName"))
+            .ok()
+            .and_then(|n| n.try_into().ok())
+            .map(|label: String| label.trim().to_string())
+            .filter(|label| !label.is_empty())
+        else {
+            continue;
+        };
+
+        entries.push(JobEntry {
+            job: Job(job_id),
+            label,
+        });
+    }
+
+    entries.sort_by_key(|entry| entry.job.0);
+    JobCatalog { entries }
+}
 
 impl Job {
     pub fn parent(&self) -> Option<Job> {

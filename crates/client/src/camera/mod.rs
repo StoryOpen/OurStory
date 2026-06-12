@@ -13,7 +13,6 @@ impl Plugin for CameraPlugin {
             .add_systems(
                 Update,
                 (
-                    systems::follow_player,
                     systems::drag_camera,
                     systems::zoom_camera,
                     // TEMP: clamp_camera disabled — clamp_camera.after(systems::drag_camera),

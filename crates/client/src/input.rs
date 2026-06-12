@@ -1,17 +1,17 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-use crate::physics::PhysicsState;
 use crate::GameSet;
+use crate::physics::PhysicsState;
 
 /// Marker for the local player's character entity.
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct IsLocalPlayer;
 
 /// What a character *wants* to do — source agnostic.
 /// Written by keyboard input, network packets, or AI.
 /// Applied to `PhysicsState` by `apply_intent` before physics simulation.
-#[derive(Component, Default)]
+#[derive(Component, Default, Reflect)]
 pub struct CharacterIntent {
     pub left: bool,
     pub right: bool,
@@ -31,20 +31,6 @@ pub enum KeyAction {
     // Discrete triggers
     Jump,
     JumpAction,
-    // Direct action keys (commonly used)
-    Stand1,
-    Walk1,
-    Sit,
-    Prone,
-    Ladder,
-    Rope,
-    Fly,
-    Alert,
-    Dead,
-    SwingO1,
-    SwingP1,
-    Shoot1,
-    Magic1,
     // Category cycling
     CycleStance,
     CycleAlert,
@@ -55,16 +41,7 @@ pub enum KeyAction {
     CycleMagic,
     CycleMovementSkill,
     CycleSkill,
-    // Facing direction
-    FlipLeft,
-    FlipRight,
-    // Developer debug
-    DebugMobStand,
-    DebugMobMove,
-    DebugMobHit1,
-    DebugMobDie1,
-    /// Cycle all mobs through their available actions.
-    CycleMobAction,
+    CycleJob,
 }
 
 /// Live key → action mapping. Players can swap bindings at runtime.
@@ -98,22 +75,8 @@ impl Default for KeyBindings {
         inner.insert(KeyCode::ArrowRight, KeyAction::MoveRight);
         inner.insert(KeyCode::ArrowUp, KeyAction::MoveUp);
         inner.insert(KeyCode::ArrowDown, KeyAction::MoveDown);
-        inner.insert(KeyCode::Space, KeyAction::CycleMobAction);
-        // Direct action keys (most commonly used)
-        inner.insert(KeyCode::Digit1, KeyAction::Stand1);
-        inner.insert(KeyCode::Digit2, KeyAction::Walk1);
-        inner.insert(KeyCode::Digit3, KeyAction::JumpAction);
-        inner.insert(KeyCode::Digit4, KeyAction::Sit);
-        inner.insert(KeyCode::Digit5, KeyAction::Prone);
-        inner.insert(KeyCode::Digit6, KeyAction::Ladder);
-        inner.insert(KeyCode::Digit7, KeyAction::Rope);
-        inner.insert(KeyCode::Digit8, KeyAction::Fly);
-        inner.insert(KeyCode::Digit9, KeyAction::Alert);
-        inner.insert(KeyCode::Digit0, KeyAction::Dead);
-        inner.insert(KeyCode::KeyQ, KeyAction::SwingO1);
-        inner.insert(KeyCode::KeyW, KeyAction::SwingP1);
-        inner.insert(KeyCode::KeyE, KeyAction::Shoot1);
-        inner.insert(KeyCode::KeyR, KeyAction::Magic1);
+        // Jump animation
+        inner.insert(KeyCode::KeyQ, KeyAction::JumpAction);
         // Category cycling keys
         inner.insert(KeyCode::KeyA, KeyAction::CycleStance);
         inner.insert(KeyCode::KeyS, KeyAction::CycleSwing);
@@ -123,15 +86,8 @@ impl Default for KeyBindings {
         inner.insert(KeyCode::KeyX, KeyAction::CycleMagic);
         inner.insert(KeyCode::KeyC, KeyAction::CycleMovementSkill);
         inner.insert(KeyCode::KeyV, KeyAction::CycleSkill);
+        inner.insert(KeyCode::KeyJ, KeyAction::CycleJob);
         inner.insert(KeyCode::KeyB, KeyAction::CycleAlert);
-        // Facing direction
-        inner.insert(KeyCode::Comma, KeyAction::FlipLeft);
-        inner.insert(KeyCode::Period, KeyAction::FlipRight);
-        // Debug
-        inner.insert(KeyCode::F5, KeyAction::DebugMobStand);
-        inner.insert(KeyCode::F6, KeyAction::DebugMobMove);
-        inner.insert(KeyCode::F7, KeyAction::DebugMobHit1);
-        inner.insert(KeyCode::F8, KeyAction::DebugMobDie1);
         Self { inner }
     }
 }
@@ -158,7 +114,10 @@ pub fn dispatch_actions(
 
     for (&key, &action) in &bindings.inner {
         match action {
-            KeyAction::MoveLeft | KeyAction::MoveRight | KeyAction::MoveUp | KeyAction::MoveDown => {
+            KeyAction::MoveLeft
+            | KeyAction::MoveRight
+            | KeyAction::MoveUp
+            | KeyAction::MoveDown => {
                 if let Some(ref mut i) = intent {
                     match action {
                         KeyAction::MoveLeft => i.left = keyboard.pressed(key),
@@ -202,9 +161,11 @@ pub struct InputPlugin;
 
 impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<KeyBindings>().add_systems(
-            Update,
-            (dispatch_actions, apply_intent).in_set(GameSet::Input),
-        );
+        app.init_resource::<KeyBindings>()
+            .register_type::<IsLocalPlayer>()
+            .add_systems(
+                Update,
+                (dispatch_actions, apply_intent).in_set(GameSet::Input),
+            );
     }
 }

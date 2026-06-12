@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use crate::character::skills::*;
 use crate::character::loader::WzSpriteCache;
 use crate::wz::Node;
+use crate::wz::Vector2D;
 
 fn load_effect_frames(
     base: &Node,
@@ -20,64 +21,89 @@ fn load_effect_frames(
     let Ok(eff_node) = skill_node.at_path(sub_path) else {
         return Vec::new();
     };
-    let mut frames = Vec::new();
-    let children = eff_node.children();
+    load_frames_from_node(&eff_node, cache, images)
+}
+
+fn load_frames_from_node(
+    node: &Node,
+    cache: &mut WzSpriteCache,
+    images: &mut Assets<Image>,
+) -> Vec<EffectFrame> {
+    let children = node.children();
     let mut keys: Vec<u32> = children
         .keys()
         .filter_map(|k| k.to_string().parse::<u32>().ok())
         .collect();
     keys.sort();
 
+    let mut frames = Vec::new();
     for key in keys {
-        let Ok(frame_node) = eff_node.at_path(&key.to_string()) else {
+        let Ok(child) = node.at_path(&key.to_string()) else {
             continue;
         };
-        let path = frame_node.path();
-        let image = cache.get_or_load(&frame_node, &path, images);
-
-        let origin = frame_node
-            .at_path("origin")
-            .ok()
-            .and_then(|n| {
-                let v: Result<crate::wz::Vector2D, _> = n.try_into();
-                v.ok()
-            })
-            .map(|v| Vec2::new(v.0 as f32, v.1 as f32))
-            .unwrap_or(Vec2::ZERO);
-
-        let z: i32 = frame_node
-            .at_path("z")
-            .ok()
-            .and_then(|n| n.try_into().ok())
-            .unwrap_or(0);
-
-        let delay: u32 = frame_node
-            .at_path("delay")
-            .ok()
-            .and_then(|n| n.try_into().ok())
-            .unwrap_or(100);
-
-        let alpha0: Option<u8> = frame_node
-            .at_path("a0")
-            .ok()
-            .and_then(|n| n.try_into().ok());
-
-        let alpha1: Option<u8> = frame_node
-            .at_path("a1")
-            .ok()
-            .and_then(|n| n.try_into().ok());
-
-        frames.push(EffectFrame {
-            image,
-            origin,
-            z,
-            delay,
-            alpha0,
-            alpha1,
-        });
+        // Check if this node is a direct PNG frame
+        if child.extract_image().is_ok() {
+            if let Some(frame) = load_single_frame(&child, cache, images) {
+                frames.push(frame);
+            }
+        } else {
+            // Container node with sub-frames (e.g. hit frames)
+            frames.extend(load_frames_from_node(&child, cache, images));
+        }
     }
-
     frames
+}
+
+fn load_single_frame(
+    node: &Node,
+    cache: &mut WzSpriteCache,
+    images: &mut Assets<Image>,
+) -> Option<EffectFrame> {
+    let path = node.path();
+    let image = cache.get_or_load(node, &path, images);
+
+    let origin = node
+        .at_path("origin")
+        .ok()
+        .and_then(|n| {
+            let v: Vector2D = n.try_into().ok()?;
+            Some(Vec2::new(v.0 as f32, v.1 as f32))
+        })
+        .unwrap_or(Vec2::ZERO);
+
+    let z: i32 = node
+        .at_path("z")
+        .ok()
+        .and_then(|n| n.try_into().ok())
+        .unwrap_or(0);
+
+    let delay: u32 = node
+        .at_path("delay")
+        .ok()
+        .and_then(|n| -> Option<i32> { n.try_into().ok() })
+        .map(|v| v as u32)
+        .unwrap_or(100);
+
+    let alpha0: Option<u8> = node
+        .at_path("a0")
+        .ok()
+        .and_then(|n| -> Option<i32> { n.try_into().ok() })
+        .map(|v| v as u8);
+
+    let alpha1: Option<u8> = node
+        .at_path("a1")
+        .ok()
+        .and_then(|n| -> Option<i32> { n.try_into().ok() })
+        .map(|v| v as u8);
+
+    Some(EffectFrame {
+        image,
+        origin,
+        z,
+        delay,
+        alpha0,
+        alpha1,
+    })
 }
 
 fn load_skill_icon(
@@ -150,7 +176,7 @@ fn load_reqs(skill_node: &Node) -> HashMap<u32, u32> {
         let Ok(skill_id) = key.to_string().parse::<u32>() else {
             continue;
         };
-        let level: Result<i32, _> = req_node.at_path(&skill_id.to_string())?.try_into();
+        let level: Result<i32, _> = req_node.at_path(&skill_id.to_string()).and_then(|n| n.try_into());
         if let Ok(lvl) = level {
             reqs.insert(skill_id, lvl as u32);
         }
@@ -228,7 +254,8 @@ pub fn load_skill_database(
             let master_level: u32 = skill_node
                 .at_path("masterLevel")
                 .ok()
-                .and_then(|n| n.try_into().ok())
+                .and_then(|n| -> Option<i32> { n.try_into().ok() })
+                .map(|v| v as u32)
                 .unwrap_or(0);
 
             let invisible: bool = skill_node

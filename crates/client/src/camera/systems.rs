@@ -1,5 +1,4 @@
 use super::resources::{BaseResolution, MainCamera};
-use crate::input::IsLocalPlayer;
 use crate::map::events::MapLoaded;
 use crate::map::resources::MapBounds;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
@@ -25,29 +24,11 @@ pub fn reset_camera(
     transform.translation.y = -half_h;
 }
 
-pub fn follow_player(
-    player: Query<&Transform, (With<IsLocalPlayer>, Without<MainCamera>)>,
-    mut camera: Query<&mut Transform, With<MainCamera>>,
-) {
-    let Ok(player_tf) = player.single() else {
-        return;
-    };
-    let Ok(mut camera_tf) = camera.single_mut() else {
-        return;
-    };
-    camera_tf.translation.x = player_tf.translation.x;
-    camera_tf.translation.y = player_tf.translation.y;
-}
-
 pub fn drag_camera(
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
     mut camera: Query<&mut Transform, With<MainCamera>>,
-    player: Query<(), With<IsLocalPlayer>>,
 ) {
-    if !player.is_empty() {
-        return;
-    }
     if accumulated_mouse_motion.delta == Vec2::ZERO
         || !mouse_button_input.pressed(MouseButton::Left)
     {

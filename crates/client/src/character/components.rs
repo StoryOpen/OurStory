@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use crate::character::job::Job;
 use crate::character::types::{EquipmentEntry, FrameData};
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct CharacterRoot;
 
 #[derive(Component, Clone)]
@@ -16,10 +17,6 @@ pub struct CharacterConfig {
     pub equipment: Vec<(crate::character::types::EquipSlot, u32)>,
 }
 
-/// Resolved equipment entries with vslot data, populated at spawn. Kept on
-/// the entity so vslot-based sprite suppression can be recomputed when
-/// equipment changes, and so other systems (stats, tooltip) can read slot
-/// ownership without re-parsing the WZ.
 #[derive(Component, Clone)]
 pub struct CharacterEquipment {
     pub entries: Vec<EquipmentEntry>,
@@ -28,12 +25,26 @@ pub struct CharacterEquipment {
 #[derive(Component)]
 pub struct CharacterAnimation {
     pub action: String,
+    pub default_action: String,
+    pub return_to_default: bool,
+    pub pending_action: Option<PendingCharacterAction>,
     pub frame_idx: usize,
     pub timer: Timer,
     pub face_expression: String,
     pub face_frame_idx: usize,
     pub face_timer: Timer,
-    pub flip: bool,
+    pub facing_left: bool,
+}
+
+#[derive(Clone)]
+pub enum PendingCharacterAction {
+    Action {
+        action: String,
+        return_to_default: bool,
+    },
+    Skill {
+        skill_id: u32,
+    },
 }
 
 #[derive(Component)]
@@ -48,10 +59,21 @@ pub struct PartEntities {
 }
 
 #[derive(Component)]
+pub struct CharacterActionLabel;
+
+#[derive(Component)]
+pub struct CharacterJobLabel;
+
+#[derive(Component)]
+pub struct SkillNameLabel;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct CharacterPart {
     pub layer: String,
     pub z_base: f32,
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct CharacterLayer(pub u8);

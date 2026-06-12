@@ -14,10 +14,11 @@ pub struct SpawnCharacter {
 pub struct SetAction {
     pub entity: Entity,
     pub action: String,
+    pub return_to_default: bool,
 }
 
 #[derive(Event)]
-pub struct SetFlip {
+pub struct SetFacing {
     pub entity: Entity,
     pub facing_left: bool,
 }

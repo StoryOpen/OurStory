@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
-use wz_reader::WzNodeCast;
 
 #[derive(Resource)]
 pub struct ZMap {
@@ -21,12 +20,9 @@ impl ZMap {
 pub fn load_zmap(base: &crate::wz::Node) -> ZMap {
     let mut layers = HashMap::new();
     if let Ok(zmap_node) = base.at_path("zmap.img") {
-        let guard = zmap_node.wz_node.read().expect("lock poisoned");
-        if let Some(image) = guard.try_as_image() {
-            if let Ok((children, _)) = image.resolve_children(None) {
-                for (i, (name, _)) in children.into_iter().enumerate() {
-                    layers.insert(name.to_string(), i);
-                }
+        if let Ok(children) = zmap_node.ordered_children() {
+            for (i, (name, _)) in children.into_iter().enumerate() {
+                layers.insert(name, i);
             }
         }
     }
@@ -60,17 +56,10 @@ impl SlotMap {
 pub fn load_smap(base: &crate::wz::Node) -> SlotMap {
     let mut layers = HashMap::new();
     if let Ok(smap_node) = base.at_path("smap.img") {
-        let guard = smap_node.wz_node.read().expect("lock poisoned");
-        if let Some(image) = guard.try_as_image() {
-            if let Ok((children, _)) = image.resolve_children(None) {
-                for (name, child) in children.into_iter() {
-                    let s = child
-                        .read()
-                        .ok()
-                        .and_then(|g| g.try_as_string().and_then(|s| s.get_string().ok()));
-                    if let Some(s) = s {
-                        layers.insert(name.to_string(), s);
-                    }
+        if let Ok(children) = smap_node.ordered_children() {
+            for (name, child) in children {
+                if let Ok(s) = TryInto::<String>::try_into(child) {
+                    layers.insert(name, s);
                 }
             }
         }
@@ -175,7 +164,6 @@ pub enum PartSource {
 pub struct FrameData {
     pub parts: Vec<SpriteLayer>,
     pub delay: u32,
-    pub flip: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -246,6 +234,14 @@ pub fn filter_hidden_sprites(
     parts
         .into_iter()
         .filter(|part| {
+            // Base body parts (body, head, hair, face) are never hidden by equipment.
+            // vslot filtering only applies to equipment-vs-equipment conflicts.
+            if matches!(
+                part.source,
+                PartSource::Body | PartSource::Head | PartSource::Hair | PartSource::Face
+            ) {
+                return true;
+            }
             let codes = part_codes(part);
             if codes.is_empty() {
                 return true;
@@ -254,7 +250,7 @@ pub fn filter_hidden_sprites(
                 if sourced_from(part, entry.slot) {
                     continue;
                 }
-                if entry.vslot.iter().any(|c| codes.contains(&c.as_str())) {
+                if codes.iter().all(|c| entry.vslot.iter().any(|v| v == *c)) {
                     return false;
                 }
             }
@@ -263,28 +259,54 @@ pub fn filter_hidden_sprites(
         .collect()
 }
 
-fn compute_connection_point(part_local: Vec3, origin: Vec2, map_entry: Vec2) -> Vec2 {
-    Vec2::new(
-        part_local.x + origin.x + map_entry.x,
-        part_local.y + origin.y + map_entry.y,
-    )
-}
-
-/// Compute root-local transforms for all parts in a frame using hierarchical
-/// connection-point matching. Parts with `navel` attach to root center;
-/// parts without `navel` attach to the first matching named connection point
-/// from already-positioned parts.
+/// Compute root-space transforms for all parts using connection-point
+/// alignment. Returns (positions, parent_name) for each part.  All parts are
+/// root-level (direct children of CharacterRoot); the parent_name is always
+/// None.
+///
+/// The "body" part is always placed first as the anchor at `-body.origin`,
+/// so the body's pivot (origin) coincides with the character's world position.
+/// All other parts are positioned relative to body's connection points.
 ///
 /// `z_base` is added to each part's relative z offset (from `SpriteLayer.z`).
 /// Pass `GameLayer::Character.base_z()` for game-semantic layering.
-pub fn compute_frame_transforms(parts: &[SpriteLayer], z_base: f32) -> HashMap<String, Vec3> {
+pub fn compute_frame_transforms(
+    parts: &[SpriteLayer],
+    z_base: f32,
+) -> (HashMap<String, Vec3>, HashMap<String, Option<String>>) {
     use std::collections::{HashMap, HashSet};
-    let mut cpoints: HashMap<String, Vec2> = HashMap::new();
-    cpoints.insert("navel".into(), Vec2::ZERO);
-
+    let mut cpoints: HashMap<String, (String, Vec2)> = HashMap::new();
     let mut placed: HashSet<String> = HashSet::new();
     let mut transforms: HashMap<String, Vec3> = HashMap::new();
+    let mut parents: HashMap<String, Option<String>> = HashMap::new();
 
+    // Place "body" first as the anchor. Its origin defines the offset from
+    // the character's world position to the body sprite's bottom-left corner,
+    // making the body's pivot coincide with the character position.
+    if let Some(body_part) = parts.iter().find(|p| p.layer_name == "body") {
+        let p = Vec3::new(
+            -body_part.origin.x,
+            -body_part.origin.y,
+            z_base + body_part.z,
+        );
+        debug!(
+            "xform: '{}' ANCHOR (body) origin=({:.0},{:.0}) -> pos=({:.1},{:.1})",
+            body_part.layer_name, body_part.origin.x, body_part.origin.y, p.x, p.y,
+        );
+        transforms.insert(body_part.layer_name.clone(), p);
+        parents.insert(body_part.layer_name.clone(), None);
+        placed.insert(body_part.layer_name.clone());
+        for (name, val) in &body_part.map {
+            let cpoint_local = Vec2::new(
+                body_part.origin.x + val.x,
+                body_part.origin.y + val.y,
+            );
+            cpoints.insert(name.clone(), (body_part.layer_name.clone(), cpoint_local));
+        }
+    }
+
+    // Place remaining parts via connection-point alignment. Any part that
+    // doesn't match a connection point becomes a fallback anchor at -origin.
     while placed.len() < parts.len() {
         let mut placed_any = false;
 
@@ -293,36 +315,60 @@ pub fn compute_frame_transforms(parts: &[SpriteLayer], z_base: f32) -> HashMap<S
                 continue;
             }
 
-            let (attach_name, map_entry) = if let Some(navel) = part.map.get("navel") {
-                ("navel".into(), *navel)
+            // Check if this part has a connection point matching an already-placed part.
+            let mut found_attach: Option<(String, Vec2)> = None;
+            for (key, val) in &part.map {
+                if cpoints.contains_key(key) {
+                    found_attach = Some((key.clone(), *val));
+                    break;
+                }
+            }
+
+            let pos = if let Some((attach_name, child_map_entry)) = found_attach {
+                let cpoint_name = part.map.iter().find(|(k, _)| {
+                    cpoints.contains_key(k.as_str())
+                }).map(|(k, _)| k).expect("attach name must exist");
+                let (parent_name, parent_cpoint) = cpoints.get(cpoint_name)
+                    .expect("connection point must exist");
+                let cpoint_local = Vec2::new(
+                    transforms[parent_name].x + parent_cpoint.x,
+                    transforms[parent_name].y + parent_cpoint.y,
+                );
+                let p = Vec3::new(
+                    cpoint_local.x - part.origin.x - child_map_entry.x,
+                    cpoint_local.y - part.origin.y - child_map_entry.y,
+                    z_base + part.z,
+                );
+                debug!(
+                    "xform: '{}' aligned to '{}' via cpoint '{}': child_map=({:.0},{:.0}) parent_cpoint=({:.0},{:.0}) origin=({:.0},{:.0}) -> pos=({:.1},{:.1})",
+                    part.layer_name, parent_name,
+                    attach_name,
+                    child_map_entry.x, child_map_entry.y,
+                    parent_cpoint.x, parent_cpoint.y,
+                    part.origin.x, part.origin.y,
+                    p.x, p.y,
+                );
+                p
             } else {
-                let mut found = None;
-                for (key, val) in &part.map {
-                    if cpoints.contains_key(key) {
-                        found = Some((key.clone(), *val));
-                        break;
-                    }
-                }
-                match found {
-                    Some(f) => f,
-                    None => continue,
-                }
+                let p = Vec3::new(-part.origin.x, -part.origin.y, z_base + part.z);
+                debug!(
+                    "xform: '{}' FALLBACK ANCHOR origin=({:.0},{:.0}) -> pos=({:.1},{:.1})",
+                    part.layer_name, part.origin.x, part.origin.y, p.x, p.y,
+                );
+                p
             };
 
-            let target = *cpoints.get(&attach_name).unwrap();
-            let pos = Vec3::new(
-                target.x - part.origin.x - map_entry.x,
-                target.y - part.origin.y - map_entry.y,
-                z_base + part.z,
-            );
-
             transforms.insert(part.layer_name.clone(), pos);
+            parents.insert(part.layer_name.clone(), None);
             placed.insert(part.layer_name.clone());
             placed_any = true;
 
-            for (name, offset) in &part.map {
-                let cp = compute_connection_point(pos, part.origin, *offset);
-                cpoints.insert(name.clone(), cp);
+            for (name, val) in &part.map {
+                let cpoint_local = Vec2::new(
+                    part.origin.x + val.x,
+                    part.origin.y + val.y,
+                );
+                cpoints.insert(name.clone(), (part.layer_name.clone(), cpoint_local));
             }
         }
 
@@ -331,5 +377,5 @@ pub fn compute_frame_transforms(parts: &[SpriteLayer], z_base: f32) -> HashMap<S
         }
     }
 
-    transforms
+    (transforms, parents)
 }

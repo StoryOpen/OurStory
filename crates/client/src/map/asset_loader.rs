@@ -739,24 +739,7 @@ fn load_or_decode_image(
     load_context: &mut LoadContext<'_>,
     wz_path: String,
 ) -> Handle<Image> {
-    if load_context.has_labeled_asset(&wz_path) {
-        return load_context.get_label_handle::<Image>(&wz_path);
-    }
-    let dynamic_image: DynamicImage = node.clone().try_into().unwrap();
-    let rgba = dynamic_image.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    let image = Image::new(
-        Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        rgba.into_raw(),
-        TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    );
-    load_context.add_labeled_asset(wz_path, image)
+    crate::wz::load_or_decode_image(node, load_context, wz_path)
 }
 
 /// Checks if a WZ node is animated (has child "0" with bitmap while parent is

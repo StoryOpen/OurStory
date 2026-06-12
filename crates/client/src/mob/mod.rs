@@ -5,8 +5,8 @@ pub mod events;
 use bevy::asset::AssetServer;
 use bevy::prelude::*;
 
-use asset::WzMobAsset;
 use crate::GameSet;
+use asset::WzMobAsset;
 
 pub struct MobPlugin {
     pub cache_capacity: usize,
@@ -25,8 +25,6 @@ impl Plugin for MobPlugin {
             .insert_resource(MobAssetRegistry::new(self.cache_capacity))
             .insert_resource(PendingSpawns::default())
             .register_type::<MobId>()
-            .add_observer(on_debug_mob_action)
-            .add_observer(on_cycle_mob_action)
             .add_systems(
                 Update,
                 (
@@ -37,57 +35,6 @@ impl Plugin for MobPlugin {
             )
             .add_observer(animation::spawn_mob)
             .add_observer(animation::handle_switch_action);
-    }
-}
-
-fn on_debug_mob_action(trigger: On<crate::input::ActionEvent>, mut commands: Commands) {
-    use crate::input::KeyAction;
-    let mob_action = match trigger.event().0 {
-        KeyAction::DebugMobStand => "stand",
-        KeyAction::DebugMobMove => "move",
-        KeyAction::DebugMobHit1 => "hit1",
-        KeyAction::DebugMobDie1 => "die1",
-        _ => return,
-    };
-    commands.trigger(events::SwitchMobAction {
-        mob_id: 100100,
-        action: mob_action.to_string(),
-    });
-    bevy::log::info!("switch Snail to {mob_action}");
-}
-
-fn on_cycle_mob_action(
-    trigger: On<crate::input::ActionEvent>,
-    mut commands: Commands,
-    mob_query: Query<(Entity, &MobId, &MobAnimator)>,
-    assets: Res<Assets<WzMobAsset>>,
-    registry: Res<MobAssetRegistry>,
-) {
-    if trigger.event().0 != crate::input::KeyAction::CycleMobAction {
-        return;
-    }
-    for (entity, mob_id, animator) in &mob_query {
-        let Some(handle) = registry.peek(&mob_id.0) else {
-            continue;
-        };
-        let Some(asset) = assets.get(handle) else {
-            continue;
-        };
-        let mut action_keys: Vec<&String> = asset.actions.keys().collect();
-        action_keys.sort();
-        if action_keys.is_empty() {
-            continue;
-        }
-        let current_idx = action_keys
-            .iter()
-            .position(|k| *k == &animator.action)
-            .unwrap_or(usize::MAX);
-        let next_idx = (current_idx + 1) % action_keys.len();
-        let next_action = action_keys[next_idx].clone();
-        commands.trigger(events::SwitchMobAction {
-            mob_id: mob_id.0,
-            action: next_action,
-        });
     }
 }
 

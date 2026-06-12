@@ -1,14 +1,11 @@
 use std::collections::{BTreeMap, HashMap};
 
 use bevy::{
-    asset::{AssetLoader, LoadContext, RenderAssetUsages, io::Reader},
+    asset::{AssetLoader, LoadContext, io::Reader},
     prelude::*,
     reflect::TypePath,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
-use image::DynamicImage;
 use thiserror::Error;
-use wz_reader::WzNodeCast;
 
 use crate::wz::Node;
 
@@ -112,14 +109,11 @@ impl AssetLoader for WzMobLoader {
 
                 let mut parts = Vec::new();
 
-                let is_direct_sprite = frame_node
-                    .wz_node
-                    .read()
-                    .is_ok_and(|g| g.try_as_png().is_some());
+                let is_direct_sprite = frame_node.extract_image().is_ok();
 
                 if is_direct_sprite {
                     let label = format!("{wz_path}/{name}/{frame_index}");
-                    let image_handle = load_or_decode_image(&frame_node, load_context, label);
+                    let image_handle = crate::wz::load_or_decode_image(&frame_node, load_context, label);
                     let origin = frame_node.try_get("origin")
                         .and_then(|n| n.read_origin(&frame_node).ok())
                         .map(|v| Vec2::new(v.0 as f32, v.1 as f32))
@@ -149,7 +143,7 @@ impl AssetLoader for WzMobLoader {
                             .unwrap_or_default();
 
                         let label = format!("{wz_path}/{name}/{frame_index}/{pn}");
-                        let image_handle = load_or_decode_image(&part_node, load_context, label);
+                        let image_handle = crate::wz::load_or_decode_image(&part_node, load_context, label);
 
                         parts.push(MobPart {
                             name: pn,
@@ -242,68 +236,4 @@ fn sort_parts(parts: &mut Vec<MobPart>) {
     });
 }
 
-fn load_or_decode_image(
-    node: &Node,
-    load_context: &mut LoadContext<'_>,
-    label: String,
-) -> Handle<Image> {
-    if load_context.has_labeled_asset(&label) {
-        return load_context.get_label_handle::<Image>(&label);
-    }
 
-    let dynamic_image = extract_image(node);
-    let image = Image::new(
-        Extent3d {
-            width: dynamic_image.width(),
-            height: dynamic_image.height(),
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        dynamic_image.into_bytes(),
-        TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    );
-    load_context.add_labeled_asset(label, image)
-}
-
-fn extract_image(node: &Node) -> DynamicImage {
-    if let Some(inlink_node) = node.try_get("_inlink") {
-        let path: String = inlink_node.try_into().expect("_inlink not a string");
-        let resolved = resolve_img_relative(node, &path).expect("failed to resolve _inlink target");
-        return extract_image(&resolved);
-    }
-
-    if let Some(outlink_node) = node.try_get("_outlink") {
-        let path: String = outlink_node.try_into().expect("_outlink not a string");
-        let base = crate::wz::get_cached_base();
-        let resolved = base
-            .at_path(&path)
-            .expect("failed to resolve _outlink target");
-        return extract_image(&resolved);
-    }
-
-    match wz_reader::property::png::get_image(&node.wz_node) {
-        Ok(img) => img,
-        Err(e) => panic!("extract_image failed at {}: {:?}", node.path(), e),
-    }
-}
-
-/// Resolve a path relative to the current node (handles `..`).
-fn resolve_img_relative(node: &Node, rel_path: &str) -> Option<Node> {
-    let current_path = node.path();
-    let mut segs: Vec<&str> = current_path.split('/').collect();
-    segs.pop();
-
-    for part in rel_path.split('/') {
-        match part {
-            ".." => {
-                segs.pop();
-            }
-            "." => {}
-            _ => segs.push(part),
-        }
-    }
-
-    let absolute = segs.join("/");
-    crate::wz::get_cached_base().at_path(&absolute).ok()
-}

@@ -160,13 +160,4 @@ fn spawn_one(commands: &mut Commands, ev: &SpawnMob, asset: &WzMobAsset) {
             GameLayer::Mob.with_offset(ev.z as f32),
         ),
     ));
-
-    bevy::log::info!(
-        "spawned mob {} ({}) at ({}, {}, {})",
-        ev.mob_id,
-        asset.info.name,
-        ev.x,
-        ev.y,
-        ev.z
-    );
 }

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 use crate::character::types::*;
 use crate::wz::Node;
+use crate::wz::Vector2D;
 
 #[derive(Resource, Default)]
 pub struct WzSpriteCache {
@@ -24,7 +25,35 @@ impl WzSpriteCache {
         if let Some(handle) = self.handles.get(wz_path) {
             return handle.clone();
         }
-        let dynamic_image: DynamicImage = node.clone().try_into().unwrap();
+        let dynamic_image: DynamicImage = match node.extract_image() {
+            Ok(img) => img,
+            Err(_) => {
+                // Node is not an image (e.g. a container with sub-nodes)
+                warn!(
+                    "get_or_load: extract_image failed for '{}', using 1x1 placeholder",
+                    wz_path
+                );
+                let handle = images.add(Image::new(
+                    Extent3d {
+                        width: 1,
+                        height: 1,
+                        depth_or_array_layers: 1,
+                    },
+                    TextureDimension::D2,
+                    vec![0u8; 4],
+                    TextureFormat::Rgba8Unorm,
+                    RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+                ));
+                self.handles.insert(wz_path.to_string(), handle.clone());
+                return handle;
+            }
+        };
+        trace!(
+            "get_or_load: loaded image {}x{} from '{}'",
+            dynamic_image.width(),
+            dynamic_image.height(),
+            wz_path
+        );
         let image = Image::new(
             Extent3d {
                 width: dynamic_image.width(),
@@ -51,11 +80,35 @@ fn load_part(
     cache: &mut WzSpriteCache,
     images: &mut Assets<Image>,
 ) -> Option<SpriteLayer> {
-    let part_node = node.at_path(part_name).ok()?;
-    let origin_node = part_node.try_get("origin")?;
-    let origin_v = origin_node.read_origin(&part_node).ok()?;
+    let part_node = match node.at_path(part_name).ok() {
+        Some(n) => n,
+        None => {
+            debug!("load_part: at_path('{}') failed in node '{}'", part_name, node.path());
+            return None;
+        }
+    };
+    let origin_node = match part_node.try_get("origin") {
+        Some(n) => n,
+        None => {
+            debug!("load_part: no 'origin' in '{}' (part: {})", part_node.path(), part_name);
+            return None;
+        }
+    };
+    let origin_v = match origin_node.read_origin(&part_node).ok() {
+        Some(v) => v,
+        None => {
+            debug!("load_part: read_origin failed in '{}' (part: {})", part_node.path(), part_name);
+            return None;
+        }
+    };
     let origin = Vec2::new(origin_v.0 as f32, origin_v.1 as f32);
-    let z_str: String = part_node.at_path("z").ok()?.try_into().ok()?;
+    let z_str: String = match part_node.at_path("z").ok().and_then(|n| n.try_into().ok()) {
+        Some(s) => s,
+        None => {
+            debug!("load_part: no valid 'z' in '{}' (part: {})", part_node.path(), part_name);
+            return None;
+        }
+    };
     let z = zmap.depth(&z_str);
     let path = part_node.path();
     let image = cache.get_or_load(&part_node, &path, images);
@@ -67,9 +120,8 @@ fn load_part(
                 .at_path(child_name.as_str())
                 .ok()
                 .and_then(|n| {
-                    let x: i32 = n.try_get("x")?.try_into().ok()?;
-                    let y: i32 = n.try_get("y")?.try_into().ok()?;
-                    Some(Vec2::new(x as f32, y as f32))
+                    let v: Vector2D = n.try_into().ok()?;
+                    Some(Vec2::new(v.0 as f32, -(v.1 as f32)))
                 })
             {
                 map.insert(child_name.to_string(), val);
@@ -110,12 +162,6 @@ fn load_frame(
         .and_then(|n| n.try_into().ok())
         .unwrap_or(100);
 
-    let flip: bool = frame_node
-        .at_path("flip")
-        .ok()
-        .and_then(|n| n.try_into().ok())
-        .unwrap_or(false);
-
     // Check if this is a frame-reference action (references another action's frame)
     if let (Ok(action_node), Ok(frame_node_val)) = (
         frame_node.at_path("action"),
@@ -134,11 +180,10 @@ fn load_frame(
                     .map(|(parent, _)| format!("{}/{}", parent, ref_action))
             });
 
-        // Load the referenced frame, passing the original action_name for equipment/hair lookup
         let mut frame = load_frame(
             base,
             &ref_body_action_path,
-            action_name,
+            &ref_action,
             ref_head_path.as_deref(),
             equip_configs,
             hair_id,
@@ -155,15 +200,8 @@ fn load_frame(
 
     let mut parts = Vec::new();
 
-    for (child_name, _) in frame_node.children() {
-        let child_name = child_name.as_str();
-        // Skip non-sprite metadata children
-        if matches!(
-            child_name,
-            "face" | "delay" | "action" | "frame" | "move" | "flip" | "rotate" | "info"
-        ) {
-            continue;
-        }
+    // Body frame parts in deterministic order (body is the anchor)
+    for child_name in ["body", "arm", "lHand", "rHand"] {
         if let Some(layer) = load_part(
             &frame_node,
             child_name,
@@ -200,7 +238,8 @@ fn load_frame(
             hid, action_name, frame_idx
         );
         if let Ok(hair_node) = base.at_path(&hair_path) {
-            for part_name in &["hair", "hairBelowBody", "hairOverHead"] {
+            for (part_name, _) in hair_node.children() {
+                let part_name = part_name.as_str();
                 if let Some(layer) = load_part(
                     &hair_node,
                     part_name,
@@ -219,19 +258,33 @@ fn load_frame(
     for (slot, item_id) in equip_configs {
         let item_path = format!("Character/{}/{:08}.img", slot.dir_name(), item_id);
         let item_action_path = format!("{}/{}/{}", item_path, action_name, frame_idx);
-        if let Ok(item_frame) = base.at_path(&item_action_path) {
-            for part_name in slot.part_names() {
-                if let Some(layer) = load_part(
-                    &item_frame,
-                    part_name,
-                    PartSource::Equipment(*slot),
-                    zmap,
-                    slot_map,
-                    cache,
-                    images,
-                ) {
-                    parts.push(layer);
+        match base.at_path(&item_action_path) {
+            Ok(item_frame) => {
+                let mut loaded = 0u32;
+                for part_name in slot.part_names() {
+                    if let Some(layer) = load_part(
+                        &item_frame,
+                        part_name,
+                        PartSource::Equipment(*slot),
+                        zmap,
+                        slot_map,
+                        cache,
+                        images,
+                    ) {
+                        parts.push(layer);
+                        loaded += 1;
+                    }
                 }
+                debug!(
+                    "load_frame: equip {} ({:08}) action '{}' frame {}: {} part(s) loaded",
+                    slot.dir_name(), item_id, action_name, frame_idx, loaded
+                );
+            }
+            Err(_) => {
+                trace!(
+                    "load_frame: equip path not found: {}",
+                    item_action_path
+                );
             }
         }
     }
@@ -239,7 +292,6 @@ fn load_frame(
     Some(FrameData {
         parts,
         delay: delay.unsigned_abs(),
-        flip,
     })
 }
 
@@ -291,7 +343,6 @@ fn preload_face_expressions(
                 frames.push(FrameData {
                     parts: vec![layer],
                     delay: 2000,
-                    flip: false,
                 });
             }
         } else if child_keys.iter().any(|k| k.parse::<u32>().is_ok()) {
@@ -313,7 +364,6 @@ fn preload_face_expressions(
                                     frames.push(FrameData {
                                         parts: vec![layer],
                                         delay: delay as u32,
-                                        flip: false,
                                     });
                                 }
                             }
@@ -364,6 +414,21 @@ pub fn preload_character_frames(
     let head_root = base.at_path(&head_path).ok();
     let mut actions = HashMap::new();
 
+    info!(
+        "preload_character_frames: skin={}, hair={:?}, face={:?}, equipment_count={}",
+        skin_suffix,
+        hair_id,
+        face_id,
+        equipment.len(),
+    );
+    for (slot, item_id) in equipment {
+        info!(
+            "  equip config: {} {:08}",
+            slot.dir_name(),
+            item_id
+        );
+    }
+
     for (action_name, _) in body_root.children() {
         let action_name = String::from(action_name);
         if action_name == "info" {
@@ -404,9 +469,17 @@ pub fn preload_character_frames(
             }
         }
 
+        let total_parts: usize = frames.iter().map(|f| f.parts.len()).sum();
+        let frame_count = frames.len();
         if !frames.is_empty() {
-            actions.insert(action_name, frames);
+            actions.insert(action_name.clone(), frames);
         }
+        debug!(
+            "preload: action '{}' -> {} frames, {} total parts",
+            action_name,
+            frame_count,
+            total_parts,
+        );
     }
 
     let face_expressions = face_id

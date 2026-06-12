@@ -85,10 +85,8 @@ impl SkillDatabase {
     pub fn skills_for_job(&self, job_lineage: &[crate::character::job::Job]) -> Vec<&SkillEntry> {
         let mut result = Vec::new();
         for job in job_lineage {
-            let prefix = job.0 / 10;
             for skill in self.skills.values() {
-                let skill_job = skill.id / 10000;
-                if skill_job == prefix {
+                if skill.id / 10000 == job.0 {
                     result.push(skill);
                 }
             }

@@ -3,11 +3,16 @@ pub mod foothold;
 
 pub use wz::*;
 
-use bevy::ecs::lifecycle::Add;
-use bevy::ecs::observer::On;
-use bevy::ecs::system::Commands;
-use bevy::prelude::Vec2;
-use bevy::sprite::{Anchor, Sprite};
+use bevy::{
+    asset::{Handle, LoadContext, RenderAssetUsages},
+    ecs::lifecycle::Add,
+    ecs::observer::On,
+    ecs::system::Commands,
+    image::Image,
+    math::Vec2,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+    sprite::{Anchor, Sprite},
+};
 
 /// Extension trait for converting `Vector2D` to Bevy `Vec2`.
 pub trait Vector2DExt {
@@ -20,17 +25,33 @@ impl Vector2DExt for Vector2D {
     }
 }
 
-/// Extension methods on `wz::Node` for reading Bevy types from WZ properties.
-#[allow(dead_code)]
-pub trait WzNodeExt {
-    fn try_get_pos(&self) -> Result<Vec2, NodeError>;
-}
-
-impl WzNodeExt for crate::wz::Node {
-    fn try_get_pos(&self) -> Result<Vec2, NodeError> {
-        let v = self.read_pos()?;
-        Ok(Vec2::new(v.0 as f32, v.1 as f32))
+/// Load a PNG image from a WZ node into a Bevy asset, with dedup by label.
+/// Transparently follows `_inlink`/`_outlink` references.
+pub fn load_or_decode_image(
+    node: &Node,
+    load_context: &mut LoadContext<'_>,
+    label: String,
+) -> Handle<Image> {
+    if load_context.has_labeled_asset(&label) {
+        return load_context.get_label_handle::<Image>(&label);
     }
+    let dynamic_image = node.extract_image().unwrap_or_else(|e| {
+        panic!("failed to extract image at {}: {e}", node.path())
+    });
+    let rgba = dynamic_image.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    let image = Image::new(
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        rgba.into_raw(),
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    load_context.add_labeled_asset(label, image)
 }
 
 /// Overrides the auto-inserted `Anchor::CENTER` (from `#[require(Anchor)]` on `Sprite`)

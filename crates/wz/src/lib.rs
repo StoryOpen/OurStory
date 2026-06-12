@@ -225,6 +225,67 @@ impl Node {
             .unwrap_or_else(|_| panic!("required child '{path}' type mismatch"))
     }
 
+    /// Resolve a relative path against this node's location (handles `..`).
+    /// Used for `_inlink` resolution within the same `.img`.
+    pub fn resolve_relative(&self, rel_path: &str) -> Result<Node, NodeError> {
+        let current_path = self.path();
+        let mut segs: Vec<&str> = current_path.split('/').collect();
+        segs.pop();
+        for part in rel_path.split('/') {
+            match part {
+                ".." => {
+                    segs.pop();
+                }
+                "." => {}
+                _ => segs.push(part),
+            }
+        }
+        let absolute = segs.join("/");
+        get_cached_base().at_path(&absolute)
+    }
+
+    /// Extract a PNG image from this node, transparently following
+    /// `_inlink`, `_outlink`, and UOL references.
+    pub fn extract_image(&self) -> Result<DynamicImage, NodeError> {
+        if let Some(inlink_node) = self.try_get("_inlink") {
+            let path: String = inlink_node.try_into()?;
+            let resolved = self.resolve_relative(&path)?;
+            return resolved.extract_image();
+        }
+        if let Some(outlink_node) = self.try_get("_outlink") {
+            let path: String = outlink_node.try_into()?;
+            let resolved = get_cached_base().at_path(&path)?;
+            return resolved.extract_image();
+        }
+        let guard = self.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
+        let png = guard
+            .try_as_png()
+            .ok_or(NodeError::TypeMismatch("PNG image"))?;
+        png.extract_png()
+            .map_err(|_| NodeError::ValueError("failed to extract PNG".into()))
+    }
+
+    /// Returns children in file order (as stored in the WZ archive), parsing
+    /// the node first if needed. Falls back to unordered children if the node
+    /// is not an Image type.
+    pub fn ordered_children(&self) -> Result<Vec<(String, Node)>, NodeError> {
+        self.try_parse()?;
+        let guard = self.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
+        if let Some(image) = guard.try_as_image() {
+            if let Ok((children, _)) = image.resolve_children(None) {
+                return Ok(children
+                    .into_iter()
+                    .map(|(name, node)| (name.to_string(), Node { wz_node: node }))
+                    .collect());
+            }
+        }
+        Ok(self
+            .children()
+            .into_iter()
+            .map(|(name, node)| (name.to_string(), node))
+            .collect())
+    }
+
 }
 
 impl TryFrom<Node> for i32 {
@@ -300,6 +361,18 @@ impl TryFrom<Node> for bool {
     fn try_from(node: Node) -> Result<Self, Self::Error> {
         let value: i32 = node.try_into()?;
         Ok(value != 0)
+    }
+}
+
+impl TryFrom<Node> for Vector2D {
+    type Error = NodeError;
+
+    fn try_from(node: Node) -> Result<Self, Self::Error> {
+        let guard = node.wz_node.read().map_err(|_| NodeError::LockPoisoned)?;
+        guard
+            .try_as_vector2d()
+            .copied()
+            .ok_or(NodeError::TypeMismatch("Vector2D"))
     }
 }
 

@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use wz_reader::WzNodeCast;
 
 use crate::wz::foothold::Foothold;
 use crate::GameSet;
@@ -25,25 +24,6 @@ pub struct PhysicsConstants {
     pub float_coefficient: f32,
     pub min_friction: f32,
     pub max_friction: f32,
-}
-
-fn get_f32(children: &[(&str, wz_reader::WzNodeArc)], name: &str) -> f32 {
-    let (_, node) = children
-        .iter()
-        .find(|(n, _)| *n == name)
-        .unwrap_or_else(|| panic!("Physics.img: missing field `{name}`"));
-
-    let guard = node.read().expect("lock poisoned");
-    if let Some(v) = guard.try_as_float() {
-        return *v;
-    }
-    if let Some(v) = guard.try_as_double() {
-        return *v as f32;
-    }
-    if let Some(v) = guard.try_as_int() {
-        return *v as f32;
-    }
-    panic!("Physics.img: `{name}` is not numeric");
 }
 
 pub fn load_physics(base: &crate::wz::Node) -> PhysicsConstants {
@@ -88,7 +68,7 @@ pub enum PhysicsSet {
     Simulate,
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct PhysicsState {
     pub x: f32,
     pub y: f32,
@@ -149,6 +129,7 @@ pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PhysicsAccumulator>()
+            .register_type::<PhysicsState>()
             .configure_sets(Update, PhysicsSet::Simulate)
             .add_systems(
                 Update,
