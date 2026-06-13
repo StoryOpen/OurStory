@@ -1,4 +1,4 @@
-use super::asset_loader::{BackgroundData, LifeSpawn, ObjData, TileData, WzMapAsset};
+use crate::wz::asset_loaders::WzMapAsset;
 use super::components::*;
 use super::events::*;
 use super::resources::*;
@@ -10,9 +10,12 @@ use crate::npc::events::SpawnNpc;
 use crate::physics::FootholdGraph;
 use bevy::{
     asset::{AssetEvent, AssetLoadFailedEvent},
+    asset::RenderAssetUsages,
     ecs::message::MessageReader,
     prelude::*,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
+use std::collections::HashMap;
 use std::backtrace::Backtrace;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -143,12 +146,13 @@ pub fn spawn_map(
     trigger: On<MapReady>,
     mut commands: Commands,
     assets: Res<Assets<WzMapAsset>>,
-    images: Res<Assets<Image>>,
+    mut images: ResMut<Assets<Image>>,
     window: Query<&Window>,
     mut current_map: ResMut<CurrentMap>,
 ) {
     let ev = trigger.event();
     let asset = assets.get(&ev.handle).expect("WzMapAsset must be loaded");
+    let map = &asset.0;
 
     let old = std::mem::replace(&mut *current_map, CurrentMap(MapState::None));
     if let CurrentMap(MapState::Loaded { sprites, .. }) = old {
@@ -157,9 +161,9 @@ pub fn spawn_map(
         }
     }
 
-    let bounds = compute_bounds(&asset.info, &asset.footholds);
+    let bounds = compute_bounds(&map.info, &map.footholds);
     commands.insert_resource(bounds);
-    let graph = FootholdGraph::from_footholds(asset.footholds.clone());
+    let graph = FootholdGraph::from_footholds(map.footholds.clone());
     commands.insert_resource(graph);
     commands.trigger(super::events::MapLoaded {
         path: ev.path.clone(),
@@ -174,22 +178,27 @@ pub fn spawn_map(
     info!("{:?}", viewport);
 
     let mut sprites = Vec::new();
+    let mut image_cache = HashMap::new();
 
-    for b in asset.backgrounds.iter() {
-        let tex_size = images.get(&b.image).map(|i| i.size_f32()).unwrap();
+    for b in map.backgrounds.iter() {
+        let handle = load_map_image(&b.image_path, &mut image_cache, &mut images);
+        let tex_size = images.get(&handle).map(|i| i.size_f32()).unwrap_or_default();
         let z = if b.front {
             GameLayer::Foreground.with_offset(b.index as f32)
         } else {
             GameLayer::Background.with_offset(b.index as f32)
         };
-        let mut ents = spawn_background_entity(b, &mut commands, z, viewport, tex_size);
+        let mut ents = spawn_background_entity(b, &mut commands, z, viewport, tex_size, &mut image_cache, &mut images);
         sprites.append(&mut ents);
     }
 
     let max_span = (0..8usize)
         .map(|i| {
-            let objs = &asset.objs[i];
-            let tiles = &asset.tiles[i];
+            let layer = map.layers.get(i);
+            let (objs, tiles) = match layer {
+                Some(l) => (&l.objs[..], &l.tiles[..]),
+                None => return 0,
+            };
             if objs.is_empty() && tiles.is_empty() {
                 return 0;
             }
@@ -205,24 +214,23 @@ pub fn spawn_map(
     info!("max_span = {}", max_span);
 
     for layer_idx in 0..8usize {
-        let objs = &asset.objs[layer_idx];
-        let tiles = &asset.tiles[layer_idx];
-        if objs.is_empty() && tiles.is_empty() {
+        let Some(layer) = map.layers.get(layer_idx) else { continue };
+        if layer.objs.is_empty() && layer.tiles.is_empty() {
             continue;
         }
         let layer_z = layer_idx as f32 * max_span;
-        let obj_max_z = objs.iter().map(|o| o.z).max().unwrap_or(0) as f32;
-        let tile_base = if objs.is_empty() { 0.0 } else { obj_max_z + 1.0 };
+        let obj_max_z = layer.objs.iter().map(|o| o.z).max().unwrap_or(0) as f32;
+        let tile_base = if layer.objs.is_empty() { 0.0 } else { obj_max_z + 1.0 };
 
-        for obj in objs {
-            sprites.push(spawn_obj_entity(obj, &mut commands, layer_z + obj.z as f32));
+        for obj in &layer.objs {
+            sprites.push(spawn_obj_entity(obj, &mut commands, layer_z + obj.z as f32, &mut image_cache, &mut images));
         }
-        for tile in tiles {
-            sprites.push(spawn_tile_entity(tile, &mut commands, layer_z + tile_base + tile.z as f32 + 0.5));
+        for tile in &layer.tiles {
+            sprites.push(spawn_tile_entity(tile, &mut commands, layer_z + tile_base + tile.z as f32 + 0.5, &mut image_cache, &mut images));
         }
     }
 
-    spawn_life(&asset.life, &mut commands);
+    spawn_life(&map.life, &mut commands);
 
     info!("spawned {} sprites for map {}", sprites.len(), ev.path);
     *current_map = CurrentMap(MapState::Loaded {
@@ -232,9 +240,9 @@ pub fn spawn_map(
     });
 }
 
-fn spawn_life(life: &[LifeSpawn], commands: &mut Commands) {
+fn spawn_life(life: &[wz::LifeSpawn], commands: &mut Commands) {
     for entry in life {
-        let pos = entry.pos;
+        let pos = Vec2::new(entry.pos.0, entry.pos.1);
         match entry.spawn_type.as_str() {
             #[cfg(feature = "mob")]
             "m" => {
@@ -261,17 +269,17 @@ fn spawn_life(life: &[LifeSpawn], commands: &mut Commands) {
 }
 
 fn compute_bounds(
-    info: &super::asset_loader::MapInfo,
-    footholds: &[crate::wz::foothold::Foothold],
-) -> super::resources::MapBounds {
+    info: &wz::MapInfo,
+    footholds: &[wz::Foothold],
+) -> MapBounds {
     if let (Some(l), Some(r), Some(t), Some(b)) =
         (info.vr_left, info.vr_right, info.vr_top, info.vr_bottom)
     {
-        super::resources::MapBounds::from_vr(l, r, t, b)
+        MapBounds::from_vr(l, r, t, b)
     } else if !footholds.is_empty() {
-        super::resources::MapBounds::from_footholds(footholds)
+        MapBounds::from_footholds(footholds)
     } else {
-        super::resources::MapBounds {
+        MapBounds {
             left: -1000.0,
             right: 1000.0,
             top: 1000.0,
@@ -280,19 +288,59 @@ fn compute_bounds(
     }
 }
 
-fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity {
-    let base = tile.pos - tile.origin;
+fn load_map_image(
+    path: &str,
+    cache: &mut HashMap<String, Handle<Image>>,
+    images: &mut Assets<Image>,
+) -> Handle<Image> {
+    if let Some(handle) = cache.get(path) {
+        return handle.clone();
+    }
+    let wz = wz::WzData::global();
+    let dynamic_image = wz.load_image(path).unwrap_or_else(|e| {
+        panic!("failed to load image at {path}: {e}")
+    });
+    let rgba = dynamic_image.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    let image = Image::new(
+        Extent3d { width, height, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        rgba.into_raw(),
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    let handle = images.add(image);
+    cache.insert(path.to_string(), handle.clone());
+    handle
+}
+
+fn spawn_tile_entity(
+    tile: &wz::TilePlacement,
+    commands: &mut Commands,
+    z: f32,
+    images: &mut HashMap<String, Handle<Image>>,
+    assets: &mut Assets<Image>,
+) -> Entity {
+    let pos = Vec2::new(tile.pos.0, tile.pos.1);
+    let origin = Vec2::new(tile.origin.0, tile.origin.1);
+    let base = pos - origin;
+    let handle = load_map_image(&tile.image_path, images, assets);
     let mut entity = commands.spawn((
         Name::new(format!("Tile({})", tile.z)),
-        Sprite::from_image(tile.image.clone()),
+        Sprite::from_image(handle),
         Transform::from_translation(base.extend(z)),
         MapSprite,
     ));
 
     if !tile.animation_frames.is_empty() {
-        let delay = tile.animation_frames[0].delay.max(50);
+        let frames: Vec<MapAnimFrame> = tile.animation_frames.iter().map(|f| {
+            let origin = Vec2::new(f.origin.0, f.origin.1);
+            let handle = load_map_image(&f.image_path, images, assets);
+            MapAnimFrame { image: handle, origin, delay: f.delay }
+        }).collect();
+        let delay = frames[0].delay.max(50);
         entity.insert(MapAnimator {
-            frames: tile.animation_frames.clone(),
+            frames,
             current: 0,
             timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
             pos: base,
@@ -303,12 +351,21 @@ fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity
     entity.id()
 }
 
-fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
-    let base = obj.pos - obj.origin;
+fn spawn_obj_entity(
+    obj: &wz::ObjPlacement,
+    commands: &mut Commands,
+    z: f32,
+    images: &mut HashMap<String, Handle<Image>>,
+    assets: &mut Assets<Image>,
+) -> Entity {
+    let pos = Vec2::new(obj.pos.0, obj.pos.1);
+    let origin = Vec2::new(obj.origin.0, obj.origin.1);
+    let base = pos - origin;
+    let handle = load_map_image(&obj.image_path, images, assets);
     let mut entity = commands.spawn((
         Name::new(format!("Obj({})", obj.z)),
         Sprite {
-            image: obj.image.clone(),
+            image: handle,
             flip_x: obj.flip,
             ..default()
         },
@@ -317,9 +374,14 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
     ));
 
     if !obj.animation_frames.is_empty() {
-        let delay = obj.animation_frames[0].delay.max(50);
+        let frames: Vec<MapAnimFrame> = obj.animation_frames.iter().map(|f| {
+            let origin = Vec2::new(f.origin.0, f.origin.1);
+            let handle = load_map_image(&f.image_path, images, assets);
+            MapAnimFrame { image: handle, origin, delay: f.delay }
+        }).collect();
+        let delay = frames[0].delay.max(50);
         entity.insert(MapAnimator {
-            frames: obj.animation_frames.clone(),
+            frames,
             current: 0,
             timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
             pos: base,
@@ -328,43 +390,16 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
     }
 
     if obj.flow != 0 || obj.animation_frames.iter().any(|f| f.move_type != 0) {
-        let move_type = obj
-            .animation_frames
-            .first()
-            .map(|f| f.move_type)
-            .unwrap_or(0);
-        let move_w = obj
-            .animation_frames
-            .first()
-            .map(|f| f.move_w)
-            .unwrap_or(0.0);
-        let move_h = obj
-            .animation_frames
-            .first()
-            .map(|f| f.move_h)
-            .unwrap_or(0.0);
-        let move_p = obj
-            .animation_frames
-            .first()
-            .map(|f| f.move_p)
-            .unwrap_or(6283.0);
-        let move_r = obj
-            .animation_frames
-            .first()
-            .map(|f| f.move_r)
-            .unwrap_or(0.0);
-        let a0 = obj.animation_frames.first().map(|f| f.a0).unwrap_or(1.0);
-        let a1 = obj.animation_frames.first().map(|f| f.a1).unwrap_or(1.0);
-
+        let first = obj.animation_frames.first();
         entity.insert(MapMoveEffect {
             base,
-            move_type,
-            move_w,
-            move_h,
-            move_p,
-            move_r,
-            a0,
-            a1,
+            move_type: first.map(|f| f.move_type).unwrap_or(0),
+            move_w: first.map(|f| f.move_w).unwrap_or(0.0),
+            move_h: first.map(|f| f.move_h).unwrap_or(0.0),
+            move_p: first.map(|f| f.move_p).unwrap_or(6283.0),
+            move_r: first.map(|f| f.move_r).unwrap_or(0.0),
+            a0: first.map(|f| f.a0).unwrap_or(1.0),
+            a1: first.map(|f| f.a1).unwrap_or(1.0),
             flow: obj.flow,
             rx: obj.rx,
             ry: obj.ry,
@@ -377,12 +412,18 @@ fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
 }
 
 fn spawn_background_entity(
-    bg: &BackgroundData,
+    bg: &wz::BackgroundData,
     commands: &mut Commands,
     z: f32,
     viewport: Vec2,
     tex_size: Vec2,
+    images: &mut HashMap<String, Handle<Image>>,
+    assets: &mut Assets<Image>,
 ) -> Vec<Entity> {
+    let pos = Vec2::new(bg.pos.0, bg.pos.1);
+    let origin = Vec2::new(bg.origin.0, bg.origin.1);
+    let handle = load_map_image(&bg.image_path, images, assets);
+
     let tile_x = matches!(bg.btype, 1 | 3 | 4 | 6 | 7);
     let tile_y = matches!(bg.btype, 2 | 3 | 5 | 6 | 7);
 
@@ -390,23 +431,28 @@ fn spawn_background_entity(
         let mut entity = commands.spawn((
             Name::new(format!("Bg({})", bg.index)),
             Sprite {
-                image: bg.image.clone(),
+                image: handle,
                 flip_x: bg.flip,
                 ..default()
             },
-            Transform::from_translation((bg.pos - bg.origin).round().extend(z)),
+            Transform::from_translation((pos - origin).round().extend(z)),
             MapSprite,
         ));
 
-        insert_background_motion(&mut entity, bg);
+        insert_background_motion(&mut entity, pos, origin, bg.rx, bg.ry, bg.btype);
 
         if !bg.animation_frames.is_empty() {
-            let delay = bg.animation_frames[0].delay.max(50);
+            let frames: Vec<MapAnimFrame> = bg.animation_frames.iter().map(|f| {
+                let origin = Vec2::new(f.origin.0, f.origin.1);
+                let handle = load_map_image(&f.image_path, images, assets);
+                MapAnimFrame { image: handle, origin, delay: f.delay }
+            }).collect();
+            let delay = frames[0].delay.max(50);
             entity.insert(MapAnimator {
-                frames: bg.animation_frames.clone(),
+                frames,
                 current: 0,
                 timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-                pos: bg.pos,
+                pos,
                 flip: bg.flip,
             });
         }
@@ -436,9 +482,6 @@ fn spawn_background_entity(
         1
     };
 
-    let grid_w = num_cols as f32 * spacing_x;
-    let grid_h = num_rows as f32 * spacing_y;
-
     let mut entities = Vec::with_capacity((num_cols * num_rows) as usize);
     for row in 0..num_rows {
         for col in 0..num_cols {
@@ -447,11 +490,11 @@ fn spawn_background_entity(
             let mut entity = commands.spawn((
                 Name::new(format!("BgTile({})", bg.index)),
                 Sprite {
-                    image: bg.image.clone(),
+                    image: handle.clone(),
                     flip_x: bg.flip,
                     ..default()
                 },
-                Transform::from_translation(Vec2::from(bg.pos - bg.origin + t).extend(z)),
+                Transform::from_translation(Vec2::from(pos - origin + t).extend(z)),
                 BackgroundTile {
                     grid_col: col,
                     grid_row: row,
@@ -463,15 +506,20 @@ fn spawn_background_entity(
                 MapSprite,
             ));
 
-            insert_background_motion(&mut entity, bg);
+            insert_background_motion(&mut entity, pos, origin, bg.rx, bg.ry, bg.btype);
 
             if !bg.animation_frames.is_empty() {
-                let delay = bg.animation_frames[0].delay.max(50);
+                let frames: Vec<MapAnimFrame> = bg.animation_frames.iter().map(|f| {
+                    let origin = Vec2::new(f.origin.0, f.origin.1);
+                    let handle = load_map_image(&f.image_path, images, assets);
+                    MapAnimFrame { image: handle, origin, delay: f.delay }
+                }).collect();
+                let delay = frames[0].delay.max(50);
                 entity.insert(MapAnimator {
-                    frames: bg.animation_frames.clone(),
+                    frames,
                     current: 0,
                     timer: Timer::from_seconds(delay as f32 / 1000.0, TimerMode::Repeating),
-                    pos: bg.pos,
+                    pos,
                     flip: bg.flip,
                 });
             }
@@ -483,15 +531,15 @@ fn spawn_background_entity(
     entities
 }
 
-fn insert_background_motion(entity: &mut EntityCommands, b: &BackgroundData) {
+fn insert_background_motion(entity: &mut EntityCommands, pos: Vec2, origin: Vec2, rx: i32, ry: i32, btype: i32) {
     entity.insert(BackgroundMotion {
-        pos: b.pos,
-        origin: b.origin,
-        rx: b.rx,
-        ry: b.ry,
+        pos,
+        origin,
+        rx,
+        ry,
     });
 
-    match b.btype {
+    match btype {
         1 => entity.insert(HorizontalTiledParallaxBackground),
         2 => entity.insert(VerticalTiledParallaxBackground),
         3 => entity.insert(FullyTiledParallaxBackground),
@@ -502,6 +550,7 @@ fn insert_background_motion(entity: &mut EntityCommands, b: &BackgroundData) {
         _ => entity.insert(ParallaxBackground),
     };
 }
+
 
 pub fn tick_map_animations(
     time: Res<Time>,

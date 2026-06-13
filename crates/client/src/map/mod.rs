@@ -1,10 +1,9 @@
-pub mod asset_loader;
 pub mod components;
 pub mod events;
 pub mod resources;
 pub mod systems;
 
-use self::asset_loader::{WzMapAsset, WzMapLoader};
+use crate::wz::asset_loaders::{WzMapAsset, WzMapLoader};
 use crate::GameSet;
 use bevy::prelude::*;
 

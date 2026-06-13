@@ -1,15 +1,18 @@
 use bevy::prelude::*;
 
-use super::asset::WzMobAsset;
+use crate::wz::asset_loaders::WzMobAsset;
 use super::events::{SpawnMob, SwitchMobAction};
 use super::{MobAnimator, MobAssetRegistry, MobId, PendingSpawns};
 use crate::layer::GameLayer;
+use crate::wz::WzImageCache;
 
 pub fn tick_mob_animations(
     time: Res<Time>,
     mut mob_query: Query<(&mut MobAnimator, &mut Sprite, &mut Transform, &MobId)>,
     assets: Res<Assets<WzMobAsset>>,
     registry: Res<MobAssetRegistry>,
+    mut image_cache: ResMut<WzImageCache>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     for (mut animator, mut sprite, mut transform, mob_id) in &mut mob_query {
         animator.timer.tick(time.delta());
@@ -23,7 +26,7 @@ pub fn tick_mob_animations(
         let Some(asset) = assets.get(handle) else {
             continue;
         };
-        let Some(action) = asset.actions.get(&animator.action) else {
+        let Some(action) = asset.0.actions.get(&animator.action) else {
             continue;
         };
 
@@ -33,9 +36,9 @@ pub fn tick_mob_animations(
         animator.timer = Timer::from_seconds(frame.delay as f32 / 1000.0, TimerMode::Once);
 
         if let Some(part) = frame.parts.first() {
-            sprite.image = part.image_handle.clone();
-            transform.translation.x = animator.base_x - part.origin.x;
-            transform.translation.y = animator.base_y - part.origin.y;
+            sprite.image = image_cache.get_or_load(&part.image_path, &mut images);
+            transform.translation.x = animator.base_x - part.origin.0;
+            transform.translation.y = animator.base_y - part.origin.1;
         }
     }
 }
@@ -45,6 +48,8 @@ pub fn process_pending_spawns(
     mut commands: Commands,
     registry: Res<MobAssetRegistry>,
     assets: Res<Assets<WzMobAsset>>,
+    mut image_cache: ResMut<WzImageCache>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     pending.0.retain(|ev| {
         let Some(handle) = registry.peek(&ev.mob_id) else {
@@ -53,7 +58,7 @@ pub fn process_pending_spawns(
         let Some(asset) = assets.get(handle) else {
             return true;
         };
-        spawn_one(&mut commands, ev, asset);
+        spawn_one(&mut commands, ev, asset, &mut image_cache, &mut images);
         false
     });
 }
@@ -65,12 +70,14 @@ pub fn spawn_mob(
     mut registry: ResMut<MobAssetRegistry>,
     asset_server: Res<AssetServer>,
     assets: Res<Assets<WzMobAsset>>,
+    mut image_cache: ResMut<WzImageCache>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     let ev = trigger.event();
     let handle = registry.get_or_load(ev.mob_id, &asset_server);
 
     if let Some(asset) = assets.get(&handle) {
-        spawn_one(&mut commands, ev, asset);
+        spawn_one(&mut commands, ev, asset, &mut image_cache, &mut images);
     } else {
         pending.0.push(ev.clone());
     }
@@ -81,6 +88,8 @@ pub fn handle_switch_action(
     mut mob_query: Query<(&mut MobAnimator, &mut Sprite, &mut Transform, &MobId)>,
     assets: Res<Assets<WzMobAsset>>,
     registry: Res<MobAssetRegistry>,
+    mut image_cache: ResMut<WzImageCache>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     let ev = trigger.event();
     let Some(handle) = registry.peek(&ev.mob_id) else {
@@ -89,7 +98,7 @@ pub fn handle_switch_action(
     let Some(asset) = assets.get(handle) else {
         return;
     };
-    if !asset.actions.contains_key(&ev.action) {
+    if !asset.0.actions.contains_key(&ev.action) {
         bevy::log::warn!("mob {} has no action '{}'", ev.mob_id, ev.action);
         return;
     }
@@ -98,7 +107,7 @@ pub fn handle_switch_action(
         if mob_id.0 != ev.mob_id {
             continue;
         }
-        let action = &asset.actions[&ev.action];
+        let action = &asset.0.actions[&ev.action];
         let Some(first_frame) = action.frames.first() else {
             continue;
         };
@@ -109,20 +118,26 @@ pub fn handle_switch_action(
         animator.action = ev.action.clone();
         animator.frame = 0;
         animator.timer = Timer::from_seconds(first_frame.delay as f32 / 1000.0, TimerMode::Once);
-        sprite.image = part.image_handle.clone();
+        sprite.image = image_cache.get_or_load(&part.image_path, &mut images);
         transform.translation = Vec3::new(
-            animator.base_x - part.origin.x,
-            animator.base_y - part.origin.y,
+            animator.base_x - part.origin.0,
+            animator.base_y - part.origin.1,
             transform.translation.z,
         );
     }
 }
 
-fn spawn_one(commands: &mut Commands, ev: &SpawnMob, asset: &WzMobAsset) {
-    let action_name = if asset.actions.contains_key("stand") {
+fn spawn_one(
+    commands: &mut Commands,
+    ev: &SpawnMob,
+    asset: &WzMobAsset,
+    image_cache: &mut WzImageCache,
+    images: &mut Assets<Image>,
+) {
+    let action_name = if asset.0.actions.contains_key("stand") {
         "stand"
     } else {
-        match asset.actions.keys().next() {
+        match asset.0.actions.keys().next() {
             Some(k) => k.as_str(),
             None => {
                 bevy::log::warn!("mob {} has no actions", ev.mob_id);
@@ -131,7 +146,7 @@ fn spawn_one(commands: &mut Commands, ev: &SpawnMob, asset: &WzMobAsset) {
         }
     };
 
-    let Some(action) = asset.actions.get(action_name) else {
+    let Some(action) = asset.0.actions.get(action_name) else {
         return;
     };
 
@@ -154,10 +169,10 @@ fn spawn_one(commands: &mut Commands, ev: &SpawnMob, asset: &WzMobAsset) {
             base_x: ev.x,
             base_y: ev.y,
         },
-        Sprite::from_image(part.image_handle.clone()),
+        Sprite::from_image(image_cache.get_or_load(&part.image_path, images)),
         Transform::from_xyz(
-            ev.x - part.origin.x,
-            ev.y - part.origin.y,
+            ev.x - part.origin.0,
+            ev.y - part.origin.1,
             GameLayer::Mob.with_offset(ev.z as f32),
         ),
     ));

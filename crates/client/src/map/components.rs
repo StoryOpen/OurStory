@@ -1,10 +1,15 @@
 use bevy::prelude::*;
 
-use super::asset_loader::AnimFrame;
+#[derive(Clone)]
+pub struct MapAnimFrame {
+    pub image: Handle<Image>,
+    pub origin: Vec2,
+    pub delay: u32,
+}
 
 #[derive(Component)]
 pub struct MapAnimator {
-    pub frames: Vec<AnimFrame>,
+    pub frames: Vec<MapAnimFrame>,
     pub current: usize,
     pub timer: Timer,
     pub pos: Vec2,
@@ -71,6 +76,5 @@ pub struct BackgroundTile {
     pub spacing_y: f32,
 }
 
-/// Marker component for map sprites that should be despawned on map change.
 #[derive(Component)]
 pub struct MapSprite;

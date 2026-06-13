@@ -1,44 +1,6 @@
-use bevy::{
-    asset::RenderAssetUsages,
-    prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
-};
-use std::collections::HashMap;
+use bevy::prelude::*;
 
-use crate::wz::Node;
-
-#[derive(Resource, Default)]
-pub struct WzUiSpriteCache {
-    handles: HashMap<String, Handle<Image>>,
-}
-
-impl WzUiSpriteCache {
-    pub fn get_or_load(
-        &mut self,
-        node: &Node,
-        wz_path: &str,
-        images: &mut Assets<Image>,
-    ) -> Handle<Image> {
-        if let Some(handle) = self.handles.get(wz_path) {
-            return handle.clone();
-        }
-        let dynamic_image: image::DynamicImage = node.clone().try_into().unwrap();
-        let image = Image::new(
-            Extent3d {
-                width: dynamic_image.width(),
-                height: dynamic_image.height(),
-                depth_or_array_layers: 1,
-            },
-            TextureDimension::D2,
-            dynamic_image.into_bytes(),
-            TextureFormat::Rgba8Unorm,
-            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-        );
-        let handle = images.add(image);
-        self.handles.insert(wz_path.to_string(), handle.clone());
-        handle
-    }
-}
+pub use crate::wz::WzImageCache;
 
 pub struct UiSprite {
     pub handle: Handle<Image>,
@@ -46,15 +8,14 @@ pub struct UiSprite {
 }
 
 pub fn load_ui_sprite(
-    node: &Node,
-    cache: &mut WzUiSpriteCache,
+    path: &str,
+    cache: &mut WzImageCache,
     images: &mut Assets<Image>,
 ) -> Option<UiSprite> {
-    let origin_node = node.try_get("origin")?;
-    let origin_v = origin_node.read_origin(node).ok()?;
-    let origin = Vec2::new(origin_v.0 as f32, origin_v.1 as f32);
-    let path = node.path();
-    let handle = cache.get_or_load(node, &path, images);
+    let wz = wz::WzData::global();
+    let origin_v = wz.load_origin(path).ok()?;
+    let origin = Vec2::new(origin_v.0, origin_v.1);
+    let handle = cache.get_or_load(path, images);
     Some(UiSprite { handle, origin })
 }
 
@@ -66,14 +27,14 @@ pub struct UiButtonSprites {
 }
 
 pub fn load_ui_button(
-    button_node: &Node,
-    cache: &mut WzUiSpriteCache,
+    button_path: &str,
+    cache: &mut WzImageCache,
     images: &mut Assets<Image>,
 ) -> Option<UiButtonSprites> {
-    let normal = load_ui_sprite(&button_node.at_path("normal/0").ok()?, cache, images)?;
-    let hover = load_ui_sprite(&button_node.at_path("mouseOver/0").ok()?, cache, images)?;
-    let pressed = load_ui_sprite(&button_node.at_path("pressed/0").ok()?, cache, images)?;
-    let disabled = load_ui_sprite(&button_node.at_path("disabled/0").ok()?, cache, images)?;
+    let normal = load_ui_sprite(&format!("{button_path}/normal/0"), cache, images)?;
+    let hover = load_ui_sprite(&format!("{button_path}/mouseOver/0"), cache, images)?;
+    let pressed = load_ui_sprite(&format!("{button_path}/pressed/0"), cache, images)?;
+    let disabled = load_ui_sprite(&format!("{button_path}/disabled/0"), cache, images)?;
     Some(UiButtonSprites {
         normal: normal.handle,
         hover: hover.handle,

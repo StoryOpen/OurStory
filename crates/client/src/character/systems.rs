@@ -5,15 +5,13 @@ use std::collections::HashMap;
 use crate::character::components::*;
 use crate::character::events::*;
 use crate::character::job::{Job, JobCatalog};
-use crate::character::loader::{self, WzSpriteCache};
 use crate::character::skills::{
-    LearnedSkills, SkillDatabase, SkillEffect, SkillEffectRoot, SkillType,
+    LearnedSkills, SkillDatabase, SkillEffect, SkillEffectRoot,
 };
 use crate::character::types::*;
 use crate::input::{CharacterIntent, IsLocalPlayer, KeyAction};
 use crate::layer::GameLayer;
 use crate::physics::PhysicsState;
-use crate::wz::get_cached_base;
 
 /// Tracks the current action index per category for cycling.
 #[derive(Resource, Default)]
@@ -136,17 +134,28 @@ const LABEL_GAP: f32 = 4.0;
 const LABEL_Z_OFFSET: f32 = 240.0;
 
 fn resolve_equipment(
-    base: &crate::wz::Node,
+    wz: &wz::WzData,
     equipment: &[(EquipSlot, u32)],
 ) -> Vec<EquipmentEntry> {
     equipment
         .iter()
         .map(|(slot, item_id)| {
-            let item_path = format!("Character/{}/{:08}.img", slot.dir_name(), item_id);
-            let vslot = base
-                .at_path(&item_path)
-                .map(|n| load_vslot(&n))
-                .unwrap_or_default();
+            let equip_result = wz.load_equip(*item_id as i32);
+            let vslot = match &equip_result {
+                Ok(e) => {
+                    let num_actions = e.actions.len();
+                    let action_keys: Vec<_> = e.actions.keys().cloned().collect();
+                    info!(
+                        "  equip item_id={} slot={:?} loaded OK: {} actions {:?} vslot={:?}",
+                        item_id, slot, num_actions, action_keys, e.info.vslot,
+                    );
+                    e.info.vslot.as_ref().map(|s| split_vslot(s)).unwrap_or_default()
+                }
+                Err(e) => {
+                    warn!("  equip item_id={} slot={:?} FAILED: {e}", item_id, slot);
+                    Vec::new()
+                }
+            };
             EquipmentEntry {
                 slot: *slot,
                 item_id: *item_id,
@@ -154,29 +163,6 @@ fn resolve_equipment(
             }
         })
         .collect()
-}
-
-fn apply_vslot_filter(
-    actions: HashMap<String, Vec<FrameData>>,
-    face_expressions: HashMap<String, Vec<FrameData>>,
-    equipment: &[EquipmentEntry],
-) -> (
-    HashMap<String, Vec<FrameData>>,
-    HashMap<String, Vec<FrameData>>,
-) {
-    let filter_frame = |frame: FrameData| FrameData {
-        parts: filter_hidden_sprites(frame.parts, equipment),
-        delay: frame.delay,
-    };
-    let actions = actions
-        .into_iter()
-        .map(|(name, frames)| (name, frames.into_iter().map(filter_frame).collect()))
-        .collect();
-    let face_expressions = face_expressions
-        .into_iter()
-        .map(|(name, frames)| (name, frames.into_iter().map(filter_frame).collect()))
-        .collect();
-    (actions, face_expressions)
 }
 
 fn part_translation(layer: &SpriteLayer, pos: Vec3, facing_left: bool) -> Vec3 {
@@ -325,7 +311,6 @@ fn apply_current_frame(
 pub fn spawn_character(
     trigger: On<SpawnCharacter>,
     mut commands: Commands,
-    mut cache: ResMut<WzSpriteCache>,
     mut images: ResMut<Assets<Image>>,
     zmap: Res<ZMap>,
     slot_map: Res<SlotMap>,
@@ -333,31 +318,129 @@ pub fn spawn_character(
 ) {
     let ev = trigger.event();
     info!("spawn_character at {:?}", ev.transform.translation);
-    let base = get_cached_base();
+    let wz = wz::WzData::global();
 
-    let loaded = loader::preload_character_frames(
-        base,
-        ev.config.skin_suffix,
-        Some(ev.config.hair_id),
-        Some(ev.config.face_id),
-        &ev.config.equipment,
-        &zmap,
-        &slot_map,
-        &mut cache,
-        &mut images,
-    );
+    let loaded = wz.load_character(ev.config.skin_suffix, ev.config.hair_id, ev.config.face_id)
+        .expect("character data");
 
-    let equipment_entries = resolve_equipment(base, &ev.config.equipment);
     info!(
-        "spawn_character: {} equipment entries resolved, {} actions loaded, action '{}' present={}",
-        equipment_entries.len(),
-        loaded.actions.len(),
-        ev.action,
-        loaded.actions.contains_key(&ev.action),
+        "character loaded: skin_suffix={} hair_id={} face_id={} body_actions={} face_expressions={}",
+        ev.config.skin_suffix, ev.config.hair_id, ev.config.face_id,
+        loaded.body.len(), loaded.face_expressions.len(),
     );
+    for (act, frames) in &loaded.body {
+        let part_names: Vec<_> = frames.first().map(|f| f.parts.iter().map(|p| &p.layer_name).collect::<Vec<_>>()).unwrap_or_default();
+        info!("  body action '{}': {} frames, parts={:?}", act, frames.len(), part_names);
+    }
+    for (act, frames) in &loaded.face_expressions {
+        info!("  face expression '{}': {} frames", act, frames.len());
+    }
 
-    let (actions, face_expressions) =
-        apply_vslot_filter(loaded.actions, loaded.face_expressions, &equipment_entries);
+    let equipment_entries = resolve_equipment(wz, &ev.config.equipment);
+
+    // Convert wz::FrameData to client FrameData by resolving images
+    fn convert_frames(
+        wz_frames: &[wz::FrameData],
+        images: &mut Assets<Image>,
+        zmap: &ZMap,
+        slot_map: &SlotMap,
+        equip_slot: Option<EquipSlot>,
+    ) -> Vec<FrameData> {
+        wz_frames.iter().map(|f| {
+            let parts = f.parts.iter().map(|p| {
+                let handle = load_character_image(&p.image_path, images);
+                let origin = Vec2::new(p.origin.0, p.origin.1);
+                let z = zmap.depth(p.slot.as_deref().unwrap_or(""));
+                let slot = p.slot.as_ref()
+                    .and_then(|z_str| slot_map.slot_for(z_str))
+                    .map(String::from);
+                let source = match p.source {
+                    wz::PartSource::Body => PartSource::Body,
+                    wz::PartSource::Head => PartSource::Head,
+                    wz::PartSource::Hair => PartSource::Hair,
+                    wz::PartSource::Face => PartSource::Face,
+                    wz::PartSource::Equipment => PartSource::Equipment(equip_slot.unwrap_or(EquipSlot::Cap)),
+                };
+                let map = p.map.iter().map(|(k, v)| (k.clone(), Vec2::new(v.0, v.1))).collect();
+                SpriteLayer { image: handle, origin, map, z, layer_name: p.layer_name.clone(), slot, source }
+            }).collect();
+            FrameData { parts, delay: f.delay }
+        }).collect()
+    }
+
+    fn convert_actions(
+        wz_actions: &std::collections::HashMap<String, Vec<wz::FrameData>>,
+        images: &mut Assets<Image>,
+        zmap: &ZMap,
+        slot_map: &SlotMap,
+        equip_slot: Option<EquipSlot>,
+    ) -> std::collections::HashMap<String, Vec<FrameData>> {
+        wz_actions.iter().map(|(k, v)| {
+            (k.clone(), convert_frames(v, images, zmap, slot_map, equip_slot))
+        }).collect()
+    }
+
+    fn merge_actions(
+        target: &mut std::collections::HashMap<String, Vec<FrameData>>,
+        source: &std::collections::HashMap<String, Vec<FrameData>>,
+    ) {
+        for (action_name, source_frames) in source {
+            if let Some(target_frames) = target.get_mut(action_name) {
+                for (i, target_frame) in target_frames.iter_mut().enumerate() {
+                    let src_idx = i % source_frames.len().max(1);
+                    if let Some(src_frame) = source_frames.get(src_idx) {
+                        target_frame.parts.extend(src_frame.parts.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    fn filter_actions(
+        actions: std::collections::HashMap<String, Vec<FrameData>>,
+        equipment: &[EquipmentEntry],
+    ) -> std::collections::HashMap<String, Vec<FrameData>> {
+        let filter_frame = |frame: FrameData| FrameData {
+            parts: filter_hidden_sprites(frame.parts, equipment),
+            delay: frame.delay,
+        };
+        actions.into_iter()
+            .map(|(name, frames)| (name, frames.into_iter().map(filter_frame).collect()))
+            .collect()
+    }
+
+    let mut actions = convert_actions(&loaded.body, &mut images, &zmap, &slot_map, None);
+
+    let head_actions = convert_actions(&loaded.head, &mut images, &zmap, &slot_map, None);
+    merge_actions(&mut actions, &head_actions);
+    let hair_actions = convert_actions(&loaded.hair, &mut images, &zmap, &slot_map, None);
+    merge_actions(&mut actions, &hair_actions);
+
+    let mut face_expressions = convert_actions(&loaded.face_expressions, &mut images, &zmap, &slot_map, None);
+
+    for eq_entry in &equipment_entries {
+        if let Ok(equip_data) = wz.load_equip(eq_entry.item_id as i32) {
+            info!(
+                "  equip {} slot={:?}: {} actions, vslot={:?}",
+                eq_entry.item_id, eq_entry.slot, equip_data.actions.len(), equip_data.info.vslot,
+            );
+            let equip_actions = convert_actions(&equip_data.actions, &mut images, &zmap, &slot_map, Some(eq_entry.slot));
+            merge_actions(&mut actions, &equip_actions);
+        } else {
+            warn!("  equip {} slot={:?}: failed to load EquipData", eq_entry.item_id, eq_entry.slot);
+        }
+    }
+
+    actions = filter_actions(actions, &equipment_entries);
+    face_expressions = filter_actions(face_expressions, &equipment_entries);
+
+    info!(
+        "spawn_character: {} equipment entries, {} actions after merge+filter, action '{}' present={}",
+        equipment_entries.len(),
+        actions.len(),
+        ev.action,
+        actions.contains_key(&ev.action),
+    );
 
     let face_face_frames = face_expressions
         .get(&ev.face_expression)
@@ -371,7 +454,6 @@ pub fn spawn_character(
         .cloned()
         .unwrap_or_default();
 
-    // Merge face expression parts into the initial frame
     let mut merged_parts = parts.clone();
     if let Some(face_frame) = face_face_frames.first() {
         merged_parts.extend(face_frame.parts.clone());
@@ -479,8 +561,6 @@ pub fn spawn_character(
         part_entities.push((child, parent_name));
     }
 
-    // Build parent-child hierarchy: root parts are children of root,
-    // child parts are children of their parent part.
     for (child, parent_name) in &part_entities {
         match parent_name {
             Some(pname) => {
@@ -494,6 +574,24 @@ pub fn spawn_character(
         }
     }
     commands.entity(root).insert(PartEntities { map: part_map });
+}
+
+fn load_character_image(path: &str, images: &mut Assets<Image>) -> Handle<Image> {
+    use bevy::asset::RenderAssetUsages;
+    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+    let wz = wz::WzData::global();
+    let dynamic_image = wz.load_image(path).unwrap_or_else(|e| {
+        panic!("failed to load character image at {path}: {e}")
+    });
+    let rgba = dynamic_image.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    images.add(Image::new(
+        Extent3d { width, height, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        rgba.into_raw(),
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    ))
 }
 
 pub fn on_set_facing(
@@ -938,6 +1036,11 @@ pub fn animate_characters(
                     anim.facing_left,
                     &mut part_query,
                 );
+            } else {
+                debug!(
+                    "animate: part '{}' not found in part_entities (frame_idx={}, action='{}', source={:?})",
+                    layer.layer_name, anim.frame_idx, anim.action, layer.source,
+                );
             }
         }
     }
@@ -1018,6 +1121,11 @@ pub fn on_set_action(
                     pos,
                     anim.facing_left,
                     &mut part_query,
+                );
+            } else {
+                debug!(
+                    "on_set_action: part '{}' not found in part_entities (action='{}', source={:?})",
+                    layer.layer_name, ev.action, layer.source,
                 );
             }
         }

@@ -1,7 +1,5 @@
 use bevy::prelude::*;
 
-use crate::wz::Node;
-
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Reflect)]
 pub struct Job(pub u32);
 
@@ -45,26 +43,20 @@ impl JobCatalog {
     }
 }
 
-pub fn load_job_catalog(base: &Node) -> JobCatalog {
-    let Ok(skill_root) = base.at_path("Skill") else {
-        return JobCatalog::default();
-    };
-    let Ok(skill_strings) = base.at_path("String/Skill.img") else {
+pub fn load_job_catalog(wz: &wz::WzData) -> JobCatalog {
+    let Ok(class_names) = wz.list_children("Skill") else {
         return JobCatalog::default();
     };
 
     let mut entries = Vec::new();
-    for (class_name, _) in skill_root.children() {
-        let Some(job_key) = class_name.as_str().strip_suffix(".img") else {
+    for class_name in class_names {
+        let Some(job_key) = class_name.strip_suffix(".img") else {
             continue;
         };
         let Ok(job_id) = job_key.parse::<u32>() else {
             continue;
         };
-        let Some(label) = skill_strings
-            .at_path(&format!("{job_key}/bookName"))
-            .ok()
-            .and_then(|n| n.try_into().ok())
+        let Some(label) = wz.read_string(&format!("String/Skill.img/{job_key}/bookName"))
             .map(|label: String| label.trim().to_string())
             .filter(|label| !label.is_empty())
         else {

@@ -2,30 +2,22 @@ use bevy::prelude::*;
 
 use crate::ui::components::*;
 use crate::ui::loader::*;
-use crate::wz::get_cached_base;
 
 pub fn spawn_stat_window(
     commands: &mut Commands,
-    cache: &mut ResMut<WzUiSpriteCache>,
+    cache: &mut ResMut<WzImageCache>,
     images: &mut ResMut<Assets<Image>>,
 ) {
-    let base = get_cached_base();
-    let stat_node = match base.at_path("UI/UIWindow.img/Stat") {
-        Ok(n) => n,
-        Err(e) => {
-            warn!("failed to load Stat window: {e}");
-            return;
-        }
-    };
+    let stat_path = "UI/UIWindow.img/Stat";
 
-    let bg_left = match load_ui_sprite(&stat_node.at_path("backgrnd").unwrap(), cache, images) {
+    let bg_left = match load_ui_sprite(&format!("{stat_path}/backgrnd"), cache, images) {
         Some(s) => s,
         None => return,
     };
-    let bg_right = load_ui_sprite(&stat_node.at_path("backgrnd2").unwrap(), cache, images);
-    let basic_stat = load_ui_sprite(&stat_node.at_path("basicStat").unwrap(), cache, images);
-    let bt_auto = load_ui_button(&stat_node.at_path("BtAuto").unwrap(), cache, images);
-    let bt_detail = load_ui_button(&stat_node.at_path("BtDetail").unwrap(), cache, images);
+    let bg_right = load_ui_sprite(&format!("{stat_path}/backgrnd2"), cache, images);
+    let basic_stat = load_ui_sprite(&format!("{stat_path}/basicStat"), cache, images);
+    let bt_auto = load_ui_button(&format!("{stat_path}/BtAuto"), cache, images);
+    let bt_detail = load_ui_button(&format!("{stat_path}/BtDetail"), cache, images);
 
     // Left panel: two-column layout
     // Column 1 (left): stat labels (STR/DEX/INT/LUK) stacked vertically

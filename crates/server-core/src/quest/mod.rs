@@ -1,6 +1,5 @@
 pub mod dialog;
 pub mod eval;
-pub mod loader;
 pub mod types;
 
 use crate::player::{ActiveQuest, Player};
@@ -14,8 +13,9 @@ pub struct QuestRegistry {
 }
 
 impl QuestRegistry {
-    pub fn load(base: &wz_reader::node::WzNodeArc) -> Self {
-        let quests = loader::load_quest_registry(base);
+    pub fn load(wz: &wz::WzData) -> Self {
+        let registry = wz.load_quest_registry().expect("quest registry");
+        let quests = registry.quests.clone();
         tracing::info!("Loaded {} quest definitions", quests.len());
         Self { quests }
     }

@@ -1,34 +1,28 @@
 pub mod components;
 pub mod events;
 pub mod job;
-pub mod loader;
-pub mod skill_loader;
 pub mod skills;
 pub mod systems;
 pub mod types;
 
 use bevy::prelude::*;
 
-use self::loader::WzSpriteCache;
 use self::skills::SkillDatabase;
 use self::systems::*;
-use self::types::{load_smap, load_zmap};
+use self::types::{load_zmap, load_smap};
 use crate::GameSet;
 use crate::map::events::MapLoaded;
-use crate::wz::get_cached_base;
 
 pub struct CharacterPlugin;
 
 impl Plugin for CharacterPlugin {
     fn build(&self, app: &mut App) {
-        let base = get_cached_base();
-        let mut cache = WzSpriteCache::default();
-        let mut images = app.world_mut().resource_mut::<Assets<Image>>();
-        let skill_db = skill_loader::load_skill_database(base, &mut cache, &mut images);
-        app.insert_resource(load_zmap(base))
-            .insert_resource(load_smap(base))
-            .insert_resource(job::load_job_catalog(base))
-            .insert_resource(cache)
+        let wz = wz::WzData::global();
+        let skill_db = SkillDatabase::load(wz);
+
+        app.insert_resource(load_zmap(wz))
+            .insert_resource(load_smap(wz))
+            .insert_resource(job::load_job_catalog(wz))
             .insert_resource(skill_db)
             .init_resource::<CharacterActionCycle>()
             .register_type::<components::CharacterRoot>()
@@ -65,7 +59,7 @@ impl Plugin for CharacterPlugin {
 fn spawn_character_on_map(
     trigger: On<MapLoaded>,
     mut commands: Commands,
-    assets: Res<Assets<crate::map::asset_loader::WzMapAsset>>,
+    assets: Res<Assets<crate::wz::asset_loaders::WzMapAsset>>,
 ) {
     let ev = trigger.event();
     info!("MapLoaded: {}", ev.path);
@@ -78,10 +72,11 @@ fn spawn_character_on_map(
     };
 
     let spawn_pos = asset
+        .0
         .portals
         .iter()
         .find(|p| p.pt == 0)
-        .map(|p| p.pos)
+        .map(|p| Vec2::new(p.pos.0, p.pos.1))
         .unwrap_or(Vec2::ZERO);
 
     info!("Spawning character at spawn portal: {:?}", spawn_pos);
@@ -97,11 +92,11 @@ fn spawn_character_on_map(
             face_id: 20000,
             job: Job(112),
             equipment: vec![
-                (EquipSlot::Cap, 01000000),
+                (EquipSlot::Cap, 01002000),
                 (EquipSlot::Cape, 01102000),
-                (EquipSlot::Coat, 01040000),
-                (EquipSlot::Pants, 01060000),
-                (EquipSlot::Shoes, 01070000),
+                (EquipSlot::Coat, 01040002),
+                (EquipSlot::Pants, 01060001),
+                (EquipSlot::Shoes, 01072000),
                 (EquipSlot::Glove, 01080000),
                 (EquipSlot::Weapon, 01302000),
                 (EquipSlot::Shield, 01092000),

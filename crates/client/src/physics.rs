@@ -1,57 +1,15 @@
+use std::sync::Arc;
+
 use bevy::prelude::*;
 
-use crate::wz::foothold::Foothold;
+use wz::Foothold;
 use crate::GameSet;
 
 #[derive(Resource)]
-pub struct PhysicsConstants {
-    pub gravity_acc: f32,
-    pub jump_speed: f32,
-    pub fall_speed: f32,
-    pub walk_speed: f32,
-    pub walk_force: f32,
-    pub walk_drag: f32,
-    pub slip_speed: f32,
-    pub slip_force: f32,
-    pub swim_speed: f32,
-    pub swim_speed_dec: f32,
-    pub swim_force: f32,
-    pub fly_speed: f32,
-    pub fly_force: f32,
-    pub fly_jump_dec: f32,
-    pub float_drag1: f32,
-    pub float_drag2: f32,
-    pub float_coefficient: f32,
-    pub min_friction: f32,
-    pub max_friction: f32,
-}
+pub struct PhysicsConstants(pub Arc<wz::PhysicsConstants>);
 
-pub fn load_physics(base: &crate::wz::Node) -> PhysicsConstants {
-    let physics_node = base
-        .at_path("Map/Physics.img")
-        .expect("Map/Physics.img not found");
-
-    PhysicsConstants {
-        gravity_acc: physics_node.required("gravityAcc"),
-        jump_speed: physics_node.required("jumpSpeed"),
-        fall_speed: physics_node.required("fallSpeed"),
-        walk_speed: physics_node.required("walkSpeed"),
-        walk_force: physics_node.required("walkForce"),
-        walk_drag: physics_node.required("walkDrag"),
-        slip_speed: physics_node.required("slipSpeed"),
-        slip_force: physics_node.required("slipForce"),
-        swim_speed: physics_node.required("swimSpeed"),
-        swim_speed_dec: physics_node.required("swimSpeedDec"),
-        swim_force: physics_node.required("swimForce"),
-        fly_speed: physics_node.required("flySpeed"),
-        fly_force: physics_node.required("flyForce"),
-        fly_jump_dec: physics_node.required("flyJumpDec"),
-        float_drag1: physics_node.required("floatDrag1"),
-        float_drag2: physics_node.required("floatDrag2"),
-        float_coefficient: physics_node.required("floatCoefficient"),
-        min_friction: physics_node.required("minFriction"),
-        max_friction: physics_node.required("maxFriction"),
-    }
+pub fn load_physics() -> PhysicsConstants {
+    PhysicsConstants(wz::WzData::global().load_physics().expect("physics constants"))
 }
 
 pub const PHYSICS_DT: f32 = 1.0 / 100.0;
@@ -112,11 +70,7 @@ impl FootholdGraph {
                 }
             }
         }
-        Self {
-            footholds,
-            next_idx,
-            prev_idx,
-        }
+        Self { footholds, next_idx, prev_idx }
     }
 
     pub fn find_by_id(&self, id: i32) -> Option<usize> {
@@ -138,8 +92,6 @@ impl Plugin for PhysicsPlugin {
                     sync_physics_to_transform
                         .after(PhysicsSet::Simulate)
                         .before(GameSet::Animation),
-                    // TEMP: foothold gizmos disabled
-                    // draw_foothold_gizmos,
                 ),
             );
     }
@@ -167,7 +119,7 @@ pub fn physics_update(
     while accumulator.0 >= PHYSICS_DT {
         let graph = graph.as_deref();
         for mut ps in &mut query {
-            step_physics(&mut ps, graph, &constants, PHYSICS_DT);
+            step_physics(&mut ps, graph, &constants.0, PHYSICS_DT);
         }
         accumulator.0 -= PHYSICS_DT;
     }
@@ -176,7 +128,7 @@ pub fn physics_update(
 fn step_physics(
     ps: &mut PhysicsState,
     graph: Option<&FootholdGraph>,
-    constants: &PhysicsConstants,
+    constants: &wz::PhysicsConstants,
     dt: f32,
 ) {
     if ps.jump_request {
@@ -196,10 +148,8 @@ fn step_physics(
     }
 }
 
-fn do_jump(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants: &PhysicsConstants) {
-    if !ps.on_fh {
-        return;
-    }
+fn do_jump(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants: &wz::PhysicsConstants) {
+    if !ps.on_fh { return; }
 
     if ps.down {
         let gap = graph.map_or(false, |g| {
@@ -232,14 +182,10 @@ fn do_jump(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants: &Phy
                     let fmax = constants.walk_speed * (1.0 + fy * fy / len2);
                     if ps.left {
                         ps.vx = ps.vx.max(-fmax);
-                        if ps.vx > -fmax * 0.8 {
-                            ps.vx = -fmax * 0.8;
-                        }
+                        if ps.vx > -fmax * 0.8 { ps.vx = -fmax * 0.8; }
                     } else {
                         ps.vx = ps.vx.min(fmax);
-                        if ps.vx < fmax * 0.8 {
-                            ps.vx = fmax * 0.8;
-                        }
+                        if ps.vx < fmax * 0.8 { ps.vx = fmax * 0.8; }
                     }
                 }
             }
@@ -253,94 +199,57 @@ fn do_jump(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants: &Phy
 fn update_on_fh(
     ps: &mut PhysicsState,
     graph: Option<&FootholdGraph>,
-    constants: &PhysicsConstants,
+    constants: &wz::PhysicsConstants,
     dt: f32,
 ) {
     let graph = match graph {
         Some(g) => g,
-        None => {
-            ps.on_fh = false;
-            return;
-        }
+        None => { ps.on_fh = false; return; }
     };
 
     let idx = match graph.find_by_id(ps.fh_id) {
         Some(i) => i,
-        None => {
-            ps.on_fh = false;
-            return;
-        }
+        None => { ps.on_fh = false; return; }
     };
 
     let fh = &graph.footholds[idx];
     let fx = fh.x2 - fh.x1;
     let fy = fh.y2 - fh.y1;
     let len2 = fx * fx + fy * fy;
-    if len2 < EPSILON {
-        return;
-    }
+    if len2 < EPSILON { return; }
     let len = len2.sqrt();
 
-    let mut mvr = if fx.abs() > EPSILON {
-        ps.vx * len / fx
-    } else {
-        0.0
-    };
-
+    let mut mvr = if fx.abs() > EPSILON { ps.vx * len / fx } else { 0.0 };
     mvr -= fh.force.unwrap_or(0) as f32;
 
-    let fs = constants
-        .walk_drag
+    let fs = constants.walk_drag
         .max(constants.min_friction)
         .min(constants.max_friction)
-        / SHOE_MASS
-        * dt;
+        / SHOE_MASS * dt;
     let maxf = constants.walk_speed;
     let slip = fy / len;
 
     if slip.abs() > SHOE_WALK_SLANT {
         let sf = constants.slip_force * slip;
         let ss = constants.slip_speed * slip;
-        if ps.left {
-            mvr -= fs;
-        }
-        if ps.right {
-            mvr += fs;
-        }
-        mvr = if ss > 0.0 {
-            ss.min(mvr + sf * dt)
-        } else {
-            ss.max(mvr + sf * dt)
-        };
+        if ps.left { mvr -= fs; }
+        if ps.right { mvr += fs; }
+        mvr = if ss > 0.0 { ss.min(mvr + sf * dt) } else { ss.max(mvr + sf * dt) };
     } else {
         if ps.left {
-            mvr = if mvr < -maxf {
-                (-maxf).min(mvr + fs * dt)
-            } else {
-                (-maxf).max(mvr - constants.walk_force / SHOE_MASS * dt)
-            };
+            mvr = if mvr < -maxf { (-maxf).min(mvr + fs * dt) } else { (-maxf).max(mvr - constants.walk_force / SHOE_MASS * dt) };
         } else if ps.right {
-            mvr = if mvr > maxf {
-                maxf.max(mvr - fs * dt)
-            } else {
-                maxf.min(mvr + constants.walk_force / SHOE_MASS * dt)
-            };
+            mvr = if mvr > maxf { maxf.max(mvr - fs * dt) } else { maxf.min(mvr + constants.walk_force / SHOE_MASS * dt) };
         } else {
-            mvr = if mvr < 0.0 {
-                0.0f32.max(mvr + fs * dt)
-            } else {
-                0.0f32.min(mvr - fs * dt)
-            };
+            mvr = if mvr < 0.0 { 0.0f32.max(mvr + fs * dt) } else { 0.0f32.min(mvr - fs * dt) };
         }
     }
 
     mvr += fh.force.unwrap_or(0) as f32;
-
     ps.vx = mvr * fx / len;
     ps.vy = mvr * fy / len;
 
     let nx = ps.x + ps.vx * dt;
-
     if nx > fh.x2.max(fh.x1) {
         handle_fh_exit_right(ps, graph, idx, dt);
     } else if nx < fh.x1.min(fh.x2) {
@@ -420,7 +329,7 @@ fn handle_fh_exit_left(ps: &mut PhysicsState, graph: &FootholdGraph, idx: usize,
 fn update_in_air(
     ps: &mut PhysicsState,
     graph: Option<&FootholdGraph>,
-    constants: &PhysicsConstants,
+    constants: &wz::PhysicsConstants,
     dt: f32,
 ) {
     if ps.enable_gravity {
@@ -438,17 +347,9 @@ fn update_in_air(
     } else {
         if ps.vy > -constants.fall_speed {
             let f = constants.float_coefficient * drag_factor;
-            ps.vx = if ps.vx > 0.0 {
-                (0.0f32).max(ps.vx - f)
-            } else {
-                (0.0f32).min(ps.vx + f)
-            };
+            ps.vx = if ps.vx > 0.0 { (0.0f32).max(ps.vx - f) } else { (0.0f32).min(ps.vx + f) };
         } else {
-            ps.vx = if ps.vx > 0.0 {
-                (0.0f32).max(ps.vx - drag_factor)
-            } else {
-                (0.0f32).min(ps.vx + drag_factor)
-            };
+            ps.vx = if ps.vx > 0.0 { (0.0f32).max(ps.vx - drag_factor) } else { (0.0f32).min(ps.vx + drag_factor) };
         }
     }
 
@@ -471,9 +372,7 @@ fn update_in_air(
             let dy3 = from_y - fh.y1;
 
             let denom = dx1 * dy2 - dy1 * dx2;
-            if denom.abs() < EPSILON {
-                continue;
-            }
+            if denom.abs() < EPSILON { continue; }
 
             let t1 = (dx1 * dy3 - dy1 * dx3) / denom;
             let t2 = (dx2 * dy3 - dy2 * dx3) / denom;
@@ -498,9 +397,7 @@ fn update_in_air(
                 ps.vy = dot * fy;
             }
 
-            if ps.vy < -MAX_LAND_SPEED {
-                ps.vy = -MAX_LAND_SPEED;
-            }
+            if ps.vy < -MAX_LAND_SPEED { ps.vy = -MAX_LAND_SPEED; }
 
             ps.on_fh = true;
             ps.fh_id = fh.id;
@@ -514,7 +411,7 @@ fn update_in_air(
     ps.y = to_y;
 }
 
-fn apply_free_movement(ps: &mut PhysicsState, constants: &PhysicsConstants, dt: f32) {
+fn apply_free_movement(ps: &mut PhysicsState, constants: &wz::PhysicsConstants, dt: f32) {
     if ps.left {
         ps.vx -= constants.fly_force / SHOE_MASS * dt;
         ps.vx = ps.vx.max(-constants.fly_speed);

@@ -2,47 +2,40 @@ use bevy::prelude::*;
 
 use crate::ui::components::*;
 use crate::ui::loader::*;
-use crate::wz::get_cached_base;
 
 pub fn spawn_hud(
     commands: &mut Commands,
-    cache: &mut ResMut<WzUiSpriteCache>,
+    cache: &mut ResMut<WzImageCache>,
     images: &mut ResMut<Assets<Image>>,
 ) {
-    let base = get_cached_base();
-    let sb = match base.at_path("UI/StatusBar.img") {
-        Ok(n) => n,
-        Err(e) => {
-            warn!("failed to load StatusBar: {e}");
-            return;
-        }
-    };
+    let wz = wz::WzData::global();
+    let sb_path = "UI/StatusBar.img";
 
     // Load base sprites
-    let bg = load_ui_sprite(&sb.at_path("base/backgrnd").unwrap(), cache, images);
-    let bg2 = load_ui_sprite(&sb.at_path("base/backgrnd2").unwrap(), cache, images);
-    let quickslot_bg = load_ui_sprite(&sb.at_path("base/quickSlot").unwrap(), cache, images);
-    let chat_line = load_ui_sprite(&sb.at_path("base/chat").unwrap(), cache, images);
-    let chat_target = load_ui_sprite(&sb.at_path("base/chatTarget").unwrap(), cache, images);
+    let bg = load_ui_sprite(&format!("{sb_path}/base/backgrnd"), cache, images);
+    let bg2 = load_ui_sprite(&format!("{sb_path}/base/backgrnd2"), cache, images);
+    let quickslot_bg = load_ui_sprite(&format!("{sb_path}/base/quickSlot"), cache, images);
+    let chat_line = load_ui_sprite(&format!("{sb_path}/base/chat"), cache, images);
+    let chat_target = load_ui_sprite(&format!("{sb_path}/base/chatTarget"), cache, images);
 
     // Load gauges
-    let gauge_bar = load_ui_sprite(&sb.at_path("gauge/bar").unwrap(), cache, images);
-    let gauge_graduation = load_ui_sprite(&sb.at_path("gauge/graduation").unwrap(), cache, images);
-    let gauge_gray = load_ui_sprite(&sb.at_path("gauge/gray").unwrap(), cache, images);
+    let gauge_bar = load_ui_sprite(&format!("{sb_path}/gauge/bar"), cache, images);
+    let gauge_graduation = load_ui_sprite(&format!("{sb_path}/gauge/graduation"), cache, images);
+    let gauge_gray = load_ui_sprite(&format!("{sb_path}/gauge/gray"), cache, images);
 
     // Load buttons
-    let bt_menu = load_ui_button(&sb.at_path("BtMenu").unwrap(), cache, images);
-    let bt_shop = load_ui_button(&sb.at_path("BtShop").unwrap(), cache, images);
-    let bt_short = load_ui_button(&sb.at_path("BtShort").unwrap(), cache, images);
-    let bt_npt = load_ui_button(&sb.at_path("BtNPT").unwrap(), cache, images);
-    let bt_claim = load_ui_button(&sb.at_path("BtClaim").unwrap(), cache, images);
-    let bt_whisper = load_ui_button(&sb.at_path("BtWhisper").unwrap(), cache, images);
+    let bt_menu = load_ui_button(&format!("{sb_path}/BtMenu"), cache, images);
+    let bt_shop = load_ui_button(&format!("{sb_path}/BtShop"), cache, images);
+    let bt_short = load_ui_button(&format!("{sb_path}/BtShort"), cache, images);
+    let bt_npt = load_ui_button(&format!("{sb_path}/BtNPT"), cache, images);
+    let bt_claim = load_ui_button(&format!("{sb_path}/BtClaim"), cache, images);
+    let bt_whisper = load_ui_button(&format!("{sb_path}/BtWhisper"), cache, images);
 
     // Load key slots
-    let stat_key = load_ui_button(&sb.at_path("StatKey").unwrap(), cache, images);
-    let equip_key = load_ui_button(&sb.at_path("EquipKey").unwrap(), cache, images);
-    let inven_key = load_ui_button(&sb.at_path("InvenKey").unwrap(), cache, images);
-    let skill_key = load_ui_button(&sb.at_path("SkillKey").unwrap(), cache, images);
+    let stat_key = load_ui_button(&format!("{sb_path}/StatKey"), cache, images);
+    let equip_key = load_ui_button(&format!("{sb_path}/EquipKey"), cache, images);
+    let inven_key = load_ui_button(&format!("{sb_path}/InvenKey"), cache, images);
+    let skill_key = load_ui_button(&format!("{sb_path}/SkillKey"), cache, images);
 
     // HUD layout using flexbox:
     //

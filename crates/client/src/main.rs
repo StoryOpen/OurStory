@@ -38,8 +38,6 @@ use character::CharacterPlugin;
 use clap::Parser;
 use input::InputPlugin;
 use wz::asset_source::WzAssetSourcePlugin;
-use wz::get_cached_base;
-
 #[derive(Parser)]
 struct Args {
     #[arg(long)]
@@ -184,7 +182,7 @@ fn setup(mut commands: Commands) {
             ..OrthographicProjection::default_2d()
         })
     ));
-    commands.insert_resource(physics::load_physics(get_cached_base()));
+    commands.insert_resource(physics::load_physics());
     commands.spawn((
         Name::new("DiagnosticsOverlay"),
         DiagnosticsOverlay {

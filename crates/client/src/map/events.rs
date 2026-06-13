@@ -1,4 +1,4 @@
-use super::asset_loader::WzMapAsset;
+use crate::wz::asset_loaders::WzMapAsset;
 use super::resources::MapBounds;
 use bevy::prelude::*;
 

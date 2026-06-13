@@ -1,12 +1,10 @@
 pub mod animation;
-pub mod asset;
 pub mod events;
 
-use bevy::asset::AssetServer;
 use bevy::prelude::*;
 
 use crate::GameSet;
-use asset::WzMobAsset;
+use crate::wz::asset_loaders::WzMobAsset;
 
 pub struct MobPlugin {
     pub cache_capacity: usize,
@@ -21,8 +19,9 @@ impl Default for MobPlugin {
 impl Plugin for MobPlugin {
     fn build(&self, app: &mut App) {
         app.init_asset::<WzMobAsset>()
-            .init_asset_loader::<asset::WzMobLoader>()
+            .init_asset_loader::<crate::wz::asset_loaders::WzMobLoader>()
             .insert_resource(MobAssetRegistry::new(self.cache_capacity))
+            .init_resource::<crate::wz::WzImageCache>()
             .insert_resource(PendingSpawns::default())
             .register_type::<MobId>()
             .add_systems(
