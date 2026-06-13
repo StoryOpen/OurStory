@@ -286,6 +286,7 @@ fn apply_current_frame(
     frame_data: &CharacterFrameData,
     part_entities: &PartEntities,
     part_query: &mut Query<(&mut Sprite, &mut Transform, &CharacterPart)>,
+    body_origin: &mut Option<Vec2>,
 ) {
     let Some(frames) = frame_data.actions.get(&anim.action) else {
         return;
@@ -304,6 +305,11 @@ fn apply_current_frame(
     }
 
     let (positions, _) = compute_frame_transforms(&merged_parts, GameLayer::Character.base_z());
+
+    *body_origin = merged_parts
+        .iter()
+        .find(|p| p.layer_name == "body")
+        .map(|body| body.origin);
 
     for layer in &merged_parts {
         if let Some(&child) = part_entities.map.get(&layer.layer_name) {
@@ -389,10 +395,17 @@ pub fn spawn_character(
     let facing_left = true;
 
     let pos = ev.transform.translation;
+
+    let body_origin = merged_parts
+        .iter()
+        .find(|p| p.layer_name == "body")
+        .map(|body| body.origin)
+        .unwrap_or(Vec2::ZERO);
+
     let root = commands
         .spawn((
             Name::new("Character"),
-            CharacterRoot,
+            CharacterRoot { body_origin },
             ev.config.clone(),
             CharacterEquipment {
                 entries: equipment_entries,
@@ -485,16 +498,20 @@ pub fn spawn_character(
 
 pub fn on_set_facing(
     trigger: On<SetFacing>,
-    mut query: Query<(&mut CharacterAnimation, &CharacterFrameData, &PartEntities)>,
+    mut query: Query<(&mut CharacterAnimation, &CharacterFrameData, &PartEntities, &mut CharacterRoot)>,
     mut part_query: Query<(&mut Sprite, &mut Transform, &CharacterPart)>,
 ) {
     let ev = trigger.event();
-    let Ok((mut anim, frame_data, part_entities)) = query.get_mut(ev.entity) else {
+    let Ok((mut anim, frame_data, part_entities, mut char_root)) = query.get_mut(ev.entity) else {
         return;
     };
 
     anim.facing_left = ev.facing_left;
-    apply_current_frame(&anim, frame_data, part_entities, &mut part_query);
+    let mut body_origin = Some(char_root.body_origin);
+    apply_current_frame(&anim, frame_data, part_entities, &mut part_query, &mut body_origin);
+    if let Some(origin) = body_origin {
+        char_root.body_origin = origin;
+    }
 }
 
 pub fn update_character_facing_from_intent(
@@ -504,12 +521,13 @@ pub fn update_character_facing_from_intent(
             &mut CharacterAnimation,
             &CharacterFrameData,
             &PartEntities,
+            &mut CharacterRoot,
         ),
         (With<CharacterRoot>, With<IsLocalPlayer>),
     >,
     mut part_query: Query<(&mut Sprite, &mut Transform, &CharacterPart)>,
 ) {
-    for (intent, mut anim, frame_data, part_entities) in &mut query {
+    for (intent, mut anim, frame_data, part_entities, mut char_root) in &mut query {
         let facing_left = match (intent.left, intent.right) {
             (true, false) => true,
             (false, true) => false,
@@ -520,7 +538,11 @@ pub fn update_character_facing_from_intent(
         }
 
         anim.facing_left = facing_left;
-        apply_current_frame(&anim, frame_data, part_entities, &mut part_query);
+        let mut body_origin = Some(char_root.body_origin);
+        apply_current_frame(&anim, frame_data, part_entities, &mut part_query, &mut body_origin);
+        if let Some(origin) = body_origin {
+            char_root.body_origin = origin;
+        }
     }
 }
 
@@ -528,20 +550,28 @@ pub fn on_use_skill(
     trigger: On<UseSkill>,
     mut commands: Commands,
     skill_db: Res<SkillDatabase>,
-    mut char_query: Query<&mut CharacterAnimation, With<CharacterRoot>>,
+    mut char_query: Query<(&mut CharacterAnimation, &Transform, &CharacterRoot), With<CharacterRoot>>,
 ) {
     let ev = trigger.event();
     let Some(skill) = skill_db.get(ev.skill_id) else {
         warn!("skill {} not found in database", ev.skill_id);
         return;
     };
-    let Ok(mut anim) = char_query.get_mut(ev.entity) else {
+    let Ok((mut anim, char_transform, char_root)) = char_query.get_mut(ev.entity) else {
         return;
     };
+    info!(
+        "on_use_skill: id={} name={} char_pos=({:.1},{:.1})",
+        ev.skill_id, skill.name, char_transform.translation.x, char_transform.translation.y,
+    );
     if anim.return_to_default {
         anim.pending_action = Some(PendingCharacterAction::Skill {
             skill_id: ev.skill_id,
         });
+        return;
+    }
+
+    if skill.effect_frames.is_empty() {
         return;
     }
 
@@ -554,66 +584,69 @@ pub fn on_use_skill(
         });
     }
 
-    // Spawn effect frames as children of character root
-    if !skill.effect_frames.is_empty() {
-        let effect_root = commands
+    // Spawn effect frames as child of character root
+    let effect_root = commands
+        .spawn((
+            Name::new("SkillEffect"),
+            SkillEffectRoot,
+            Transform::from_translation(Vec3::new(0.0, 0.0, GameLayer::Skill.with_offset(0.0))),
+            Visibility::Visible,
+        ))
+        .id();
+
+    commands.entity(ev.entity).add_child(effect_root);
+
+    info!(
+        "skill effect root: child of char root at local ZERO (body origin/pivot), char at ({:.1},{:.1})",
+        char_transform.translation.x, char_transform.translation.y,
+    );
+
+    let first_delay = skill.effect_frames.first().map(|f| f.delay).unwrap_or(100);
+    commands.entity(effect_root).insert(SkillEffect {
+        frames: skill.effect_frames.clone(),
+        frame_idx: 0,
+        timer: Timer::from_seconds(first_delay as f32 / 1000.0, TimerMode::Repeating),
+        finished: false,
+    });
+
+    // Spawn first frame's sprite as child of effect root
+    if let Some(first) = skill.effect_frames.first() {
+        let sprite_entity = commands
             .spawn((
-                Name::new("SkillEffect"),
-                SkillEffectRoot,
-                Transform::from_translation(Vec3::ZERO),
+                Sprite::from_image(first.image.clone()),
+                Transform::from_xyz(-first.origin.x, -first.origin.y, first.z as f32),
                 Visibility::Visible,
             ))
             .id();
-
-        commands.entity(ev.entity).add_child(effect_root);
-
-        let first_delay = skill.effect_frames.first().map(|f| f.delay).unwrap_or(100);
-        commands.entity(effect_root).insert(SkillEffect {
-            frames: skill.effect_frames.clone(),
-            frame_idx: 0,
-            timer: Timer::from_seconds(first_delay as f32 / 1000.0, TimerMode::Repeating),
-            finished: false,
-        });
-
-        // Spawn first frame's sprite as child of effect root
-        if let Some(first) = skill.effect_frames.first() {
-            let sprite_entity = commands
-                .spawn((
-                    Sprite::from_image(first.image.clone()),
-                    Transform::from_xyz(-first.origin.x, -first.origin.y, first.z as f32),
-                    Visibility::Visible,
-                ))
-                .id();
-            commands.entity(effect_root).add_child(sprite_entity);
-        }
-
-        // Skill name label below the character
-        let label = commands
-            .spawn((
-                Name::new("SkillLabel"),
-                SkillNameLabel,
-                Text2d::new(skill.name.clone()),
-                TextFont {
-                    font_size: FontSize::Px(12.0),
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-                TextLayout::justify(Justify::Center),
-                Anchor::TOP_CENTER,
-                TextBackgroundColor(Color::BLACK.with_alpha(0.55)),
-                Text2dShadow {
-                    offset: Vec2::new(1.0, -1.0),
-                    color: Color::BLACK,
-                },
-                Transform::from_translation(Vec3::new(
-                    0.0,
-                    -60.0,
-                    GameLayer::Character.with_offset(230.0),
-                )),
-            ))
-            .id();
-        commands.entity(effect_root).add_child(label);
+        commands.entity(effect_root).add_child(sprite_entity);
     }
+
+    // Skill name label below the character
+    let label = commands
+        .spawn((
+            Name::new("SkillLabel"),
+            SkillNameLabel,
+            Text2d::new(skill.name.clone()),
+            TextFont {
+                font_size: FontSize::Px(12.0),
+                ..default()
+            },
+            TextColor(Color::WHITE),
+            TextLayout::justify(Justify::Center),
+            Anchor::TOP_CENTER,
+            TextBackgroundColor(Color::BLACK.with_alpha(0.55)),
+            Text2dShadow {
+                offset: Vec2::new(1.0, -1.0),
+                color: Color::BLACK,
+            },
+            Transform::from_translation(Vec3::new(
+                0.0,
+                -60.0,
+                GameLayer::Skill.with_offset(0.0),
+            )),
+        ))
+        .id();
+    commands.entity(effect_root).add_child(label);
 }
 
 pub fn animate_skill_effects(
@@ -745,9 +778,13 @@ pub fn on_character_action(
         }
         KeyAction::CycleSkill => {
             let skill_db = skill_db.as_ref();
-            let active = skill_db.active_skills_for_job(&job.lineage());
+            let active: Vec<_> = skill_db
+                .active_skills_for_job(&job.lineage())
+                .into_iter()
+                .filter(|s| !s.effect_frames.is_empty())
+                .collect();
             if active.is_empty() {
-                panic!("skills should not be empty")
+                return;
             }
             let idx = cycle.skill % active.len();
             cycle.skill = (cycle.skill + 1) % active.len();
@@ -788,11 +825,12 @@ pub fn animate_characters(
         &mut CharacterAnimation,
         &CharacterFrameData,
         &PartEntities,
+        &mut CharacterRoot,
     )>,
     mut part_query: Query<(&mut Sprite, &mut Transform, &CharacterPart)>,
     mut commands: Commands,
 ) {
-    for (entity, mut anim, frame_data, part_entities) in &mut query {
+    for (entity, mut anim, frame_data, part_entities, mut char_root) in &mut query {
         let mut animation_dirty = false;
 
         anim.timer.tick(time.delta());
@@ -881,6 +919,12 @@ pub fn animate_characters(
 
         let (positions, _) = compute_frame_transforms(&merged_parts, GameLayer::Character.base_z());
 
+        char_root.body_origin = merged_parts
+            .iter()
+            .find(|p| p.layer_name == "body")
+            .map(|body| body.origin)
+            .unwrap_or(char_root.body_origin);
+
         for layer in &merged_parts {
             if let Some(&child) = part_entities.map.get(&layer.layer_name) {
                 let pos = positions
@@ -906,12 +950,13 @@ pub fn on_set_action(
         &CharacterFrameData,
         &PartEntities,
         &Children,
+        &mut CharacterRoot,
     )>,
     mut part_query: Query<(&mut Sprite, &mut Transform, &CharacterPart)>,
     mut label_query: Query<&mut Text2d, With<CharacterActionLabel>>,
 ) {
     let ev = trigger.event();
-    let Ok((mut anim, frame_data, part_entities, children)) = query.get_mut(ev.entity) else {
+    let Ok((mut anim, frame_data, part_entities, children, mut char_root)) = query.get_mut(ev.entity) else {
         return;
     };
 
@@ -954,6 +999,12 @@ pub fn on_set_action(
         }
 
         let (positions, _) = compute_frame_transforms(&merged_parts, GameLayer::Character.base_z());
+
+        char_root.body_origin = merged_parts
+            .iter()
+            .find(|p| p.layer_name == "body")
+            .map(|body| body.origin)
+            .unwrap_or(char_root.body_origin);
 
         for layer in &merged_parts {
             if let Some(&child) = part_entities.map.get(&layer.layer_name) {

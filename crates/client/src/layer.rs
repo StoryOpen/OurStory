@@ -1,4 +1,4 @@
-/// Game-semantic rendering layers.
+// Game-semantic rendering layers.
 ///
 /// Each layer has a base z. Plugins use `base_z()` + their own within-layer
 /// offset, eliminating cross-plugin z coordination.
@@ -17,6 +17,8 @@ pub enum GameLayer {
     Mob,
     /// Players and NPCs.
     Character,
+    /// Skill effects (rendered above characters).
+    Skill,
     /// Map objects that render in front of characters.
     ObjFront,
     /// Foreground overlays (front backgrounds, weather effects).
@@ -32,6 +34,7 @@ impl GameLayer {
             Self::Tile => -200.0,
             Self::Mob => 200.0,
             Self::Character => 400.0,
+            Self::Skill => 500.0,
             Self::ObjFront => 600.0,
             Self::Foreground => 800.0,
         }

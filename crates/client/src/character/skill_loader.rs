@@ -66,7 +66,7 @@ fn load_single_frame(
         .at_path("origin")
         .ok()
         .and_then(|n| {
-            let v: Vector2D = n.try_into().ok()?;
+            let v: Vector2D = n.read_origin(&node).ok()?;
             Some(Vec2::new(v.0 as f32, v.1 as f32))
         })
         .unwrap_or(Vec2::ZERO);

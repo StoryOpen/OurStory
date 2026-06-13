@@ -6,7 +6,9 @@ use crate::character::types::{EquipmentEntry, FrameData};
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
-pub struct CharacterRoot;
+pub struct CharacterRoot {
+    pub body_origin: Vec2,
+}
 
 #[derive(Component, Clone, Reflect)]
 #[reflect(Component)]
