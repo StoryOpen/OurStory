@@ -67,7 +67,7 @@ pub fn load_smap(base: &crate::wz::Node) -> SlotMap {
     SlotMap { layers }
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Reflect)]
 pub enum EquipSlot {
     Cap,
     Cape,
@@ -135,7 +135,7 @@ impl EquipSlot {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Reflect)]
 pub struct SpriteLayer {
     pub image: Handle<Image>,
     pub origin: Vec2,
@@ -151,7 +151,7 @@ pub struct SpriteLayer {
     pub source: PartSource,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Reflect)]
 pub enum PartSource {
     Body,
     Head,
@@ -160,13 +160,13 @@ pub enum PartSource {
     Equipment(EquipSlot),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Reflect)]
 pub struct FrameData {
     pub parts: Vec<SpriteLayer>,
     pub delay: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Reflect)]
 pub struct EquipmentEntry {
     pub slot: EquipSlot,
     pub item_id: u32,

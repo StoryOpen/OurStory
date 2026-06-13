@@ -215,6 +215,7 @@ fn build_part_entity(
 fn build_action_label(commands: &mut Commands, action: &str) -> Entity {
     commands
         .spawn((
+            Name::new("ActionLabel"),
             CharacterActionLabel,
             Text2d::new(action),
             TextFont {
@@ -241,6 +242,7 @@ fn build_action_label(commands: &mut Commands, action: &str) -> Entity {
 fn build_job_label(commands: &mut Commands, label: &str) -> Entity {
     commands
         .spawn((
+            Name::new("JobLabel"),
             CharacterJobLabel,
             Text2d::new(label),
             TextFont {
@@ -389,6 +391,7 @@ pub fn spawn_character(
     let pos = ev.transform.translation;
     let root = commands
         .spawn((
+            Name::new("Character"),
             CharacterRoot,
             ev.config.clone(),
             CharacterEquipment {
@@ -555,6 +558,7 @@ pub fn on_use_skill(
     if !skill.effect_frames.is_empty() {
         let effect_root = commands
             .spawn((
+                Name::new("SkillEffect"),
                 SkillEffectRoot,
                 Transform::from_translation(Vec3::ZERO),
                 Visibility::Visible,
@@ -586,6 +590,7 @@ pub fn on_use_skill(
         // Skill name label below the character
         let label = commands
             .spawn((
+                Name::new("SkillLabel"),
                 SkillNameLabel,
                 Text2d::new(skill.name.clone()),
                 TextFont {

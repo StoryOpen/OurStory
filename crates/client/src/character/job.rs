@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::wz::Node;
 
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Reflect)]
 pub struct Job(pub u32);
 
 #[derive(Debug, Clone)]

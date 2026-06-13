@@ -97,6 +97,7 @@ fn spawn_one(commands: &mut Commands, ev: &SpawnNpc, asset: &WzNpcAsset) {
     };
 
     commands.spawn((
+        Name::new(format!("Npc({})", ev.npc_id)),
         NpcId(ev.npc_id),
         NpcAnimator {
             action: action_name.to_string(),

@@ -283,6 +283,7 @@ fn compute_bounds(
 fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity {
     let base = tile.pos - tile.origin;
     let mut entity = commands.spawn((
+        Name::new(format!("Tile({})", tile.z)),
         Sprite::from_image(tile.image.clone()),
         Transform::from_translation(base.extend(z)),
         MapSprite,
@@ -305,6 +306,7 @@ fn spawn_tile_entity(tile: &TileData, commands: &mut Commands, z: f32) -> Entity
 fn spawn_obj_entity(obj: &ObjData, commands: &mut Commands, z: f32) -> Entity {
     let base = obj.pos - obj.origin;
     let mut entity = commands.spawn((
+        Name::new(format!("Obj({})", obj.z)),
         Sprite {
             image: obj.image.clone(),
             flip_x: obj.flip,
@@ -386,6 +388,7 @@ fn spawn_background_entity(
 
     if !tile_x && !tile_y {
         let mut entity = commands.spawn((
+            Name::new(format!("Bg({})", bg.index)),
             Sprite {
                 image: bg.image.clone(),
                 flip_x: bg.flip,
@@ -442,6 +445,7 @@ fn spawn_background_entity(
             let t = Vec2::new(col as f32 * spacing_x, row as f32 * spacing_y);
 
             let mut entity = commands.spawn((
+                Name::new(format!("BgTile({})", bg.index)),
                 Sprite {
                     image: bg.image.clone(),
                     flip_x: bg.flip,

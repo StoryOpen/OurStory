@@ -32,6 +32,7 @@ pub fn spawn_stat_window(
     // Column 2 (right): background + buttons
     commands
         .spawn((
+            Name::new("StatWindow"),
             Node {
                 width: Val::Px(175.0),
                 height: Val::Px(347.0),

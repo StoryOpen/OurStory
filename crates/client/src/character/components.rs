@@ -8,7 +8,8 @@ use crate::character::types::{EquipmentEntry, FrameData};
 #[reflect(Component)]
 pub struct CharacterRoot;
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Reflect)]
+#[reflect(Component)]
 pub struct CharacterConfig {
     pub skin_suffix: u32,
     pub hair_id: u32,
@@ -17,12 +18,14 @@ pub struct CharacterConfig {
     pub equipment: Vec<(crate::character::types::EquipSlot, u32)>,
 }
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Reflect)]
+#[reflect(Component)]
 pub struct CharacterEquipment {
     pub entries: Vec<EquipmentEntry>,
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct CharacterAnimation {
     pub action: String,
     pub default_action: String,
@@ -36,7 +39,7 @@ pub struct CharacterAnimation {
     pub facing_left: bool,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Reflect)]
 pub enum PendingCharacterAction {
     Action {
         action: String,
@@ -47,7 +50,8 @@ pub enum PendingCharacterAction {
     },
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct CharacterFrameData {
     pub actions: HashMap<String, Vec<FrameData>>,
     pub face_expressions: HashMap<String, Vec<FrameData>>,

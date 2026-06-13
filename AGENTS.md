@@ -90,3 +90,36 @@ curl -X POST http://127.0.0.1:15702 \
 
 **Component types** use fully-qualified paths (e.g. `bevy_transform::components::transform::Transform`).
 Custom types must derive `Reflect` and be registered with `app.register_type::<T>()`.
+
+> **Startup latency:** The BRP HTTP server binds only after Bevy completes its
+> initialization (renderer, window, asset pipeline, `Startup` systems) and the
+> frame loop begins. This typically takes 1–5 seconds depending on hardware and
+> WZ asset load. Attempting to `curl` the endpoint before then yields
+> `Connection refused` — wait for the client's frame loop to start before
+> querying BRP.
+
+## In-Game Inspector (`bevy-inspector-egui`)
+
+In addition to BRP, the client includes an in-process egui-based entity
+inspector via `bevy-inspector-egui` (using the
+[`taboky-dev` fork](https://github.com/taboky-dev/bevy-inspector-egui) for
+Bevy 0.19 compat).
+
+Enabled with the `inspector` feature (not in default set):
+
+```bash
+cargo run --features inspector
+```
+
+Once running, press **F1** to toggle the World Inspector window. It shows:
+- **Entities** — hierarchical list with all component values, editable in real time
+- **Resources** — all registered resources, including their fields
+- **Assets** — loaded asset handles and their data
+
+Components must derive `Reflect` (same as BRP) to appear in the inspector.
+No `register_type` call is needed for the inspector to discover them (Bevy's
+`reflect_auto_register` handles that), but calling `register_type` is still
+required for BRP visibility.
+
+No connection is needed — the inspector renders inside the game window
+itself, so there is no startup-latency issue as with BRP.

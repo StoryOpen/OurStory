@@ -145,6 +145,7 @@ fn spawn_one(commands: &mut Commands, ev: &SpawnMob, asset: &WzMobAsset) {
     };
 
     commands.spawn((
+        Name::new(format!("Mob({})", ev.mob_id)),
         MobId(ev.mob_id),
         MobAnimator {
             action: action_name.to_string(),

@@ -20,6 +20,9 @@ const WORLD_Y: DiagnosticPath = DiagnosticPath::const_new("world/y");
 const SCREEN_X: DiagnosticPath = DiagnosticPath::const_new("screen/x");
 const SCREEN_Y: DiagnosticPath = DiagnosticPath::const_new("screen/y");
 
+#[derive(Resource, Default)]
+pub struct SelectedEntity(pub Option<Entity>);
+
 use bevy::camera::ScalingMode;
 use bevy::dev_tools::diagnostics_overlay::{
     DiagnosticsOverlay, DiagnosticsOverlayItem, DiagnosticsOverlayPlugin,
@@ -51,6 +54,14 @@ use mob::MobPlugin;
 use npc::NpcPlugin;
 #[cfg(feature = "ui")]
 use ui::UiPlugin;
+#[cfg(feature = "inspector")]
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
+#[cfg(feature = "inspector")]
+use bevy_inspector_egui::bevy_egui::{EguiPlugin, EguiContext, PrimaryEguiContext, EguiPrimaryContextPass};
+#[cfg(feature = "inspector")]
+use bevy_inspector_egui::bevy_inspector::ui_for_entity;
+#[cfg(feature = "inspector")]
+use bevy_inspector_egui::egui;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GameSet {
@@ -145,12 +156,19 @@ fn main() {
     app.add_plugins(NpcPlugin::default());
     #[cfg(feature = "ui")]
     app.add_plugins(UiPlugin);
+    #[cfg(feature = "inspector")]
+    app.add_plugins(EguiPlugin::default());
+    #[cfg(feature = "inspector")]
+    app.add_plugins(WorldInspectorPlugin::new());
+    #[cfg(feature = "inspector")]
+    app.add_systems(EguiPrimaryContextPass, selected_entity_ui);
 
     app.add_observer(wz::set_sprite_bottom_left)
+        .insert_resource(SelectedEntity(None))
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (write_coords, draw_entity_gizmos).in_set(GameSet::Visuals),
+            (select_entity_on_click, write_coords, draw_entity_gizmos, draw_selected_entity_gizmo).in_set(GameSet::Visuals),
         )
         .run();
 }
@@ -158,6 +176,7 @@ fn main() {
 fn setup(mut commands: Commands) {
     let viewport_height = camera::resources::BaseResolution::default().height;
     commands.spawn((
+        Name::new("MainCamera"),
         Camera2d,
         camera::resources::MainCamera,
         Projection::Orthographic(OrthographicProjection {
@@ -166,7 +185,9 @@ fn setup(mut commands: Commands) {
         })
     ));
     commands.insert_resource(physics::load_physics(get_cached_base()));
-    commands.spawn(DiagnosticsOverlay {
+    commands.spawn((
+        Name::new("DiagnosticsOverlay"),
+        DiagnosticsOverlay {
         title: "Debug".into(),
         diagnostic_overlay_items: vec![
             DiagnosticsOverlayItem {
@@ -197,7 +218,7 @@ fn setup(mut commands: Commands) {
                 precision: 0,
             },
         ],
-    });
+    }));
 }
 
 fn write_coords(
@@ -227,9 +248,82 @@ fn write_coords(
     }
 }
 
+fn select_entity_on_click(
+    buttons: Res<ButtonInput<MouseButton>>,
+    window: Query<&Window>,
+    camera: Query<(&Camera, &GlobalTransform)>,
+    sprites: Query<(Entity, &Transform, &Sprite)>,
+    images: Res<Assets<Image>>,
+    mut selected: ResMut<SelectedEntity>,
+) {
+    if !buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+    let Some((camera, camera_transform)) = camera.iter().next() else { return };
+    let Some(window) = window.iter().next() else { return };
+    let Some(cursor) = window.cursor_position() else { return };
+    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else { return };
+    let cursor_world = ray.origin.truncate();
+
+    let mut best_entity = None;
+    let mut best_z = f32::NEG_INFINITY;
+
+    for (entity, transform, sprite) in &sprites {
+        let size = sprite
+            .custom_size
+            .or_else(|| images.get(&sprite.image).map(|i| i.size_f32()))
+            .unwrap_or(Vec2::splat(32.0));
+        let min = transform.translation.truncate();
+        let max = min + size;
+        if cursor_world.x >= min.x && cursor_world.x <= max.x
+            && cursor_world.y >= min.y && cursor_world.y <= max.y
+            && transform.translation.z > best_z
+        {
+            best_z = transform.translation.z;
+            best_entity = Some(entity);
+        }
+    }
+
+    selected.0 = best_entity;
+}
+
+fn draw_selected_entity_gizmo(
+    selected: Res<SelectedEntity>,
+    query: Query<(&GlobalTransform, &Sprite)>,
+    images: Res<Assets<Image>>,
+    mut gizmos: Gizmos,
+) {
+    let Some(entity) = selected.0 else { return };
+    let Ok((transform, sprite)) = query.get(entity) else { return };
+    let size = sprite
+        .custom_size
+        .or_else(|| images.get(&sprite.image).map(|i| i.size_f32()))
+        .unwrap_or(Vec2::splat(32.0));
+    let pos = transform.translation().truncate() + size * 0.5;
+    gizmos.rect_2d(pos, size, Color::srgba(1.0, 0.3, 0.3, 0.7));
+}
+
+#[cfg(feature = "inspector")]
+fn selected_entity_ui(world: &mut World) {
+    let entity = world.resource::<SelectedEntity>().0;
+    let Some(entity) = entity else { return };
+    let Ok(egui_context) = world
+        .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
+        .single(world)
+    else {
+        return;
+    };
+    let mut egui_context = egui_context.clone();
+    egui::Window::new("Selected Entity")
+        .default_size((320.0, 200.0))
+        .show(egui_context.get_mut(), |ui| {
+            ui_for_entity(world, entity, ui);
+        });
+}
+
 fn draw_entity_gizmos(
     mut gizmos: Gizmos,
-    query: Query<(&Transform, &Sprite)>,
+    query: Query<(&GlobalTransform, &Sprite)>,
     images: Res<Assets<Image>>,
 ) {
     for (transform, sprite) in &query {
@@ -237,7 +331,7 @@ fn draw_entity_gizmos(
             .custom_size
             .or_else(|| images.get(&sprite.image).map(|i| i.size_f32()))
             .unwrap_or(Vec2::splat(32.0));
-        let pos = transform.translation.truncate() + size * 0.5;
+        let pos = transform.translation().truncate() + size * 0.5;
         gizmos.rect_2d(pos, size, Color::srgba(0.0, 1.0, 0.0, 0.3));
     }
 }

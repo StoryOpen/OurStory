@@ -57,6 +57,7 @@ pub fn spawn_hud(
 
     let hud_entity = commands
         .spawn((
+            Name::new("HUD"),
             Node {
                 width: Val::Px(800.0),
                 height: Val::Px(71.0),
