@@ -270,7 +270,10 @@ fn select_entity_on_click(
         let size = sprite
             .custom_size
             .or_else(|| images.get(&sprite.image).map(|i| i.size_f32()))
-            .unwrap_or(Vec2::splat(32.0));
+            .unwrap_or_else(|| {
+                warn!("cursor_hit_test: sprite has no custom_size and image not loaded, using 32x32");
+                Vec2::splat(32.0)
+            });
         let min = transform.translation.truncate();
         let max = min + size;
         if cursor_world.x >= min.x && cursor_world.x <= max.x
@@ -296,7 +299,10 @@ fn draw_selected_entity_gizmo(
     let size = sprite
         .custom_size
         .or_else(|| images.get(&sprite.image).map(|i| i.size_f32()))
-        .unwrap_or(Vec2::splat(32.0));
+        .unwrap_or_else(|| {
+            warn!("draw_selected_entity_gizmo: sprite has no custom_size and image not loaded, using 32x32");
+            Vec2::splat(32.0)
+        });
     let pos = transform.translation().truncate() + size * 0.5;
     gizmos.rect_2d(pos, size, Color::srgba(1.0, 0.3, 0.3, 0.7));
 }
@@ -328,7 +334,10 @@ fn draw_entity_gizmos(
         let size = sprite
             .custom_size
             .or_else(|| images.get(&sprite.image).map(|i| i.size_f32()))
-            .unwrap_or(Vec2::splat(32.0));
+            .unwrap_or_else(|| {
+                warn!("draw_entity_gizmos: sprite has no custom_size and image not loaded, using 32x32");
+                Vec2::splat(32.0)
+            });
         let pos = transform.translation().truncate() + size * 0.5;
         gizmos.rect_2d(pos, size, Color::srgba(0.0, 1.0, 0.0, 0.3));
     }

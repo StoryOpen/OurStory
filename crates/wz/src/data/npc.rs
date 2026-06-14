@@ -1,3 +1,4 @@
+use log::warn;
 use std::collections::{BTreeMap, HashMap};
 use crate::error::WzError;
 use crate::node::Node;
@@ -30,7 +31,10 @@ impl NpcData {
         let name = base.at_path(&format!("String/Npc.img/{id}/name"))
             .ok()
             .and_then(|n| -> Option<String> { n.try_into().ok() })
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                warn!("Npc {id}: name not found, using default");
+                String::new()
+            });
 
         let mut actions = HashMap::new();
         for (action_name, action_node) in npc_node.children() {
@@ -51,13 +55,19 @@ impl NpcData {
                         let v: i32 = n.try_into().ok()?;
                         Some(v.max(0) as u32)
                     })
-                    .unwrap_or(100);
+                    .unwrap_or_else(|| {
+                        warn!("Npc {id}: frame '{}' missing delay, using 100", frame_node.path());
+                        100
+                    });
 
                 let image_path = frame_node.path();
                 let origin = frame_node
                     .try_get("origin")
                     .and_then(|n| n.read_origin(&frame_node).ok())
-                    .unwrap_or(Vector2D::ZERO);
+                    .unwrap_or_else(|| {
+                        warn!("Npc {id}: frame '{}' missing origin, using ZERO", frame_node.path());
+                        Vector2D::ZERO
+                    });
 
                 frame_map.insert(frame_index, NpcFrame { delay, image_path, origin });
             }

@@ -62,11 +62,15 @@ impl FootholdGraph {
             if let Some(nid) = footholds[i].next_id {
                 if let Ok(j) = footholds.binary_search_by_key(&nid, |f| f.id) {
                     next_idx[i] = Some(j);
+                } else {
+                    warn!("FootholdGraph: next_id {} of foothold {} not found in graph", nid, footholds[i].id);
                 }
             }
             if let Some(pid) = footholds[i].prev_id {
                 if let Ok(j) = footholds.binary_search_by_key(&pid, |f| f.id) {
                     prev_idx[i] = Some(j);
+                } else {
+                    warn!("FootholdGraph: prev_id {} of foothold {} not found in graph", pid, footholds[i].id);
                 }
             }
         }
@@ -220,7 +224,7 @@ fn update_on_fh(
     let len = len2.sqrt();
 
     let mut mvr = if fx.abs() > EPSILON { ps.vx * len / fx } else { 0.0 };
-    mvr -= fh.force.unwrap_or(0) as f32;
+    mvr -= fh.force as f32;
 
     let fs = constants.walk_drag
         .max(constants.min_friction)
@@ -245,7 +249,7 @@ fn update_on_fh(
         }
     }
 
-    mvr += fh.force.unwrap_or(0) as f32;
+    mvr += fh.force as f32;
     ps.vx = mvr * fx / len;
     ps.vy = mvr * fy / len;
 

@@ -49,7 +49,7 @@ pub struct Foothold {
     pub y1: f32,
     pub x2: f32,
     pub y2: f32,
-    pub force: Option<i32>,
+    pub force: i32,
     pub forbid_fall: Option<i32>,
     pub piece: Option<i32>,
     pub next_id: Option<i32>,

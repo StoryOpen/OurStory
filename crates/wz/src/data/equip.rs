@@ -1,3 +1,4 @@
+use log::warn;
 use std::collections::HashMap;
 use crate::error::WzError;
 use crate::node::Node;
@@ -141,11 +142,20 @@ fn load_equip_info(item_node: &Node) -> EquipInfo {
         Err(_) => return EquipInfo::default(),
     };
 
-    let icon_path = info_node.at_path("icon").ok().map(|n| n.path()).unwrap_or_default();
-    let icon_raw_path = info_node.at_path("iconRaw").ok().map(|n| n.path()).unwrap_or_default();
+    let icon_path = info_node.at_path("icon").ok().map(|n| n.path()).unwrap_or_else(|| {
+        warn!("load_equip_info: icon path missing, using default");
+        String::new()
+    });
+    let icon_raw_path = info_node.at_path("iconRaw").ok().map(|n| n.path()).unwrap_or_else(|| {
+        warn!("load_equip_info: iconRaw path missing, using default");
+        String::new()
+    });
 
     EquipInfo {
-        cash: info_node.get_opt::<i32>("cash").unwrap_or(0) != 0,
+        cash: info_node.get_opt::<i32>("cash").unwrap_or_else(|| {
+            warn!("load_equip_info: cash missing, using 0");
+            0
+        }) != 0,
         islot: info_node.get_opt("islot"),
         vslot: info_node.get_opt("vslot"),
         req_level: info_node.get_opt("reqLevel"),
@@ -193,7 +203,10 @@ fn load_equip_actions(base: &Node, wz_path: &str, item_node: &Node) -> Result<Ha
 
             let delay: i32 = frame_node.at_path("delay").ok()
                 .and_then(|n| n.try_into().ok())
-                .unwrap_or(100);
+                .unwrap_or_else(|| {
+                    warn!("load_equip_actions: '{}' missing delay, using 100", frame_path);
+                    100
+                });
 
             let mut parts = Vec::new();
             for (child_name, _) in frame_node.children() {

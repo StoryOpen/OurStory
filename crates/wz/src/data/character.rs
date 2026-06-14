@@ -1,3 +1,4 @@
+use log::warn;
 use std::collections::HashMap;
 use crate::error::WzError;
 use crate::node::Node;
@@ -24,7 +25,10 @@ impl CharacterData {
         let head = head_root.as_ref()
             .map(|h| load_actions(h, &head_path, PartSource::Head, base))
             .transpose()?
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                warn!("Character: head actions empty/missing for '{}', using default", head_path);
+                HashMap::new()
+            });
         let hair = load_hair(base, hair_id)?;
         let face_expressions = load_face_expressions(base, face_id)?;
 
@@ -71,7 +75,10 @@ fn load_single_frame(base: &Node, action_path: &str, _action_name: &str, frame_i
     let delay: i32 = frame_node
         .at_path("delay").ok()
         .and_then(|n| n.try_into().ok())
-        .unwrap_or(100);
+        .unwrap_or_else(|| {
+            warn!("load_single_frame: '{}' missing delay, using 100", frame_path);
+            100
+        });
 
     // Check if this is a frame-reference action
     if let (Ok(action_node), Ok(frame_node_val)) = (
@@ -167,7 +174,10 @@ fn load_hair(base: &Node, hair_id: u32) -> Result<HashMap<String, Vec<FrameData>
 
             let delay: i32 = frame_node.at_path("delay").ok()
                 .and_then(|n| n.try_into().ok())
-                .unwrap_or(100);
+                .unwrap_or_else(|| {
+                    warn!("load_hair: '{}' missing delay, using 100", frame_path);
+                    100
+                });
 
             let mut parts = Vec::new();
             for (part_name, _) in frame_node.children() {

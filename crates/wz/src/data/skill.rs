@@ -1,3 +1,4 @@
+use log::warn;
 use std::collections::HashMap;
 use crate::error::WzError;
 use crate::node::Node;
@@ -88,21 +89,39 @@ impl SkillDatabase {
                 let Ok(skill_node) = skill_dir.at_path(&skill_id.to_string()) else { continue; };
 
                 let skill_type_raw: Option<i32> = skill_node.at_path("skillType").ok().and_then(|n| n.try_into().ok());
-                let skill_type = skill_type_raw.map(SkillType::from_raw).unwrap_or(SkillType::Active);
+                let skill_type = skill_type_raw.map(SkillType::from_raw).unwrap_or_else(|| {
+                    warn!("Skill {skill_id}: skillType missing/invalid, using Active");
+                    SkillType::Active
+                });
 
                 let name: String = base
                     .at_path(&format!("String/Skill.img/{skill_id}/name"))
                     .ok().and_then(|n| n.try_into().ok())
-                    .unwrap_or_default();
+                    .unwrap_or_else(|| {
+                        warn!("Skill {skill_id}: name not found, using default");
+                        String::new()
+                    });
 
                 let desc: String = base
                     .at_path(&format!("String/Skill.img/{skill_id}/desc"))
                     .ok().and_then(|n| n.try_into().ok())
-                    .unwrap_or_default();
+                    .unwrap_or_else(|| {
+                        warn!("Skill {skill_id}: desc not found, using default");
+                        String::new()
+                    });
 
-                let icon_path = skill_node.at_path("icon").ok().map(|n| n.path()).unwrap_or_default();
-                let icon_disabled_path = skill_node.at_path("iconDisabled").ok().map(|n| n.path()).unwrap_or_default();
-                let icon_mouse_over_path = skill_node.at_path("iconMouseOver").ok().map(|n| n.path()).unwrap_or_default();
+                let icon_path = skill_node.at_path("icon").ok().map(|n| n.path()).unwrap_or_else(|| {
+                    warn!("Skill {skill_id}: icon path missing, using default");
+                    String::new()
+                });
+                let icon_disabled_path = skill_node.at_path("iconDisabled").ok().map(|n| n.path()).unwrap_or_else(|| {
+                    warn!("Skill {skill_id}: iconDisabled path missing, using default");
+                    String::new()
+                });
+                let icon_mouse_over_path = skill_node.at_path("iconMouseOver").ok().map(|n| n.path()).unwrap_or_else(|| {
+                    warn!("Skill {skill_id}: iconMouseOver path missing, using default");
+                    String::new()
+                });
 
                 let action: Option<String> = skill_node.at_path("action/0").ok().and_then(|n| n.try_into().ok());
                 let prepare_action: Option<String> = skill_node.at_path("prepare/action").ok().and_then(|n| n.try_into().ok());
@@ -118,12 +137,18 @@ impl SkillDatabase {
                     .at_path("masterLevel").ok()
                     .and_then(|n| -> Option<i32> { n.try_into().ok() })
                     .map(|v| v as u32)
-                    .unwrap_or(0);
+                    .unwrap_or_else(|| {
+                        warn!("Skill {skill_id}: masterLevel missing, using 0");
+                        0
+                    });
 
                 let invisible: bool = skill_node
                     .at_path("invisible").ok()
                     .and_then(|n| n.try_into().ok())
-                    .unwrap_or(false);
+                    .unwrap_or_else(|| {
+                        warn!("Skill {skill_id}: invisible flag missing, using false");
+                        false
+                    });
 
                 skills.insert(skill_id, SkillEntry {
                     id: skill_id,

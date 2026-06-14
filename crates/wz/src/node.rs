@@ -1,5 +1,6 @@
 use image::DynamicImage;
 use indexmap::IndexMap;
+use log::warn;
 use serde_json::json;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -154,6 +155,23 @@ impl Node {
         } else {
             "property"
         };
+
+        let value = if !guard.children.is_empty() {
+            None
+        } else if let Some(v) = guard.try_as_int() {
+            Some(json!(v))
+        } else if let Some(v) = guard.try_as_string() {
+            v.get_string().ok().map(|s| json!(s))
+        } else if let Some(v) = guard.try_as_float() {
+            Some(json!(v))
+        } else if let Some(v) = guard.try_as_double() {
+            Some(json!(v))
+        } else if let Some(v) = guard.try_as_vector2d() {
+            Some(json!({"x": v.0, "y": v.1}))
+        } else {
+            None
+        };
+
         let name = guard.name.to_string();
         let path = guard.get_path_from_root().to_string();
         drop(guard);
@@ -164,17 +182,32 @@ impl Node {
                 "path": path,
                 "kind": kind,
             });
+            if let Some(v) = value {
+                val["value"] = v;
+            }
             if has_image {
                 val["has_image"] = serde_json::Value::Bool(true);
             }
             return Ok(val);
         }
 
-        let children: Vec<serde_json::Value> = self
+        let mut children: Vec<serde_json::Value> = self
             .children()
             .into_iter()
             .filter_map(|(_, child)| child.to_payload_depth(depth - 1).ok())
             .collect();
+
+        children.sort_by(|a, b| {
+            let na = a["name"].as_str().unwrap_or("");
+            let nb = b["name"].as_str().unwrap_or("");
+            let (na_num, nb_num) = (na.parse::<f64>(), nb.parse::<f64>());
+            match (na_num, nb_num) {
+                (Ok(a), Ok(b)) => a.total_cmp(&b),
+                (Ok(_), Err(_)) => std::cmp::Ordering::Less,
+                (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
+                (Err(_), Err(_)) => na.cmp(nb),
+            }
+        });
 
         let mut val = json!({
             "name": name,
@@ -182,6 +215,9 @@ impl Node {
             "kind": kind,
             "children": children,
         });
+        if let Some(v) = value {
+            val["value"] = v;
+        }
         if has_image {
             val["has_image"] = serde_json::Value::Bool(true);
         }
@@ -226,7 +262,14 @@ impl Node {
         self.at_path(path)
             .ok()
             .and_then(|n| T::try_from(n).ok())
-            .unwrap_or(default)
+            .unwrap_or_else(|| {
+                warn!(
+                    "get_or: node '{}' missing/type-mismatch for '{}', using default",
+                    self.path(),
+                    path
+                );
+                default
+            })
     }
 
     pub fn get_opt<T: TryFrom<Node, Error = WzError>>(&self, path: &str) -> Option<T> {

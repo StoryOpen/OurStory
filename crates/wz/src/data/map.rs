@@ -1,3 +1,4 @@
+use log::warn;
 use crate::error::WzError;
 use crate::node::Node;
 use crate::vector2d::Vector2D;
@@ -170,10 +171,16 @@ impl MapData {
 
         let name = base.at_path(&format!("String/Map.img/{id}/mapName"))
             .ok().and_then(|n| -> Option<String> { n.try_into().ok() })
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                warn!("Map {id}: mapName not found, using default");
+                String::new()
+            });
         let street_name = base.at_path(&format!("String/Map.img/{id}/streetName"))
             .ok().and_then(|n| -> Option<String> { n.try_into().ok() })
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                warn!("Map {id}: streetName not found, using default");
+                String::new()
+            });
 
         let info = load_info(&map);
         let footholds = load_footholds(&map);
@@ -250,14 +257,29 @@ fn load_footholds(map: &Node) -> Vec<Foothold> {
     let mut footholds = Vec::new();
     if let Ok(fh_root) = map.at_path("foothold") {
         for (layer_name, group_node) in fh_root.children() {
-            let layer_num: u8 = layer_name.as_str().parse().unwrap_or(0);
+            let layer_num: u8 = layer_name.as_str().parse().unwrap_or_else(|e| {
+                warn!("load_footholds: non-numeric layer name '{}': {e}, using 0", layer_name.as_str());
+                0
+            });
             for (group_name, id_node) in group_node.children() {
-                let group_num: i32 = group_name.as_str().parse().unwrap_or(0);
+                let group_num: i32 = group_name.as_str().parse().unwrap_or_else(|e| {
+                    warn!("load_footholds: non-numeric group name '{}': {e}, using 0", group_name.as_str());
+                    0
+                });
                 for (id_name, fh) in id_node.children() {
-                    let Vector2D(x1, y1) = fh.read_pos_n(1).unwrap_or(Vector2D::ZERO);
-                    let Vector2D(x2, y2) = fh.read_pos_n(2).unwrap_or(Vector2D::ZERO);
-                    let id: i32 = id_name.as_str().parse().unwrap_or(0);
-                    let force: Option<i32> = fh.get_opt("force");
+                    let Vector2D(x1, y1) = fh.read_pos_n(1).unwrap_or_else(|_| {
+                        warn!("load_footholds: foothold missing pos1, using ZERO");
+                        Vector2D::ZERO
+                    });
+                    let Vector2D(x2, y2) = fh.read_pos_n(2).unwrap_or_else(|_| {
+                        warn!("load_footholds: foothold missing pos2, using ZERO");
+                        Vector2D::ZERO
+                    });
+                    let id: i32 = id_name.as_str().parse().unwrap_or_else(|e| {
+                        warn!("load_footholds: non-numeric foothold id '{}': {e}, using 0", id_name.as_str());
+                        0
+                    });
+                    let force: i32 = fh.get_or("force", 0);
                     let forbid_fall: Option<i32> = fh.get_opt("forbidFall");
                     let piece: Option<i32> = fh.get_opt("piece");
                     let next_id: Option<i32> = fh.get_opt("next");
@@ -301,14 +323,23 @@ fn load_tiles(layer: &Node, base: &Node) -> Vec<TilePlacement> {
     if let Ok(tile_root) = layer.at_path("tile") {
         let mut children = tile_root.children();
         children.sort_by(|x1, _x2, x3, _x4| {
-            let a = x1.as_str().parse::<i32>().unwrap_or(0);
-            let b = x3.as_str().parse::<i32>().unwrap_or(0);
+            let a = x1.as_str().parse::<i32>().unwrap_or_else(|e| {
+                warn!("load_tiles: non-numeric tile key '{}': {e}, using 0", x1.as_str());
+                0
+            });
+            let b = x3.as_str().parse::<i32>().unwrap_or_else(|e| {
+                warn!("load_tiles: non-numeric tile key '{}': {e}, using 0", x3.as_str());
+                0
+            });
             a.cmp(&b)
         });
         for (name, tile_node) in children.iter() {
             let variant: String = tile_node.required("u");
             let index: i32 = tile_node.required("no");
-            let tile_id: i32 = name.as_str().parse().unwrap_or(0);
+            let tile_id: i32 = name.as_str().parse().unwrap_or_else(|e| {
+                warn!("load_tiles: non-numeric tile name '{}': {e}, using 0", name.as_str());
+                0
+            });
 
             let img_path = format!("Map/Tile/{}.img/{}/{}", tile_set, variant, index);
             let Ok(img_node) = base.at_path(&img_path) else { continue; };
@@ -341,7 +372,10 @@ fn load_objs(layer: &Node, base: &Node) -> Vec<ObjPlacement> {
             let l1: String = obj_node.required("l1");
             let l2: String = obj_node.required("l2");
             let z: i32 = obj_node.get_or("z", 0);
-            let zid: i32 = name.as_str().parse().unwrap_or(0);
+            let zid: i32 = name.as_str().parse().unwrap_or_else(|e| {
+                warn!("load_objs: non-numeric obj name '{}': {e}, using 0", name.as_str());
+                0
+            });
             let flip: bool = obj_node.get_or("f", false);
             let flow: i32 = obj_node.get_or("flow", 0);
             let rx: i32 = obj_node.get_or("rx", 0);
@@ -387,7 +421,10 @@ fn load_backgrounds(map: &Node, base: &Node) -> Vec<BackgroundData> {
 
     let mut backgrounds = Vec::new();
     for (name, back_node) in back_root.children() {
-        let index: i32 = name.as_str().parse().unwrap_or(0);
+        let index: i32 = name.as_str().parse().unwrap_or_else(|e| {
+            warn!("load_backgrounds: non-numeric bg key '{}': {e}, using 0", name.as_str());
+            0
+        });
         let b_s: String = match back_node.get_opt::<String>("bS") {
             Some(v) => v,
             None => continue,
@@ -408,7 +445,10 @@ fn load_backgrounds(map: &Node, base: &Node) -> Vec<BackgroundData> {
             Err(_) => continue,
         };
 
-        let pos = back_node.read_pos().unwrap_or(Vector2D::ZERO);
+        let pos = back_node.read_pos().unwrap_or_else(|_| {
+            warn!("load_backgrounds: background missing position, using ZERO");
+            Vector2D::ZERO
+        });
         let (animation_frames, image_path, origin) = load_animated_node(&img_node, &img_path);
 
         backgrounds.push(BackgroundData {
@@ -447,7 +487,10 @@ fn load_life(map: &Node) -> Vec<LifeSpawn> {
         let id: i32 = life_node
             .get_opt::<String>("id")
             .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
+            .unwrap_or_else(|| {
+                warn!("load_life: non-numeric or missing id, using 0");
+                0
+            });
         let x: f32 = life_node.get_or("x", 0.0);
         let cy: i32 = life_node.get_or("cy", 0);
         let pos = Vector2D(x, -(cy as f32));
@@ -474,7 +517,10 @@ fn load_portals(map: &Node) -> Vec<PortalData> {
     for (_name, portal_node) in portal_root.children() {
         let pt: i32 = portal_node.get_or("pt", 0);
         let pn: String = portal_node.get_or("pn", String::new());
-        let pos = portal_node.read_pos().unwrap_or(Vector2D::ZERO);
+        let pos = portal_node.read_pos().unwrap_or_else(|_| {
+            warn!("load_portals: portal '{}' missing position, using ZERO", pn);
+            Vector2D::ZERO
+        });
         let tm: i32 = portal_node.get_or("tm", 0);
         let tn: String = portal_node.get_or("tn", String::new());
         let script: Option<String> = portal_node.get_opt("script");
@@ -520,7 +566,10 @@ fn load_seats(map: &Node) -> Vec<SeatData> {
 
     let mut seats = Vec::new();
     for (_name, seat_node) in seat_root.children() {
-        let pos = seat_node.read_pos().unwrap_or(Vector2D::ZERO);
+        let pos = seat_node.read_pos().unwrap_or_else(|_| {
+            warn!("load_seats: seat missing position, using ZERO");
+            Vector2D::ZERO
+        });
         seats.push(SeatData { pos });
     }
 
@@ -571,7 +620,10 @@ fn load_animated_node(node: &Node, _base_path: &str) -> (Vec<AnimFrame>, String,
         let image_path = node.path();
         let origin = node.try_get("origin")
             .and_then(|n| n.read_origin(node).ok())
-            .unwrap_or(Vector2D::ZERO);
+            .unwrap_or_else(|| {
+                warn!("load_animated_node: node '{}' missing origin, using ZERO", node.path());
+                Vector2D::ZERO
+            });
         return (Vec::new(), image_path, origin);
     }
 
@@ -581,8 +633,15 @@ fn load_animated_node(node: &Node, _base_path: &str) -> (Vec<AnimFrame>, String,
 
     let mut children = node.children();
     children.sort_by(|a, _, b, _| {
-        a.as_str().parse::<i32>().unwrap_or(0)
-            .cmp(&b.as_str().parse::<i32>().unwrap_or(0))
+        let ai = a.as_str().parse::<i32>().unwrap_or_else(|e| {
+            warn!("load_animated_node: non-numeric anim key '{}': {e}, using 0", a.as_str());
+            0
+        });
+        let bi = b.as_str().parse::<i32>().unwrap_or_else(|e| {
+            warn!("load_animated_node: non-numeric anim key '{}': {e}, using 0", b.as_str());
+            0
+        });
+        ai.cmp(&bi)
     });
 
     for (name, child) in children {
@@ -595,7 +654,10 @@ fn load_animated_node(node: &Node, _base_path: &str) -> (Vec<AnimFrame>, String,
             let image_path = child.path();
             let origin = child.try_get("origin")
                 .and_then(|n| n.read_origin(&child).ok())
-                .unwrap_or(Vector2D::ZERO);
+                .unwrap_or_else(|| {
+                    warn!("load_animated_node: anim frame '{}' missing origin, using ZERO", child.path());
+                    Vector2D::ZERO
+                });
             let delay: i32 = child.get_or("delay", 100);
             let move_type: i32 = child.get_or("moveType", 0);
             let move_w: f32 = child.get_or("moveW", 0.0);

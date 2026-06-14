@@ -13,7 +13,13 @@ pub fn load_ui_sprite(
     images: &mut Assets<Image>,
 ) -> Option<UiSprite> {
     let wz = wz::WzData::global();
-    let origin_v = wz.load_origin(path).ok()?;
+    let origin_v = match wz.load_origin(path) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("load_ui_sprite: failed to load origin for '{}': {e}", path);
+            return None;
+        }
+    };
     let origin = Vec2::new(origin_v.0, origin_v.1);
     let handle = cache.get_or_load(path, images);
     Some(UiSprite { handle, origin })

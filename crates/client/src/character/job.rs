@@ -25,7 +25,10 @@ impl JobCatalog {
     pub fn display_label(&self, job: Job) -> String {
         self.label_for(job)
             .map(str::to_string)
-            .unwrap_or_else(|| format!("Job {}", job.0))
+            .unwrap_or_else(|| {
+                warn!("JobCatalog::display_label: job {} not found, using fallback label", job.0);
+                format!("Job {}", job.0)
+            })
     }
 
     pub fn next_after(&self, job: Job) -> Option<Job> {
@@ -38,14 +41,21 @@ impl JobCatalog {
             .iter()
             .position(|entry| entry.job == job)
             .map(|idx| (idx + 1) % self.entries.len())
-            .unwrap_or(0);
+            .unwrap_or_else(|| {
+                warn!("JobCatalog::next_after: job {} not found in catalog, wrapping to first", job.0);
+                0
+            });
         Some(self.entries[next_idx].job)
     }
 }
 
 pub fn load_job_catalog(wz: &wz::WzData) -> JobCatalog {
-    let Ok(class_names) = wz.list_children("Skill") else {
-        return JobCatalog::default();
+    let class_names = match wz.list_children("Skill") {
+        Ok(names) => names,
+        Err(e) => {
+            warn!("load_job_catalog: failed to list Skill children: {e}, returning empty");
+            return JobCatalog::default();
+        }
     };
 
     let mut entries = Vec::new();

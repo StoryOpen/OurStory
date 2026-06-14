@@ -77,7 +77,10 @@ fn spawn_character_on_map(
         .iter()
         .find(|p| p.pt == 0)
         .map(|p| Vec2::new(p.pos.0, p.pos.1))
-        .unwrap_or(Vec2::ZERO);
+        .unwrap_or_else(|| {
+            warn!("spawn_character_on_map: map '{}' has no spawn portal (pt=0), using ZERO", ev.path);
+            Vec2::ZERO
+        });
 
     info!("Spawning character at spawn portal: {:?}", spawn_pos);
 

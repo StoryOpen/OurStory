@@ -10,17 +10,23 @@ const ZMAP_MAX: usize = 150;
 
 impl ZMap {
     pub fn depth(&self, z: &str) -> f32 {
-        let index = self.layers.get(z).copied().unwrap_or(ZMAP_MAX);
+        let index = self.layers.get(z).copied().unwrap_or_else(|| {
+            warn!("ZMap::depth: unknown z-layer '{}', using ZMAP_MAX ({})", z, ZMAP_MAX);
+            ZMAP_MAX
+        });
         (ZMAP_MAX - index) as f32
     }
 }
 
 pub fn load_zmap(wz: &wz::WzData) -> ZMap {
     let mut layers = HashMap::new();
-    if let Ok(entries) = wz.load_zmap() {
-        for (name, i) in entries {
-            layers.insert(name, i);
+    match wz.load_zmap() {
+        Ok(entries) => {
+            for (name, i) in entries {
+                layers.insert(name, i);
+            }
         }
+        Err(e) => warn!("load_zmap: failed to load zmap: {e}, using empty ZMap"),
     }
     ZMap { layers }
 }
@@ -40,7 +46,13 @@ impl SlotMap {
             Some(s) if s.len() % 2 == 0 => s
                 .as_bytes()
                 .chunks(2)
-                .filter_map(|c| std::str::from_utf8(c).ok())
+                .filter_map(|c| match std::str::from_utf8(c) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        warn!("slots_for: invalid UTF-8 chunk '{:?}': {e}", c);
+                        None
+                    }
+                })
                 .collect(),
             _ => Vec::new(),
         }
@@ -49,10 +61,13 @@ impl SlotMap {
 
 pub fn load_smap(wz: &wz::WzData) -> SlotMap {
     let mut layers = HashMap::new();
-    if let Ok(entries) = wz.load_smap() {
-        for (name, s) in entries {
-            layers.insert(name, s);
+    match wz.load_smap() {
+        Ok(entries) => {
+            for (name, s) in entries {
+                layers.insert(name, s);
+            }
         }
+        Err(e) => warn!("load_smap: failed to load smap: {e}, using empty SlotMap"),
     }
     SlotMap { layers }
 }
@@ -145,13 +160,28 @@ pub fn split_vslot(s: &str) -> Vec<String> {
     if s.len() % 2 != 0 { return Vec::new(); }
     s.as_bytes()
         .chunks(2)
-        .filter_map(|c| std::str::from_utf8(c).ok().map(String::from))
+        .filter_map(|c| match std::str::from_utf8(c) {
+            Ok(s) => Some(String::from(s)),
+            Err(e) => {
+                warn!("split_vslot: invalid UTF-8 chunk '{:?}': {e}", c);
+                None
+            }
+        })
         .collect()
 }
 
 pub fn load_vslot(wz: &wz::WzData, item_id: u32) -> Vec<String> {
-    let Ok(equip) = wz.load_equip(item_id as i32) else { return Vec::new() };
-    equip.info.vslot.as_ref().map(|s| split_vslot(s)).unwrap_or_default()
+    let equip = match wz.load_equip(item_id as i32) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("load_vslot: failed to load equip {item_id}: {e}, returning empty");
+            return Vec::new();
+        }
+    };
+    equip.info.vslot.as_ref().map(|s| split_vslot(s)).unwrap_or_else(|| {
+        warn!("load_vslot: equip {item_id} has no vslot, returning empty");
+        Vec::new()
+    })
 }
 
 fn slot_codes(part: &SpriteLayer) -> Vec<&str> {
@@ -159,7 +189,13 @@ fn slot_codes(part: &SpriteLayer) -> Vec<&str> {
         Some(s) if s.len() % 2 == 0 => s
             .as_bytes()
             .chunks(2)
-            .filter_map(|c| std::str::from_utf8(c).ok())
+            .filter_map(|c| match std::str::from_utf8(c) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    warn!("slot_codes: invalid UTF-8 chunk '{:?}': {e}", c);
+                    None
+                }
+            })
             .collect(),
         _ => Vec::new(),
     }

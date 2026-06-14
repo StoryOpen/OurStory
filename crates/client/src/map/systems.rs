@@ -182,7 +182,10 @@ pub fn spawn_map(
 
     for b in map.backgrounds.iter() {
         let handle = load_map_image(&b.image_path, &mut image_cache, &mut images);
-        let tex_size = images.get(&handle).map(|i| i.size_f32()).unwrap_or_default();
+        let tex_size = images.get(&handle).map(|i| i.size_f32()).unwrap_or_else(|| {
+            warn!("spawn_backgrounds: image '{}' not found in assets, using (0,0)", b.image_path);
+            Vec2::ZERO
+        });
         let z = if b.front {
             GameLayer::Foreground.with_offset(b.index as f32)
         } else {
@@ -202,12 +205,21 @@ pub fn spawn_map(
             if objs.is_empty() && tiles.is_empty() {
                 return 0;
             }
-            let obj_max = objs.iter().map(|o| o.z).max().unwrap_or(0);
-            let tile_max = tiles.iter().map(|t| t.z).max().unwrap_or(0);
+            let obj_max = objs.iter().map(|o| o.z).max().unwrap_or_else(|| {
+                warn!("spawn_map: objs in layer {} have no z values, using 0", i);
+                0
+            });
+            let tile_max = tiles.iter().map(|t| t.z).max().unwrap_or_else(|| {
+                warn!("spawn_map: tiles in layer {} have no z values, using 0", i);
+                0
+            });
             ((obj_max + tile_max + 2) as f32).max(1.0) as i32
         })
         .max()
-        .unwrap_or(0) as f32;
+        .unwrap_or_else(|| {
+            warn!("spawn_map: all layers are empty, max_span is 0");
+            0
+        }) as f32;
     if max_span == 0.0 {
         return;
     }
@@ -393,13 +405,34 @@ fn spawn_obj_entity(
         let first = obj.animation_frames.first();
         entity.insert(MapMoveEffect {
             base,
-            move_type: first.map(|f| f.move_type).unwrap_or(0),
-            move_w: first.map(|f| f.move_w).unwrap_or(0.0),
-            move_h: first.map(|f| f.move_h).unwrap_or(0.0),
-            move_p: first.map(|f| f.move_p).unwrap_or(6283.0),
-            move_r: first.map(|f| f.move_r).unwrap_or(0.0),
-            a0: first.map(|f| f.a0).unwrap_or(1.0),
-            a1: first.map(|f| f.a1).unwrap_or(1.0),
+            move_type: first.map(|f| f.move_type).unwrap_or_else(|| {
+                warn!("spawn_obj: animation frame missing move_type, using 0");
+                0
+            }),
+            move_w: first.map(|f| f.move_w).unwrap_or_else(|| {
+                warn!("spawn_obj: animation frame missing move_w, using 0.0");
+                0.0
+            }),
+            move_h: first.map(|f| f.move_h).unwrap_or_else(|| {
+                warn!("spawn_obj: animation frame missing move_h, using 0.0");
+                0.0
+            }),
+            move_p: first.map(|f| f.move_p).unwrap_or_else(|| {
+                warn!("spawn_obj: animation frame missing move_p, using 6283.0");
+                6283.0
+            }),
+            move_r: first.map(|f| f.move_r).unwrap_or_else(|| {
+                warn!("spawn_obj: animation frame missing move_r, using 0.0");
+                0.0
+            }),
+            a0: first.map(|f| f.a0).unwrap_or_else(|| {
+                warn!("spawn_obj: animation frame missing a0, using 1.0");
+                1.0
+            }),
+            a1: first.map(|f| f.a1).unwrap_or_else(|| {
+                warn!("spawn_obj: animation frame missing a1, using 1.0");
+                1.0
+            }),
             flow: obj.flow,
             rx: obj.rx,
             ry: obj.ry,

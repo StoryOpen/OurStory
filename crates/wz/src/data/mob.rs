@@ -1,3 +1,4 @@
+use log::warn;
 use std::collections::{BTreeMap, HashMap};
 use crate::error::WzError;
 use crate::node::Node;
@@ -60,7 +61,10 @@ impl MobData {
         let name = base.at_path(&format!("String/Mob.img/{id}/name"))
             .ok()
             .and_then(|n| -> Option<String> { n.try_into().ok() })
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                warn!("Mob {id}: name not found, using default");
+                String::new()
+            });
 
         let mut actions = HashMap::new();
         for (action_name, action_node) in mob_node.children() {
@@ -81,7 +85,10 @@ impl MobData {
                         let v: i32 = n.try_into().ok()?;
                         Some(v.max(0) as u32)
                     })
-                    .unwrap_or(100);
+                    .unwrap_or_else(|| {
+                        warn!("Mob {id}: frame '{}' missing delay, using 100", frame_node.path());
+                        100
+                    });
 
                 let mut parts = Vec::new();
                 let is_direct_sprite = frame_node.extract_image().is_ok();
@@ -90,7 +97,10 @@ impl MobData {
                     let image_path = frame_node.path();
                     let origin = frame_node.try_get("origin")
                         .and_then(|n| n.read_origin(&frame_node).ok())
-                        .unwrap_or(Vector2D::ZERO);
+                        .unwrap_or_else(|| {
+                            warn!("Mob {id}: frame '{}' missing origin, using ZERO", frame_node.path());
+                            Vector2D::ZERO
+                        });
                     parts.push(MobPart { name: "body".to_string(), image_path, origin });
                 } else {
                     for (part_name, part_node) in frame_node.children() {
@@ -103,7 +113,10 @@ impl MobData {
 
                         let origin = part_node.try_get("origin")
                             .and_then(|n| n.read_origin(&part_node).ok())
-                            .unwrap_or(Vector2D::ZERO);
+                            .unwrap_or_else(|| {
+                                warn!("Mob {id}: part '{}' missing origin, using ZERO", part_node.path());
+                                Vector2D::ZERO
+                            });
                         let image_path = part_node.path();
 
                         parts.push(MobPart { name: pn, image_path, origin });
@@ -123,30 +136,33 @@ impl MobData {
         Ok(MobData { id, name, info, actions })
     }
 
-    fn load_info(_base: &Node, _mob_id: i32, mob_node: &Node) -> Result<MobInfo, WzError> {
+    fn load_info(_base: &Node, mob_id: i32, mob_node: &Node) -> Result<MobInfo, WzError> {
         let info = mob_node.at_path("info")?;
 
-        fn read_int(node: &Node, path: &str) -> i32 {
-            node.at_path(path).ok().and_then(|n| -> Option<i32> { n.try_into().ok() }).unwrap_or(0)
+        fn read_int(node: &Node, path: &str, mob_id: i32) -> i32 {
+            node.at_path(path).ok().and_then(|n| -> Option<i32> { n.try_into().ok() }).unwrap_or_else(|| {
+                warn!("Mob {mob_id}: stat '{}' missing/type-mismatch, using 0", path);
+                0
+            })
         }
 
         Ok(MobInfo {
-            level: read_int(&info, "level"),
-            max_hp: read_int(&info, "maxHP"),
-            max_mp: read_int(&info, "maxMP"),
-            exp: read_int(&info, "exp"),
-            pad: read_int(&info, "PADamage"),
-            pdd: read_int(&info, "PDDamage"),
-            mad: read_int(&info, "MADamage"),
-            mdd: read_int(&info, "MDDamage"),
-            acc: read_int(&info, "acc"),
-            eva: read_int(&info, "eva"),
-            speed: read_int(&info, "speed"),
-            body_attack: read_int(&info, "bodyAttack"),
-            undead: read_int(&info, "undead") != 0,
-            pushed: read_int(&info, "pushed"),
-            mob_type: read_int(&info, "mobType"),
-            summon_type: read_int(&info, "summonType"),
+            level: read_int(&info, "level", mob_id),
+            max_hp: read_int(&info, "maxHP", mob_id),
+            max_mp: read_int(&info, "maxMP", mob_id),
+            exp: read_int(&info, "exp", mob_id),
+            pad: read_int(&info, "PADamage", mob_id),
+            pdd: read_int(&info, "PDDamage", mob_id),
+            mad: read_int(&info, "MADamage", mob_id),
+            mdd: read_int(&info, "MDDamage", mob_id),
+            acc: read_int(&info, "acc", mob_id),
+            eva: read_int(&info, "eva", mob_id),
+            speed: read_int(&info, "speed", mob_id),
+            body_attack: read_int(&info, "bodyAttack", mob_id),
+            undead: read_int(&info, "undead", mob_id) != 0,
+            pushed: read_int(&info, "pushed", mob_id),
+            mob_type: read_int(&info, "mobType", mob_id),
+            summon_type: read_int(&info, "summonType", mob_id),
             elem_attr: info.get_opt("elemAttr"),
             fs: info.get_opt("fs"),
         })
@@ -159,6 +175,9 @@ fn sort_parts(parts: &mut Vec<MobPart>) {
         "face", "weapon", "cap", "cape", "glove", "shoes",
     ];
     parts.sort_by_key(|p| {
-        ORDER.iter().position(|&k| k == p.name).unwrap_or(usize::MAX)
+        ORDER.iter().position(|&k| k == p.name).unwrap_or_else(|| {
+            warn!("sort_parts: unknown part name '{}', placing at end", p.name);
+            usize::MAX
+        })
     });
 }

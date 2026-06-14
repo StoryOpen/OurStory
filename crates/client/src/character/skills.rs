@@ -64,7 +64,13 @@ pub struct SkillDatabase {
 
 impl SkillDatabase {
     pub fn load(wz: &wz::WzData) -> Self {
-        let db = wz.load_skill_database().ok();
+        let db = match wz.load_skill_database() {
+            Ok(db) => Some(db),
+            Err(e) => {
+                warn!("SkillDatabase::load: failed to load skill database: {e}, using empty");
+                None
+            }
+        };
         let mut skills = HashMap::new();
 
         if let Some(db) = db {

@@ -30,14 +30,20 @@ impl AssetLoader for WzMapLoader {
         load_context: &mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
         let asset_path = load_context.path().path().to_string_lossy().to_string();
-        let wz_path = asset_path.strip_suffix(".map").unwrap_or(&asset_path);
+        let wz_path = asset_path.strip_suffix(".map").unwrap_or_else(|| {
+            warn!("WzMapLoader: path '{}' doesn't end with .map, using as-is", asset_path);
+            &asset_path
+        });
 
         let map_id = wz_path
             .trim_end_matches(".img")
             .rsplit('/')
             .next()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
+            .unwrap_or_else(|| {
+                warn!("WzMapLoader: failed to parse map ID from '{}', using 0", wz_path);
+                0
+            });
 
         let wz = wz::WzData::global();
         let data = wz.load_map(map_id)?;
@@ -73,14 +79,20 @@ impl AssetLoader for WzMobLoader {
         load_context: &mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
         let asset_path = load_context.path().path().to_string_lossy().to_string();
-        let wz_path = asset_path.strip_suffix(".mob").unwrap_or(&asset_path);
+        let wz_path = asset_path.strip_suffix(".mob").unwrap_or_else(|| {
+            warn!("WzMobLoader: path '{}' doesn't end with .mob, using as-is", asset_path);
+            &asset_path
+        });
 
         let mob_id = wz_path
             .trim_end_matches(".img")
             .rsplit('/')
             .next()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
+            .unwrap_or_else(|| {
+                warn!("WzMobLoader: failed to parse mob ID from '{}', using 0", wz_path);
+                0
+            });
 
         let wz = wz::WzData::global();
         let data = wz.load_mob(mob_id)?;
@@ -116,14 +128,20 @@ impl AssetLoader for WzNpcLoader {
         load_context: &mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
         let asset_path = load_context.path().path().to_string_lossy().to_string();
-        let wz_path = asset_path.strip_suffix(".npc").unwrap_or(&asset_path);
+        let wz_path = asset_path.strip_suffix(".npc").unwrap_or_else(|| {
+            warn!("WzNpcLoader: path '{}' doesn't end with .npc, using as-is", asset_path);
+            &asset_path
+        });
 
         let npc_id = wz_path
             .trim_end_matches(".img")
             .rsplit('/')
             .next()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
+            .unwrap_or_else(|| {
+                warn!("WzNpcLoader: failed to parse npc ID from '{}', using 0", wz_path);
+                0
+            });
 
         let wz = wz::WzData::global();
         let data = wz.load_npc(npc_id)?;

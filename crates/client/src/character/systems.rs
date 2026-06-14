@@ -149,7 +149,10 @@ fn resolve_equipment(
                         "  equip item_id={} slot={:?} loaded OK: {} actions {:?} vslot={:?}",
                         item_id, slot, num_actions, action_keys, e.info.vslot,
                     );
-                    e.info.vslot.as_ref().map(|s| split_vslot(s)).unwrap_or_default()
+                    e.info.vslot.as_ref().map(|s| split_vslot(s)).unwrap_or_else(|| {
+                        warn!("resolve_equipment: item {} has no vslot, using empty", item_id);
+                        Vec::new()
+                    })
                 }
                 Err(e) => {
                     warn!("  equip item_id={} slot={:?} FAILED: {e}", item_id, slot);
@@ -302,7 +305,10 @@ fn apply_current_frame(
             let pos = positions
                 .get(&layer.layer_name)
                 .copied()
-                .unwrap_or(Vec3::ZERO);
+                .unwrap_or_else(|| {
+                    warn!("update_character_parts: position not found for '{}', using ZERO", layer.layer_name);
+                    Vec3::ZERO
+                });
             update_part_sprite(child, layer, pos, anim.facing_left, part_query);
         }
     }
@@ -329,7 +335,10 @@ pub fn spawn_character(
         loaded.body.len(), loaded.face_expressions.len(),
     );
     for (act, frames) in &loaded.body {
-        let part_names: Vec<_> = frames.first().map(|f| f.parts.iter().map(|p| &p.layer_name).collect::<Vec<_>>()).unwrap_or_default();
+        let part_names: Vec<_> = frames.first().map(|f| f.parts.iter().map(|p| &p.layer_name).collect::<Vec<_>>()).unwrap_or_else(|| {
+            warn!("spawn_character: body action '{}' has no frames", act);
+            Vec::new()
+        });
         info!("  body action '{}': {} frames, parts={:?}", act, frames.len(), part_names);
     }
     for (act, frames) in &loaded.face_expressions {
@@ -350,7 +359,10 @@ pub fn spawn_character(
             let parts = f.parts.iter().map(|p| {
                 let handle = load_character_image(&p.image_path, images);
                 let origin = Vec2::new(p.origin.0, p.origin.1);
-                let z = zmap.depth(p.slot.as_deref().unwrap_or(""));
+                let z = zmap.depth(p.slot.as_deref().unwrap_or_else(|| {
+                    warn!("convert_frames: part '{}' has no slot, using empty string for zmap lookup", p.layer_name);
+                    ""
+                }));
                 let slot = p.slot.as_ref()
                     .and_then(|z_str| slot_map.slot_for(z_str))
                     .map(String::from);
@@ -359,7 +371,10 @@ pub fn spawn_character(
                     wz::PartSource::Head => PartSource::Head,
                     wz::PartSource::Hair => PartSource::Hair,
                     wz::PartSource::Face => PartSource::Face,
-                    wz::PartSource::Equipment => PartSource::Equipment(equip_slot.unwrap_or(EquipSlot::Cap)),
+                    wz::PartSource::Equipment => PartSource::Equipment(equip_slot.unwrap_or_else(|| {
+                        warn!("convert_frames: equipment part with no equip_slot, using Cap");
+                        EquipSlot::Cap
+                    })),
                 };
                 let map = p.map.iter().map(|(k, v)| (k.clone(), Vec2::new(v.0, v.1))).collect();
                 SpriteLayer { image: handle, origin, map, z, layer_name: p.layer_name.clone(), slot, source }
@@ -445,14 +460,20 @@ pub fn spawn_character(
     let face_face_frames = face_expressions
         .get(&ev.face_expression)
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            warn!("spawn_character: face expression '{}' not found, using empty", ev.face_expression);
+            Vec::new()
+        });
 
     let first_frames = actions.get(&ev.action);
     let parts = first_frames
         .and_then(|frames| frames.first())
         .map(|f| &f.parts)
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            warn!("spawn_character: action '{}' has no frames, using empty parts", ev.action);
+            Vec::new()
+        });
 
     let mut merged_parts = parts.clone();
     if let Some(face_frame) = face_face_frames.first() {
@@ -473,7 +494,10 @@ pub fn spawn_character(
     let delay = first_frames
         .and_then(|frames| frames.first())
         .map(|f| f.delay)
-        .unwrap_or(100);
+        .unwrap_or_else(|| {
+            warn!("spawn_character: action '{}' has no frames for delay, using 100", ev.action);
+            100
+        });
     let facing_left = true;
 
     let pos = ev.transform.translation;
@@ -482,7 +506,10 @@ pub fn spawn_character(
         .iter()
         .find(|p| p.layer_name == "body")
         .map(|body| body.origin)
-        .unwrap_or(Vec2::ZERO);
+        .unwrap_or_else(|| {
+            warn!("spawn_character: no 'body' part found, using ZERO origin");
+            Vec2::ZERO
+        });
 
     let root = commands
         .spawn((
@@ -550,7 +577,10 @@ pub fn spawn_character(
         let pos = positions
             .get(&layer.layer_name)
             .copied()
-            .unwrap_or(Vec3::new(0.0, 0.0, GameLayer::Character.base_z() + layer.z));
+            .unwrap_or_else(|| {
+                warn!("spawn_character: position not computed for part '{}', using default", layer.layer_name);
+                Vec3::new(0.0, 0.0, GameLayer::Character.base_z() + layer.z)
+            });
         let parent_name = parents.get(&layer.layer_name).and_then(|p| p.clone());
         info!(
             "spawn part: '{}' pos=({:.1},{:.1},{:.1}) parent={:?} z_offset={} source={:?} origin=({:.1},{:.1})",
@@ -699,7 +729,10 @@ pub fn on_use_skill(
         char_transform.translation.x, char_transform.translation.y,
     );
 
-    let first_delay = skill.effect_frames.first().map(|f| f.delay).unwrap_or(100);
+    let first_delay = skill.effect_frames.first().map(|f| f.delay).unwrap_or_else(|| {
+        warn!("on_use_skill: skill has no effect frames, using delay 100");
+        100
+    });
     commands.entity(effect_root).insert(SkillEffect {
         frames: skill.effect_frames.clone(),
         frame_idx: 0,
@@ -1021,14 +1054,20 @@ pub fn animate_characters(
             .iter()
             .find(|p| p.layer_name == "body")
             .map(|body| body.origin)
-            .unwrap_or(char_root.body_origin);
+            .unwrap_or_else(|| {
+                warn!("animate_characters: no 'body' part in action '{}', keeping prior origin", anim.action);
+                char_root.body_origin
+            });
 
         for layer in &merged_parts {
             if let Some(&child) = part_entities.map.get(&layer.layer_name) {
                 let pos = positions
                     .get(&layer.layer_name)
                     .copied()
-                    .unwrap_or(Vec3::new(0.0, 0.0, GameLayer::Character.base_z() + layer.z));
+                    .unwrap_or_else(|| {
+                        warn!("animate_characters: position not found for '{}' in action '{}', using default", layer.layer_name, anim.action);
+                        Vec3::new(0.0, 0.0, GameLayer::Character.base_z() + layer.z)
+                    });
                 update_part_sprite(
                     child,
                     layer,
@@ -1107,14 +1146,20 @@ pub fn on_set_action(
             .iter()
             .find(|p| p.layer_name == "body")
             .map(|body| body.origin)
-            .unwrap_or(char_root.body_origin);
+            .unwrap_or_else(|| {
+                warn!("on_set_action: no 'body' part in action '{}', keeping prior origin", ev.action);
+                char_root.body_origin
+            });
 
         for layer in &merged_parts {
             if let Some(&child) = part_entities.map.get(&layer.layer_name) {
                 let pos = positions
                     .get(&layer.layer_name)
                     .copied()
-                    .unwrap_or(Vec3::ZERO);
+                    .unwrap_or_else(|| {
+                        warn!("on_set_action: position not found for '{}' in action '{}', using ZERO", layer.layer_name, ev.action);
+                        Vec3::ZERO
+                    });
                 update_part_sprite(
                     child,
                     layer,
