@@ -1,5 +1,6 @@
 use image::DynamicImage;
 use indexmap::IndexMap;
+use serde_json::json;
 use std::collections::HashMap;
 use std::hash::Hash;
 use wz_reader::{WzNodeArc, WzNodeCast, WzNodeName};
@@ -8,7 +9,7 @@ use crate::error::WzError;
 use crate::vector2d::Vector2D;
 
 #[derive(Clone)]
-pub(crate) struct Node {
+pub struct Node {
     pub wz_node: WzNodeArc,
 }
 
@@ -19,7 +20,7 @@ impl From<WzNodeArc> for Node {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub(crate) struct NodeName {
+pub struct NodeName {
     pub wz_name: WzNodeName,
 }
 
@@ -107,6 +108,84 @@ impl Node {
             .expect("lock poisoned")
             .get_path_from_root()
             .to_string()
+    }
+
+    pub fn name(&self) -> String {
+        self.wz_node
+            .read()
+            .expect("lock poisoned")
+            .name
+            .to_string()
+    }
+
+    pub fn has_image_data(&self) -> bool {
+        let guard = match self.wz_node.read() {
+            Ok(g) => g,
+            Err(_) => return false,
+        };
+        if guard.try_as_png().is_some() {
+            return true;
+        }
+        drop(guard);
+        self.has("_inlink") || self.has("_outlink")
+    }
+
+    pub fn to_payload_depth(&self, depth: usize) -> Result<serde_json::Value, crate::error::WzError> {
+        let guard = self.wz_node.read().map_err(|_| crate::error::WzError::LockPoisoned)?;
+        let has_image = guard.try_as_png().is_some()
+            || guard.try_as_image().is_some()
+            || self.has("_inlink")
+            || self.has("_outlink");
+
+        let kind = if !guard.children.is_empty() {
+            "container"
+        } else if guard.try_as_png().is_some() {
+            "png"
+        } else if guard.try_as_int().is_some() {
+            "int"
+        } else if guard.try_as_string().is_some() {
+            "string"
+        } else if guard.try_as_float().is_some() || guard.try_as_double().is_some() {
+            "float"
+        } else if guard.try_as_vector2d().is_some() {
+            "vector"
+        } else if guard.try_as_image().is_some() {
+            "image"
+        } else {
+            "property"
+        };
+        let name = guard.name.to_string();
+        let path = guard.get_path_from_root().to_string();
+        drop(guard);
+
+        if depth == 0 || kind != "container" {
+            let mut val = json!({
+                "name": name,
+                "path": path,
+                "kind": kind,
+            });
+            if has_image {
+                val["has_image"] = serde_json::Value::Bool(true);
+            }
+            return Ok(val);
+        }
+
+        let children: Vec<serde_json::Value> = self
+            .children()
+            .into_iter()
+            .filter_map(|(_, child)| child.to_payload_depth(depth - 1).ok())
+            .collect();
+
+        let mut val = json!({
+            "name": name,
+            "path": path,
+            "kind": kind,
+            "children": children,
+        });
+        if has_image {
+            val["has_image"] = serde_json::Value::Bool(true);
+        }
+        Ok(val)
     }
 
     pub fn read_pos(&self) -> Result<Vector2D, WzError> {

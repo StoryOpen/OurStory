@@ -1,11 +1,12 @@
 pub mod error;
 pub mod vector2d;
+pub mod node;
 pub mod data;
-
-mod node;
+pub mod source;
 
 pub use error::WzError;
 pub use vector2d::Vector2D;
+pub use node::{Node, NodeName};
 pub use data::WzData;
 pub use data::common::{Foothold, AnimFrame, FrameData, SpriteLayerData, PartSource};
 pub use data::map::*;
@@ -18,16 +19,24 @@ pub use data::quest::*;
 pub use data::physics::*;
 
 use std::sync::OnceLock;
-use node::Node;
 
 static WZ_BASE: OnceLock<Node> = OnceLock::new();
 
-pub(crate) fn resolve_base_node() -> &'static Node {
+fn resolve_base_node() -> &'static Node {
     WZ_BASE.get_or_init(|| {
         let path = std::env::var("WZ_PATH").unwrap_or_else(|_| "./wz/Base.wz".to_string());
         let wz_node = wz_reader::util::resolve_base(&path, None).expect("resolve_base failed");
         Node::from(wz_node)
     })
+}
+
+pub fn get_cached_base() -> &'static Node {
+    resolve_base_node()
+}
+
+pub fn resolve_base() -> Result<(), WzError> {
+    resolve_base_node();
+    Ok(())
 }
 
 pub(crate) fn set_base_node(node: Node) {
