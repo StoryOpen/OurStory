@@ -79,16 +79,7 @@ impl MobData {
                     Ok(i) => i,
                     Err(_) => continue,
                 };
-                let delay = frame_node
-                    .try_get("delay")
-                    .and_then(|n| -> Option<u32> {
-                        let v: i32 = n.try_into().ok()?;
-                        Some(v.max(0) as u32)
-                    })
-                    .unwrap_or_else(|| {
-                        warn!("Mob {id}: frame '{}' missing delay, using 100", frame_node.path());
-                        100
-                    });
+                let delay = frame_node.get_or("delay", 100);
 
                 let mut parts = Vec::new();
                 let is_direct_sprite = frame_node.extract_image().is_ok();
@@ -124,7 +115,7 @@ impl MobData {
                     sort_parts(&mut parts);
                 }
 
-                frame_map.insert(frame_index, MobFrame { delay, parts });
+                frame_map.insert(frame_index, MobFrame { delay: delay.unsigned_abs(), parts });
             }
 
             let frames: Vec<MobFrame> = frame_map.into_values().collect();

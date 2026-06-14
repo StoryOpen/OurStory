@@ -133,8 +133,31 @@ impl Node {
 
     pub fn to_payload_depth(&self, depth: usize) -> Result<serde_json::Value, crate::error::WzError> {
         let guard = self.wz_node.read().map_err(|_| crate::error::WzError::LockPoisoned)?;
+        let node_path = guard.get_path_from_root().to_string();
+        let name = guard.name.to_string();
+        drop(guard);
+
+        let parent_path = if node_path.is_empty() || node_path == name {
+            String::new()
+        } else if let Some(stripped) = node_path.strip_suffix(&format!("/{}", name)) {
+            stripped.to_string()
+        } else {
+            String::new()
+        };
+
+        self.to_payload_depth_inner(&parent_path, &name, &node_path, depth)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn to_payload_depth_inner(
+        &self,
+        _parent_path: &str,
+        name: &str,
+        path: &str,
+        depth: usize,
+    ) -> Result<serde_json::Value, crate::error::WzError> {
+        let guard = self.wz_node.read().map_err(|_| crate::error::WzError::LockPoisoned)?;
         let has_image = guard.try_as_png().is_some()
-            || guard.try_as_image().is_some()
             || self.has("_inlink")
             || self.has("_outlink");
 
@@ -142,8 +165,12 @@ impl Node {
             "container"
         } else if guard.try_as_png().is_some() {
             "png"
+        } else if guard.try_as_short().is_some() {
+            "short"
         } else if guard.try_as_int().is_some() {
             "int"
+        } else if guard.try_as_long().is_some() {
+            "long"
         } else if guard.try_as_string().is_some() {
             "string"
         } else if guard.try_as_float().is_some() || guard.try_as_double().is_some() {
@@ -158,7 +185,11 @@ impl Node {
 
         let value = if !guard.children.is_empty() {
             None
+        } else if let Some(v) = guard.try_as_short() {
+            Some(json!(v))
         } else if let Some(v) = guard.try_as_int() {
+            Some(json!(v))
+        } else if let Some(v) = guard.try_as_long() {
             Some(json!(v))
         } else if let Some(v) = guard.try_as_string() {
             v.get_string().ok().map(|s| json!(s))
@@ -172,8 +203,6 @@ impl Node {
             None
         };
 
-        let name = guard.name.to_string();
-        let path = guard.get_path_from_root().to_string();
         drop(guard);
 
         if depth == 0 || kind != "container" {
@@ -194,7 +223,15 @@ impl Node {
         let mut children: Vec<serde_json::Value> = self
             .children()
             .into_iter()
-            .filter_map(|(_, child)| child.to_payload_depth(depth - 1).ok())
+            .filter_map(|(child_name, child)| {
+                let child_path = if path.is_empty() {
+                    child_name.as_str().to_string()
+                } else {
+                    format!("{}/{}", path, child_name.as_str())
+                };
+                child.to_payload_depth_inner(path, child_name.as_str(), &child_path, depth - 1)
+                    .ok()
+            })
             .collect();
 
         children.sort_by(|a, b| {
@@ -310,12 +347,27 @@ impl Node {
             let resolved = crate::resolve_base_node().at_path(&path)?;
             return resolved.extract_image();
         }
+
         let guard = self.wz_node.read().map_err(|_| WzError::LockPoisoned)?;
-        let png = guard
-            .try_as_png()
-            .ok_or(WzError::TypeMismatch("PNG image"))?;
-        png.extract_png()
-            .map_err(|_| WzError::ValueError("failed to extract PNG".into()))
+        if let Some(png) = guard.try_as_png() {
+            return png.extract_png()
+                .map_err(|_| WzError::ValueError("failed to extract PNG".into()));
+        }
+        if guard.try_as_image().is_some() {
+            return self.find_child_image();
+        }
+        Err(WzError::TypeMismatch("PNG image"))
+    }
+
+    fn find_child_image(&self) -> Result<DynamicImage, WzError> {
+        for candidate in &["info/iconRaw", "info/icon", "canvas"] {
+            if let Ok(child) = self.at_path(candidate) {
+                if let Ok(img) = child.extract_image() {
+                    return Ok(img);
+                }
+            }
+        }
+        Err(WzError::ValueError("no image found in container node".to_string()))
     }
 
     pub fn ordered_children(&self) -> Result<Vec<(String, Node)>, WzError> {

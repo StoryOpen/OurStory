@@ -1,16 +1,18 @@
 use log::warn;
-use std::collections::HashMap;
 use crate::error::WzError;
 use crate::node::Node;
-use crate::vector2d::Vector2D;
-use crate::data::common::{FrameData, SpriteLayerData, PartSource};
+use crate::data::character::{BodyFrame, load_body_part};
 
 #[derive(Debug, Clone)]
 pub struct EquipData {
     pub id: i32,
     pub slot: EquipSlot,
     pub info: EquipInfo,
-    pub actions: HashMap<String, Vec<FrameData>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EquipAction {
+    pub frames: Vec<BodyFrame>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -82,7 +84,6 @@ impl EquipSlot {
 pub struct EquipInfo {
     pub cash: bool,
     pub islot: Option<String>,
-    pub vslot: Option<String>,
     pub req_level: Option<i32>,
     pub req_job: Option<i32>,
     pub req_str: Option<i32>,
@@ -103,16 +104,55 @@ pub struct EquipInfo {
 }
 
 impl EquipData {
-    pub(crate) fn load(base: &Node, item_id: i32) -> Result<Self, WzError> {
+    pub(crate) fn load(item_id: i32) -> Result<Self, WzError> {
+        let base = crate::get_cached_base();
         let slot = categorize_item(item_id);
         let dir = slot.dir_name();
         let wz_path = format!("Character/{dir}/{item_id:08}.img");
         let item_node = base.at_path(&wz_path)?;
-
         let info = load_equip_info(&item_node);
-        let actions = load_equip_actions(base, &wz_path, &item_node)?;
+        Ok(EquipData { id: item_id, slot, info })
+    }
+}
 
-        Ok(EquipData { id: item_id, slot, info, actions })
+impl EquipAction {
+    pub fn load(item_id: i32, action: &str) -> Result<Self, WzError> {
+        let base = crate::get_cached_base();
+        let slot = categorize_item(item_id);
+        let dir = slot.dir_name();
+        let action_path = format!("Character/{dir}/{item_id:08}.img/{action}");
+        let action_node = base.at_path(&action_path)?;
+
+        let frame_count = action_node.children().len();
+        if frame_count == 0 {
+            return Ok(EquipAction { frames: Vec::new() });
+        }
+
+        let mut frames = Vec::with_capacity(frame_count);
+        for frame_idx in 0..frame_count as u32 {
+            let frame_path = format!("{}/{}", action_path, frame_idx);
+            let frame_node = match base.at_path(&frame_path) {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
+
+            let delay: i32 = frame_node.get_or("delay", 100);
+
+            let mut parts = Vec::new();
+            for (child_name, _) in frame_node.children() {
+                let cn = child_name.as_str();
+                if cn == "delay" { continue; }
+                if let Some(part) = load_body_part(&frame_node, cn) {
+                    parts.push(part);
+                }
+            }
+
+            if !parts.is_empty() {
+                frames.push(BodyFrame { parts, delay: delay.unsigned_abs() });
+            }
+        }
+
+        Ok(EquipAction { frames })
     }
 }
 
@@ -157,7 +197,6 @@ fn load_equip_info(item_node: &Node) -> EquipInfo {
             0
         }) != 0,
         islot: info_node.get_opt("islot"),
-        vslot: info_node.get_opt("vslot"),
         req_level: info_node.get_opt("reqLevel"),
         req_job: info_node.get_opt("reqJob"),
         req_str: info_node.get_opt("reqSTR"),
@@ -176,88 +215,4 @@ fn load_equip_info(item_node: &Node) -> EquipInfo {
         icon_path,
         icon_raw_path,
     }
-}
-
-fn load_equip_actions(base: &Node, wz_path: &str, item_node: &Node) -> Result<HashMap<String, Vec<FrameData>>, WzError> {
-    let mut actions = HashMap::new();
-
-    for (action_name, _) in item_node.children() {
-        let action_name = String::from(action_name);
-        if action_name == "info" { continue; }
-
-        let action_node = match item_node.at_path(&action_name) {
-            Ok(n) => n,
-            Err(_) => continue,
-        };
-
-        let frame_count = action_node.children().len();
-        if frame_count == 0 { continue; }
-
-        let mut frames = Vec::new();
-        for frame_idx in 0..frame_count as u32 {
-            let frame_path = format!("{}/{}/{}", wz_path, action_name, frame_idx);
-            let frame_node = match base.at_path(&frame_path) {
-                Ok(n) => n,
-                Err(_) => continue,
-            };
-
-            let delay: i32 = frame_node.at_path("delay").ok()
-                .and_then(|n| n.try_into().ok())
-                .unwrap_or_else(|| {
-                    warn!("load_equip_actions: '{}' missing delay, using 100", frame_path);
-                    100
-                });
-
-            let mut parts = Vec::new();
-            for (child_name, _) in frame_node.children() {
-                if child_name.as_str() == "delay" { continue; }
-                if let Some(layer) = load_equip_part(&frame_node, child_name.as_str()) {
-                    parts.push(layer);
-                }
-            }
-
-            if !parts.is_empty() {
-                frames.push(FrameData { parts, delay: delay.unsigned_abs() });
-            }
-        }
-
-        if !frames.is_empty() {
-            actions.insert(action_name, frames);
-        }
-    }
-
-    Ok(actions)
-}
-
-fn load_equip_part(frame_node: &Node, part_name: &str) -> Option<SpriteLayerData> {
-    let part_node = frame_node.at_path(part_name).ok()?;
-    let origin_node = part_node.try_get("origin")?;
-    let origin = origin_node.read_origin(&part_node).ok()?;
-    let z_str: String = part_node.at_path("z").ok().and_then(|n| n.try_into().ok())?;
-    let image_path = part_node.path();
-
-    let mut map = std::collections::HashMap::new();
-    if let Ok(map_node) = part_node.at_path("map") {
-        for (child_name, _) in map_node.children() {
-            if let Some(val) = map_node
-                .at_path(child_name.as_str()).ok()
-                .and_then(|n| {
-                    let v: Result<wz_reader::property::Vector2D, _> = n.try_into();
-                    v.ok().map(|v| Vector2D(v.0 as f32, -(v.1 as f32)))
-                })
-            {
-                map.insert(child_name.to_string(), val);
-            }
-        }
-    }
-
-    Some(SpriteLayerData {
-        image_path,
-        origin,
-        map,
-        z: 0.0,
-        layer_name: part_name.to_string(),
-        slot: Some(z_str),
-        source: PartSource::Equipment,
-    })
 }

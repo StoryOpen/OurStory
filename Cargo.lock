@@ -8327,6 +8327,7 @@ version = "0.1.0"
 dependencies = [
  "image",
  "indexmap",
+ "log",
  "lru",
  "serde",
  "serde_json",

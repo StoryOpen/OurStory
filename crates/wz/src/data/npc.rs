@@ -49,16 +49,7 @@ impl NpcData {
                     Err(_) => continue,
                 };
 
-                let delay = frame_node
-                    .try_get("delay")
-                    .and_then(|n| -> Option<u32> {
-                        let v: i32 = n.try_into().ok()?;
-                        Some(v.max(0) as u32)
-                    })
-                    .unwrap_or_else(|| {
-                        warn!("Npc {id}: frame '{}' missing delay, using 100", frame_node.path());
-                        100
-                    });
+                let delay = frame_node.get_or("delay", 100 );
 
                 let image_path = frame_node.path();
                 let origin = frame_node
@@ -69,7 +60,7 @@ impl NpcData {
                         Vector2D::ZERO
                     });
 
-                frame_map.insert(frame_index, NpcFrame { delay, image_path, origin });
+                frame_map.insert(frame_index, NpcFrame { delay: delay.unsigned_abs(), image_path, origin });
             }
 
             let frames: Vec<NpcFrame> = frame_map.into_values().collect();

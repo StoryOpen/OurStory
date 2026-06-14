@@ -8,7 +8,7 @@ pub use error::WzError;
 pub use vector2d::Vector2D;
 pub use node::{Node, NodeName};
 pub use data::WzData;
-pub use data::common::{Foothold, AnimFrame, FrameData, SpriteLayerData, PartSource};
+pub use data::common::{Foothold, AnimFrame};
 pub use data::map::*;
 pub use data::mob::*;
 pub use data::npc::*;

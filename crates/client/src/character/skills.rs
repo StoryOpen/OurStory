@@ -1,12 +1,12 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Reflect)]
 pub enum SkillType {
     Passive, Active, AttackProc, Special,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Reflect)]
 pub struct EffectFrame {
     pub image: Handle<Image>,
     pub origin: Vec2,
@@ -16,7 +16,7 @@ pub struct EffectFrame {
     pub alpha1: Option<u8>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Reflect)]
 pub struct SkillLevelData {
     pub damage: Option<i32>,
     pub mp_con: Option<i32>,
@@ -36,7 +36,7 @@ pub struct SkillLevelData {
     pub hs: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Reflect)]
 pub struct SkillEntry {
     pub id: u32,
     pub skill_type: SkillType,
@@ -57,7 +57,8 @@ pub struct SkillEntry {
     pub skill_type_raw: Option<i32>,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Reflect)]
+#[reflect(Resource)]
 pub struct SkillDatabase {
     pub skills: HashMap<u32, SkillEntry>,
 }
@@ -135,12 +136,14 @@ impl SkillDatabase {
     }
 }
 
-#[derive(Component, Default, Debug, Clone)]
+#[derive(Component, Default, Debug, Clone, Reflect)]
+#[reflect(Component)]
 pub struct LearnedSkills {
     pub skills: HashMap<u32, u32>,
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct SkillEffect {
     pub frames: Vec<EffectFrame>,
     pub frame_idx: usize,
@@ -148,5 +151,6 @@ pub struct SkillEffect {
     pub finished: bool,
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct SkillEffectRoot;

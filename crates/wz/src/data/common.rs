@@ -26,18 +26,8 @@ pub struct SpriteLayerData {
     pub origin: Vector2D,
     pub map: std::collections::HashMap<String, Vector2D>,
     pub z: f32,
-    pub layer_name: String,
+    pub part_name: String,
     pub slot: Option<String>,
-    pub source: PartSource,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PartSource {
-    Body,
-    Head,
-    Hair,
-    Face,
-    Equipment,
 }
 
 #[derive(Debug, Clone)]

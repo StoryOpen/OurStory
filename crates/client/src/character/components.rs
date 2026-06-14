@@ -1,14 +1,18 @@
 use bevy::prelude::*;
-use std::collections::HashMap;
 
 use crate::character::job::Job;
-use crate::character::types::{EquipmentEntry, FrameData};
+
+/// Stores the WZ part name on each part entity for reverse lookup during animation.
+#[derive(Component)]
+pub struct PartName(pub String);
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
-pub struct CharacterRoot {
-    pub body_origin: Vec2,
-}
+pub struct CharacterRoot;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+pub struct CharacterBody;
 
 #[derive(Component, Clone, Reflect)]
 #[reflect(Component)]
@@ -20,25 +24,63 @@ pub struct CharacterConfig {
     pub equipment: Vec<(crate::character::types::EquipSlot, u32)>,
 }
 
-#[derive(Component, Clone, Reflect)]
+/// Pre-computed pose for one part in one frame.
+#[derive(Clone, Reflect)]
+pub struct PartPose {
+    pub image: Handle<Image>,
+    pub position: Vec3,
+    pub anchor: Vec2,
+    pub visible: bool,
+}
+
+impl PartPose {
+    pub fn hidden() -> Self {
+        PartPose {
+            image: Handle::default(),
+            position: Vec3::ZERO,
+            anchor: Vec2::ZERO,
+            visible: false,
+        }
+    }
+}
+
+/// Shared action frame data. Stored on the root entity, read by the animation system.
+#[derive(Component)]
+pub struct CurrentAction {
+    pub frames: Vec<crate::character::systems::ActionFrame>,
+}
+
+/// Face animation state, stored on the root entity.
+/// Updated independently from body animation.
+#[derive(Component, Reflect)]
 #[reflect(Component)]
-pub struct CharacterEquipment {
-    pub entries: Vec<EquipmentEntry>,
+pub struct CharacterFaceAnimation {
+    pub expression: String,
+    pub frame_idx: usize,
+    pub timer: Timer,
+    pub frames: Vec<FaceFrame>,
+    pub face_entity: Option<Entity>,
+}
+
+/// One frame of a face expression.
+#[derive(Clone, Reflect)]
+pub struct FaceFrame {
+    pub image: Handle<Image>,
+    pub anchor: Vec2,
+    pub delay_ms: u32,
 }
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
-pub struct CharacterAnimation {
+pub struct CharacterActionAnimation {
     pub action: String,
     pub default_action: String,
     pub return_to_default: bool,
     pub pending_action: Option<PendingCharacterAction>,
     pub frame_idx: usize,
     pub timer: Timer,
-    pub face_expression: String,
-    pub face_frame_idx: usize,
-    pub face_timer: Timer,
     pub facing_left: bool,
+    pub frame_count: usize,
 }
 
 #[derive(Debug, Clone, Reflect)]
@@ -54,32 +96,21 @@ pub enum PendingCharacterAction {
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
-pub struct CharacterFrameData {
-    pub actions: HashMap<String, Vec<FrameData>>,
-    pub face_expressions: HashMap<String, Vec<FrameData>>,
-}
-
-#[derive(Component)]
-pub struct PartEntities {
-    pub map: HashMap<String, Entity>,
-}
-
-#[derive(Component)]
 pub struct CharacterActionLabel;
 
-#[derive(Component)]
-pub struct CharacterJobLabel;
-
-#[derive(Component)]
-pub struct SkillNameLabel;
-
 #[derive(Component, Reflect)]
 #[reflect(Component)]
-pub struct CharacterPart {
-    pub layer: String,
-    pub z_base: f32,
+pub struct CharacterJobLabel;
+
+/// Stores entity references for child labels, avoiding children iteration.
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+pub struct CharacterLabels {
+    pub action: Entity,
+    pub job: Entity,
 }
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
-pub struct CharacterLayer(pub u8);
+pub struct SkillNameLabel;
+

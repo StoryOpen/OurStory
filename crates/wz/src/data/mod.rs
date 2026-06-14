@@ -20,8 +20,8 @@ use crate::vector2d::Vector2D;
 use self::map::MapData;
 use self::mob::MobData;
 use self::npc::NpcData;
-use self::character::CharacterData;
-use self::equip::EquipData;
+use self::character::{CharacterBody, HairBody, FaceExpression};
+use self::equip::{EquipData, EquipAction};
 use self::skill::SkillDatabase;
 use self::quest::QuestRegistry;
 use self::physics::PhysicsConstants;
@@ -34,7 +34,10 @@ pub struct WzData {
     mob_cache: RwLock<LruCache<i32, Arc<MobData>>>,
     npc_cache: RwLock<LruCache<i32, Arc<NpcData>>>,
     equip_cache: RwLock<LruCache<i32, Arc<EquipData>>>,
-    char_cache: RwLock<LruCache<(u32, u32, u32), Arc<CharacterData>>>,
+    equip_action_cache: RwLock<LruCache<(i32, String), Arc<EquipAction>>>,
+    body_cache: RwLock<LruCache<(u32, String), Arc<CharacterBody>>>,
+    hair_cache: RwLock<LruCache<(u32, String), Arc<HairBody>>>,
+    face_cache: RwLock<LruCache<(u32, String), Arc<FaceExpression>>>,
     skill_cache: OnceLock<Arc<SkillDatabase>>,
     quest_cache: OnceLock<Arc<QuestRegistry>>,
     physics_cache: OnceLock<Arc<PhysicsConstants>>,
@@ -54,7 +57,10 @@ impl WzData {
             mob_cache: RwLock::new(LruCache::new(NonZeroUsize::new(50).unwrap())),
             npc_cache: RwLock::new(LruCache::new(NonZeroUsize::new(50).unwrap())),
             equip_cache: RwLock::new(LruCache::new(NonZeroUsize::new(50).unwrap())),
-            char_cache: RwLock::new(LruCache::new(NonZeroUsize::new(10).unwrap())),
+            equip_action_cache: RwLock::new(LruCache::new(NonZeroUsize::new(200).unwrap())),
+            body_cache: RwLock::new(LruCache::new(NonZeroUsize::new(200).unwrap())),
+            hair_cache: RwLock::new(LruCache::new(NonZeroUsize::new(100).unwrap())),
+            face_cache: RwLock::new(LruCache::new(NonZeroUsize::new(100).unwrap())),
             skill_cache: OnceLock::new(),
             quest_cache: OnceLock::new(),
             physics_cache: OnceLock::new(),
@@ -128,17 +134,47 @@ impl WzData {
         Ok(npc)
     }
 
-    pub fn load_character(&self, skin_suffix: u32, hair_id: u32, face_id: u32) -> Result<Arc<CharacterData>, WzError> {
-        let key = (skin_suffix, hair_id, face_id);
+    pub fn load_character_body(&self, skin_suffix: u32, action: &str) -> Result<Arc<CharacterBody>, WzError> {
+        let key = (skin_suffix, action.to_string());
         {
-            let mut cache = self.char_cache.write().map_err(|_| WzError::LockPoisoned)?;
+            let mut cache = self.body_cache.write().map_err(|_| WzError::LockPoisoned)?;
             if let Some(c) = cache.get(&key) {
                 return Ok(c.clone());
             }
         }
-        let data = CharacterData::load(&self.base, skin_suffix, hair_id, face_id)?;
+        let data = CharacterBody::load(skin_suffix, action)?;
         let data = Arc::new(data);
-        let mut cache = self.char_cache.write().map_err(|_| WzError::LockPoisoned)?;
+        let mut cache = self.body_cache.write().map_err(|_| WzError::LockPoisoned)?;
+        cache.put(key, data.clone());
+        Ok(data)
+    }
+
+    pub fn load_hair_body(&self, hair_id: u32, action: &str) -> Result<Arc<HairBody>, WzError> {
+        let key = (hair_id, action.to_string());
+        {
+            let mut cache = self.hair_cache.write().map_err(|_| WzError::LockPoisoned)?;
+            if let Some(h) = cache.get(&key) {
+                return Ok(h.clone());
+            }
+        }
+        let data = HairBody::load(hair_id, action)?;
+        let data = Arc::new(data);
+        let mut cache = self.hair_cache.write().map_err(|_| WzError::LockPoisoned)?;
+        cache.put(key, data.clone());
+        Ok(data)
+    }
+
+    pub fn load_face_expression(&self, face_id: u32, expression: &str) -> Result<Arc<FaceExpression>, WzError> {
+        let key = (face_id, expression.to_string());
+        {
+            let mut cache = self.face_cache.write().map_err(|_| WzError::LockPoisoned)?;
+            if let Some(f) = cache.get(&key) {
+                return Ok(f.clone());
+            }
+        }
+        let data = FaceExpression::load(face_id, expression)?;
+        let data = Arc::new(data);
+        let mut cache = self.face_cache.write().map_err(|_| WzError::LockPoisoned)?;
         cache.put(key, data.clone());
         Ok(data)
     }
@@ -150,11 +186,26 @@ impl WzData {
                 return Ok(e.clone());
             }
         }
-        let equip = EquipData::load(&self.base, item_id)?;
+        let equip = EquipData::load(item_id)?;
         let equip = Arc::new(equip);
         let mut cache = self.equip_cache.write().map_err(|_| WzError::LockPoisoned)?;
         cache.put(item_id, equip.clone());
         Ok(equip)
+    }
+
+    pub fn load_equip_action(&self, item_id: i32, action: &str) -> Result<Arc<EquipAction>, WzError> {
+        let key = (item_id, action.to_string());
+        {
+            let mut cache = self.equip_action_cache.write().map_err(|_| WzError::LockPoisoned)?;
+            if let Some(e) = cache.get(&key) {
+                return Ok(e.clone());
+            }
+        }
+        let data = EquipAction::load(item_id, action)?;
+        let data = Arc::new(data);
+        let mut cache = self.equip_action_cache.write().map_err(|_| WzError::LockPoisoned)?;
+        cache.put(key, data.clone());
+        Ok(data)
     }
 
     pub fn load_skill_database(&self) -> Result<Arc<SkillDatabase>, WzError> {
@@ -197,17 +248,6 @@ impl WzData {
         let zmap_node = self.base.at_path("zmap.img")?;
         let children = zmap_node.ordered_children()?;
         Ok(children.into_iter().enumerate().map(|(i, (name, _))| (name, i)).collect())
-    }
-
-    pub fn load_smap(&self) -> Result<Vec<(String, String)>, WzError> {
-        let smap_node = self.base.at_path("smap.img")?;
-        let children = smap_node.ordered_children()?;
-        Ok(children.into_iter()
-            .filter_map(|(name, child)| {
-                let s: Result<String, _> = child.try_into();
-                s.ok().map(|s| (name, s))
-            })
-            .collect())
     }
 
     /// List child names at a WZ path (e.g. "Skill" → class names)

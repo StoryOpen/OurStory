@@ -10,20 +10,27 @@ pub struct SpawnCharacter {
     pub face_expression: String,
 }
 
-#[derive(Event)]
+#[derive(EntityEvent)]
 pub struct SetAction {
     pub entity: Entity,
     pub action: String,
     pub return_to_default: bool,
 }
 
-#[derive(Event)]
+#[derive(EntityEvent)]
+pub struct SetFaceExpression {
+    pub entity: Entity,
+    pub expression: String,
+    pub action: String,
+}
+
+#[derive(EntityEvent)]
 pub struct SetFacing {
     pub entity: Entity,
     pub facing_left: bool,
 }
 
-#[derive(Event)]
+#[derive(EntityEvent)]
 pub struct UseSkill {
     pub entity: Entity,
     pub skill_id: u32,

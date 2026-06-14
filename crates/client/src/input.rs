@@ -8,18 +8,6 @@ use crate::physics::PhysicsState;
 #[derive(Component, Reflect)]
 pub struct IsLocalPlayer;
 
-/// What a character *wants* to do — source agnostic.
-/// Written by keyboard input, network packets, or AI.
-/// Applied to `PhysicsState` by `apply_intent` before physics simulation.
-#[derive(Component, Default, Reflect)]
-pub struct CharacterIntent {
-    pub left: bool,
-    pub right: bool,
-    pub up: bool,
-    pub down: bool,
-    pub jump_request: bool,
-}
-
 /// Every discrete action a key can be bound to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyAction {
@@ -31,15 +19,9 @@ pub enum KeyAction {
     // Discrete triggers
     Jump,
     JumpAction,
-    // Category cycling
-    CycleStance,
-    CycleAlert,
-    CycleSwing,
-    CycleStab,
-    CycleMultiSwing,
-    CycleRanged,
-    CycleMagic,
-    CycleMovementSkill,
+    // Action cycling
+    CycleBasic,
+    CycleComposite,
     CycleSkill,
     CycleJob,
 }
@@ -76,18 +58,12 @@ impl Default for KeyBindings {
         inner.insert(KeyCode::ArrowUp, KeyAction::MoveUp);
         inner.insert(KeyCode::ArrowDown, KeyAction::MoveDown);
         // Jump animation
-        inner.insert(KeyCode::KeyQ, KeyAction::JumpAction);
+        inner.insert(KeyCode::KeyQ, KeyAction::CycleBasic);
         // Category cycling keys
-        inner.insert(KeyCode::KeyA, KeyAction::CycleStance);
-        inner.insert(KeyCode::KeyS, KeyAction::CycleSwing);
-        inner.insert(KeyCode::KeyD, KeyAction::CycleStab);
-        inner.insert(KeyCode::KeyF, KeyAction::CycleMultiSwing);
-        inner.insert(KeyCode::KeyZ, KeyAction::CycleRanged);
-        inner.insert(KeyCode::KeyX, KeyAction::CycleMagic);
-        inner.insert(KeyCode::KeyC, KeyAction::CycleMovementSkill);
-        inner.insert(KeyCode::KeyV, KeyAction::CycleSkill);
+        inner.insert(KeyCode::KeyW, KeyAction::CycleComposite);
         inner.insert(KeyCode::KeyJ, KeyAction::CycleJob);
-        inner.insert(KeyCode::KeyB, KeyAction::CycleAlert);
+        inner.insert(KeyCode::KeyV, KeyAction::CycleSkill);
+        inner.insert(KeyCode::Space, KeyAction::JumpAction);
         Self { inner }
     }
 }
@@ -107,10 +83,10 @@ pub struct ActionEvent(pub KeyAction);
 pub fn dispatch_actions(
     bindings: Res<KeyBindings>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut local_player: Query<&mut CharacterIntent, With<IsLocalPlayer>>,
+    mut local_player: Query<&mut PhysicsState, With<IsLocalPlayer>>,
     mut commands: Commands,
 ) {
-    let mut intent = local_player.iter_mut().next();
+    let mut phys = local_player.iter_mut().next();
 
     for (&key, &action) in &bindings.inner {
         match action {
@@ -118,20 +94,20 @@ pub fn dispatch_actions(
             | KeyAction::MoveRight
             | KeyAction::MoveUp
             | KeyAction::MoveDown => {
-                if let Some(ref mut i) = intent {
+                if let Some(ref mut p) = phys {
                     match action {
-                        KeyAction::MoveLeft => i.left = keyboard.pressed(key),
-                        KeyAction::MoveRight => i.right = keyboard.pressed(key),
-                        KeyAction::MoveUp => i.up = keyboard.pressed(key),
-                        KeyAction::MoveDown => i.down = keyboard.pressed(key),
+                        KeyAction::MoveLeft => p.left = keyboard.pressed(key),
+                        KeyAction::MoveRight => p.right = keyboard.pressed(key),
+                        KeyAction::MoveUp => p.up = keyboard.pressed(key),
+                        KeyAction::MoveDown => p.down = keyboard.pressed(key),
                         _ => {}
                     }
                 }
             }
             KeyAction::Jump => {
                 if keyboard.just_pressed(key) {
-                    if let Some(ref mut i) = intent {
-                        i.jump_request = true;
+                    if let Some(ref mut p) = phys {
+                        p.jump_request = true;
                     }
                     commands.trigger(ActionEvent(action));
                 }
@@ -145,18 +121,6 @@ pub fn dispatch_actions(
     }
 }
 
-/// Copies `CharacterIntent` into `PhysicsState` for every entity that has both.
-/// Runs before `PhysicsSet::Simulate` so the physics step consumes the latest intent.
-pub fn apply_intent(mut query: Query<(&CharacterIntent, &mut PhysicsState)>) {
-    for (intent, mut ps) in &mut query {
-        ps.left = intent.left;
-        ps.right = intent.right;
-        ps.up = intent.up;
-        ps.down = intent.down;
-        ps.jump_request = intent.jump_request;
-    }
-}
-
 pub struct InputPlugin;
 
 impl Plugin for InputPlugin {
@@ -165,7 +129,7 @@ impl Plugin for InputPlugin {
             .register_type::<IsLocalPlayer>()
             .add_systems(
                 Update,
-                (dispatch_actions, apply_intent).in_set(GameSet::Input),
+                dispatch_actions.in_set(GameSet::Input),
             );
     }
 }

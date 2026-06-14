@@ -3,13 +3,14 @@ use bevy::prelude::*;
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Reflect)]
 pub struct Job(pub u32);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Reflect)]
 pub struct JobEntry {
     pub job: Job,
     pub label: String,
 }
 
-#[derive(Resource, Debug, Clone, Default)]
+#[derive(Resource, Debug, Clone, Default, Reflect)]
+#[reflect(Resource)]
 pub struct JobCatalog {
     pub entries: Vec<JobEntry>,
 }
