@@ -98,14 +98,34 @@ main { flex: 1; display: flex; overflow: hidden; }
 .image-container {
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
 }
+.image-container { overflow: auto; }
 .image-container img {
-  max-width: 100%; max-height: 500px; border-radius: 6px;
-  border: 1px solid var(--border); object-fit: contain;
+  image-rendering: pixelated; width: 300px; height: auto;
+  border-radius: 6px; border: 1px solid var(--border);
   background: repeating-conic-gradient(var(--surface) 0% 25%, transparent 0% 50%) 0 0 / 20px 20px;
 }
 .image-container .image-info { font-size: 12px; color: var(--text-muted); }
 
 .children-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.info-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+}
+.info-table th {
+  text-align: left; padding: 8px 12px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600;
+  border-bottom: 1px solid var(--border); background: var(--bg);
+}
+.info-table td {
+  padding: 6px 12px; border-bottom: 1px solid var(--border);
+}
+.info-table tbody tr { cursor: pointer; }
+.info-table tbody tr:hover { background: var(--border); }
+.info-table tr:last-child td { border-bottom: none; }
+.info-table .info-key { font-weight: 500; color: var(--text-bright); width: 1%; white-space: nowrap; padding-right: 24px; }
+.info-table .info-val { }
+.info-table .info-type { color: var(--text-muted); font-size: 11px; text-align: right; width: 1%; white-space: nowrap; }
+
 .child-tag {
   font-size: 12px; padding: 2px 8px; background: var(--surface);
   border: 1px solid var(--border); border-radius: 4px; cursor: pointer;
@@ -392,11 +412,31 @@ async function toggleExpand(path) {
   }
 }
 
-async function ensureChildrenCached(path) {
+async function ensureChildrenCached(path, depth) {
+  depth = depth || 1;
   if (state.cache[path]) return state.cache[path];
-  const data = await fetchJSON(path, 1);
+  const data = await fetchJSON(path, depth);
   state.cache[path] = data;
   return data;
+}
+
+function collectPropertyRows(nodes, prefix) {
+  let rows = [];
+  for (const c of nodes) {
+    const key = prefix ? `${prefix}/${c.name}` : c.name;
+    if (c.value !== null && c.value !== undefined) {
+      const valHtml = formatValueHTML(c.value);
+      const valStr = valHtml ? valHtml.html : '<span class="value-null">—</span>';
+      rows.push(`<tr data-path="${esc(c.path)}">
+        <td class="info-key">${esc(key)}</td>
+        <td class="info-val">${valStr}</td>
+        <td class="info-type">${c.kind || '?'}</td>
+      </tr>`);
+    } else if (c.children && c.children.length > 0) {
+      rows = rows.concat(collectPropertyRows(c.children, key));
+    }
+  }
+  return rows;
 }
 
 async function selectNode(path) {
@@ -413,7 +453,14 @@ async function renderDetail(path) {
   const panel = document.getElementById('detail-panel');
 
   try {
-    await ensureChildrenCached(path);
+    const nodeData = state.cache[path];
+    const isImageNode = nodeData && nodeData.has_image;
+    if (isImageNode) {
+      const data = await fetchJSON(path, 3);
+      state.cache[path] = data;
+    } else {
+      await ensureChildrenCached(path);
+    }
   } catch (e) {
     panel.innerHTML = `<div class="empty-state"><div class="icon">&#9888;</div><div>Failed to load: ${esc(e.message)}</div></div>`;
     return;
@@ -470,29 +517,71 @@ async function renderDetail(path) {
       <div class="detail-section">
         <h3>Image</h3>
         <div class="image-container">
-          <img src="${esc(imageURL(node.path))}" alt="${esc(node.name)}" onerror="this.after(document.createTextNode('(failed to load)'))">
+          <img src="${esc(imageURL(node.path))}" alt="${esc(node.name)}" onerror="this.after(document.createTextNode('(failed to load)'))" onload="this.nextElementSibling.textContent = this.naturalWidth + '\u00d7' + this.naturalHeight">
+          <div class="image-info"></div>
         </div>
       </div>
     `;
   }
 
   if (children.length > 0) {
-    const tags = children.map(c =>
-      `<span class="child-tag" data-path="${esc(c.path)}"><span class="tag-icon">${getLeafIcon(c)}</span>${esc(c.name)}</span>`
-    ).join('');
-    html += `
-      <div class="detail-section">
-        <h3>Children (${children.length})</h3>
-        <div class="children-list">${tags}</div>
-      </div>
-    `;
+    if (node.name === 'info' || node.has_image) {
+      const rows = collectPropertyRows(children, '');
+      const tableTitle = node.name === 'info' ? 'Info' : 'Properties';
+      html += `
+        <div class="detail-section">
+          <h3>${tableTitle}</h3>
+          <table class="info-table">
+            <thead><tr><th>Key</th><th>Value</th><th>Type</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    } else {
+      const tags = children.map(c =>
+        `<span class="child-tag" data-path="${esc(c.path)}"><span class="tag-icon">${getLeafIcon(c)}</span>${esc(c.name)}</span>`
+      ).join('');
+      html += `
+        <div class="detail-section">
+          <h3>Children (${children.length})</h3>
+          <div class="children-list">${tags}</div>
+        </div>
+      `;
+    }
   }
 
   panel.innerHTML = html;
 
   panel.querySelectorAll('.child-tag').forEach(el => {
-    el.addEventListener('click', () => selectNode(el.dataset.path));
+    el.addEventListener('click', () => navigateTo(el.dataset.path));
   });
+  panel.querySelectorAll('.info-table tbody tr').forEach(el => {
+    el.addEventListener('click', () => navigateTo(el.dataset.path));
+  });
+}
+
+async function navigateTo(path) {
+  const segments = path.split('/');
+  let treePath = '';
+  for (const seg of segments) {
+    treePath = treePath ? `${treePath}/${seg}` : seg;
+    if (treePath === state.root?.path) continue;
+    if (!state.cache[treePath]) {
+      try {
+        const data = await fetchJSON(treePath, 1);
+        state.cache[treePath] = data;
+      } catch {
+        break;
+      }
+    }
+    state.expanded.add(treePath);
+  }
+  renderTree();
+  if (state.cache[path]) {
+    await selectNode(path);
+    const row = document.querySelector(`.tree-row.selected`);
+    if (row) row.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 function renderTree() {
@@ -768,33 +857,7 @@ function getCategoryIcon(cat) {
 async function selectSearchResult(entry) {
   closeSearch();
   const rootPrefix = state.root?.path ? state.root.path + '/' : '';
-  const fullPath = rootPrefix + entry.path;
-  const segments = fullPath.split('/');
-  // Walk top-down using tree-formatted paths (e.g. "Base/Mob") as cache
-  // keys, matching what renderTree/node.path uses. The root segment
-  // ("Base") is already cached as '' from loadRoot, so skip it.
-  // If a node doesn't exist in the data tree (e.g. mob without sprites),
-  // stop expanding rather than dropping the whole navigation.
-  let treePath = '';
-  for (const seg of segments) {
-    treePath = treePath ? `${treePath}/${seg}` : seg;
-    if (treePath === state.root.path) continue;
-    if (!state.cache[treePath]) {
-      try {
-        const data = await fetchJSON(treePath, 1);
-        state.cache[treePath] = data;
-      } catch {
-        break;
-      }
-    }
-    state.expanded.add(treePath);
-  }
-  renderTree();
-  if (state.cache[fullPath]) {
-    await selectNode(fullPath);
-    const row = document.querySelector(`.tree-row.selected`);
-    if (row) row.scrollIntoView({ block: 'nearest' });
-  }
+  navigateTo(rootPrefix + entry.path);
 }
 
 loadRoot();
