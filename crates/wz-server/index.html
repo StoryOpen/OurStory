@@ -105,6 +105,8 @@ main { flex: 1; display: flex; overflow: hidden; }
   background: repeating-conic-gradient(var(--surface) 0% 25%, transparent 0% 50%) 0 0 / 20px 20px;
 }
 .image-container .image-info { font-size: 12px; color: var(--text-muted); }
+.image-wrapper { position: relative; display: inline-block; }
+.image-wrapper .origin-dot { position: absolute; pointer-events: none; }
 
 .children-list { display: flex; flex-wrap: wrap; gap: 4px; }
 .info-table {
@@ -270,6 +272,22 @@ const state = {
   cache: {},
 };
 
+function getPathFromURL() {
+  const hash = window.location.hash;
+  if (hash.length > 1) {
+    try {
+      return hash.slice(1).split('/').map(decodeURIComponent).join('/');
+    } catch { return null; }
+  }
+  return null;
+}
+
+function updateURL(path) {
+  if (!path) return;
+  const hash = '#' + path.split('/').map(encodeURIComponent).join('/');
+  history.replaceState(null, '', hash);
+}
+
 function encodeWzPath(path) {
   return path.split('/').map(encodeURIComponent).join('/');
 }
@@ -385,6 +403,21 @@ document.getElementById('tree-container').addEventListener('dblclick', async (e)
   selectNode(path);
 });
 
+window.addEventListener('popstate', () => {
+  const path = getPathFromURL();
+  if (path) {
+    navigateTo(path);
+  } else if (state.selectedPath) {
+    state.selectedPath = null;
+    renderTree();
+    document.getElementById('detail-panel').innerHTML = `
+      <div class="empty-state">
+        <div class="icon">&#128193;</div>
+        <div>Select a node to inspect</div>
+      </div>`;
+  }
+});
+
 async function toggleExpand(path) {
   if (state.expanded.has(path)) {
     state.expanded.delete(path);
@@ -446,6 +479,7 @@ async function selectNode(path) {
   const newRow = document.querySelector(`.tree-row[data-path="${CSS.escape(path)}"]`);
   if (newRow) newRow.classList.add('selected');
   state.selectedPath = path;
+  updateURL(path);
   await renderDetail(path);
 }
 
@@ -512,12 +546,25 @@ async function renderDetail(path) {
     `;
   }
 
+  // Look for an origin child (Vector2D) to overlay a pixel dot.
+  let originX, originY;
+  for (const c of children) {
+    if (c.name === 'origin' && c.value && typeof c.value.x === 'number' && typeof c.value.y === 'number') {
+      originX = c.value.x;
+      originY = c.value.y;
+      break;
+    }
+  }
+
   if (node.has_image) {
+    const hasOrigin = originX !== undefined;
     html += `
       <div class="detail-section">
         <h3>Image</h3>
         <div class="image-container">
-          <img src="${esc(imageURL(node.path))}" alt="${esc(node.name)}" onerror="this.after(document.createTextNode('(failed to load)'))" onload="this.nextElementSibling.textContent = this.naturalWidth + '\u00d7' + this.naturalHeight">
+          <div class="image-wrapper"${hasOrigin ? ` data-origin-x="${originX}" data-origin-y="${originY}"` : ''}>
+            <img src="${esc(imageURL(node.path))}" alt="${esc(node.name)}" onerror="this.after(document.createTextNode('(failed to load)'))" onload="(function(img){var w=img.parentElement;w.parentElement.querySelector('.image-info').textContent=img.naturalWidth+'\u00d7'+img.naturalHeight+' px';var ox=w.getAttribute('data-origin-x');if(ox!==null)renderOriginDot(w,img,parseInt(ox),parseInt(w.getAttribute('data-origin-y')));})(this)">
+          </div>
           <div class="image-info"></div>
         </div>
       </div>
@@ -841,6 +888,19 @@ function renderSearchResults() {
   if (first) first.classList.add('highlighted');
 }
 
+function renderOriginDot(wrapper, img, ox, oy) {
+  const scaleX = img.offsetWidth / img.naturalWidth;
+  const scaleY = img.offsetHeight / img.naturalHeight;
+  const dot = document.createElement('div');
+  dot.className = 'origin-dot';
+  dot.style.left = (ox * scaleX) + 'px';
+  dot.style.top = (oy * scaleY) + 'px';
+  dot.style.width = Math.max(1, scaleX) + 'px';
+  dot.style.height = Math.max(1, scaleY) + 'px';
+  dot.style.background = 'red';
+  wrapper.appendChild(dot);
+}
+
 function getCategoryIcon(cat) {
   const icons = {
     Mob: '\uD83D\uDC7A', Npc: '\uD83D\uDC76', Map: '\uD83D\uDFE2',
@@ -860,7 +920,10 @@ async function selectSearchResult(entry) {
   navigateTo(rootPrefix + entry.path);
 }
 
-loadRoot();
+loadRoot().then(() => {
+  const path = getPathFromURL();
+  if (path && state.root) navigateTo(path);
+});
 </script>
 </body>
 </html>
