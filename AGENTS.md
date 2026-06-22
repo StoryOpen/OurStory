@@ -1,43 +1,15 @@
-# OurStory — MapleStory Tooling
-
-A Rust workspace for MapleStory game tooling.
-
-## Crates
-
-- **`wz`** (`crates/wz/`) — Core WZ file parsing library. Wraps `wz_reader` with a typed `Node` API, canonical coordinate system (Y-up), and `TryFrom` impls for scalars, `DynamicImage`, and `Vector2D`. Bevy-independent; usable by client, server, and tooling.
-- **`wz-cli`** (`crates/wz-cli/`) — CLI tool and library for probing MapleStory `.wz` asset files. Use this to explore the WZ tree structure (maps, sprites, items, sounds, strings, etc.), search nodes by name, dump subtrees as JSON, and understand the game data taxonomy.
-- **`client`** (`crates/client/`) — Bevy-based game client that renders maps and sprites from WZ assets. Depends on `wz` for parsing; wraps types into Bevy via trivial `From` conversions.
-
-## Server Crates
-
-- **`protocol`** (`crates/protocol/`) — Shared packet definitions, opcodes, and game enums used by both client and server. No game logic.
-- **`server-core`** (`crates/server-core/`) — Game logic library: map, channel, world, player state, routing. Pure logic, no I/O.
-- **`server`** (`crates/server/`) — Binary that wires everything together. Accepts `--role login|world|channel|map` to run as the appropriate server type.
-
-## Architecture
-
-- **Channel owns TCP** — players connect to a Channel server. Map switches within a channel are in-memory (no reconnect).
-- **Channel switch = TCP reconnect** — player disconnects from one channel port and reconnects to another. Buffs are preserved in-memory via World; everything else reloaded from DB.
-- **MapHandle trait** — maps run in-process by default (`LocalMapHandle`). For high-population content (boss fights), a `RemoteMapHandle` impl forwards to a standalone map process.
-- **Deployment** — one binary, four roles. Dev uses `--role channel` with all layers in-process. Prod can split Login, World, Channel(s), and standalone Map instances as needed.
-
 ## Coordinate System
 
 Use the following methods to read position, offsets, vectors, etc when applicable
 
 - `TryFrom<Node> for Vector2D` reads WZ `Vector2D` values
 - `Node::read_pos()` reads scalar `x`/`y` children
+- `Node::read_origin()` reads Vector2D for the origin of the sprite
 - `Node::read_pos_n(n)` reads `x{n}`/`y{n}` (footholds, areas)
 
+**Origins** are local pixel offsets from the sprite's bottom-left corner. 
 
-**Origins** are loaded as local pixel offsets interpreted as offsets
-from the sprite's bottom-left corner. 
-so the formula `bevy_translation = pos - origin` places the WZ pivot at `pos`.
-
-**Non-coordinate scalars** (`alpha`, `rx`, `ry`, `mag`, `delay`, `cy`,
-`mobTime`, `force`, `piece`, `cx`, layer indices) are read as raw `i32`/`f32`
-
-**Footholds:** `Foothold.{x1,y1,x2,y2}` are Bevy-space. 
+**Footholds:** `Foothold.{x1,y1,x2,y2}` are world-space. 
 
 
 ## Client — Character Rendering (`crates/client/src/character/`)
@@ -47,19 +19,7 @@ The character module composites MapleStory character sprites (body, head, hair, 
 ### Key components
 
 - **Z-ordering** — `Base.wz/zmap.img` defines 151 z-layer names in file order. Lower zmap index = front (higher Bevy z). `ZMap::depth()` inverts the index: `bevy_z = (150 - index) + 50`, giving a z-range of 50–200 (above map tiles at z=0–2). `load_zmap()` uses `WzImage::resolve_children()` for deterministic file-order iteration (WZ reader stores children in a HashMap).
-- **Hierarchical positioning** — `compute_frame_transforms()` positions parts via connection points from each part's `map` subnode (navel, neck, brow, hand, earOverHead, earBelowHead). Parts with `navel` attach to root center; others match by connection-point name to already-positioned parts.
-- **Animation** — Body actions (stand1, walk1, jump, etc.) and face expressions (default, blink, etc.) animate independently via separate timers. Face expressions merge into the body frame's part list before transform computation.
-### File structure
 
-```
-crates/client/src/character/
-  mod.rs          — CharacterPlugin (registers observers + systems)
-  components.rs   — CharacterRoot, CharacterConfig, CharacterAnimation, etc.
-  events.rs       — SpawnCharacter, SetAction events
-  types.rs        — ZMap, EquipSlot, SpriteLayer, FrameData, compute_frame_transforms
-  loader.rs       — WzSpriteCache, preload_character_frames, load_part, load_frame
-  systems.rs      — spawn_character, animate_characters, on_set_action, character_action_controls
-```
 
 ## Remote Inspection (BRP)
 
@@ -69,13 +29,14 @@ inspecting and modifying ECS state from external tools.
 
 **Using from outside:**
 ```bash
+# Must use --noproxy '*' to bypass the HTTP proxy at 127.0.0.1:8889
 # List all entities with their Transform component
-curl -X POST http://127.0.0.1:15702 \
+curl -s --noproxy '*' -X POST http://127.0.0.1:15702 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"world.query","id":1,"params":{"data":{"components":["bevy_transform::components::transform::Transform"]}}}'
 
 # List all registered component types
-curl -X POST http://127.0.0.1:15702 \
+curl -s --noproxy '*' -X POST http://127.0.0.1:15702 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"world.list_components","id":1}'
 ```
@@ -104,17 +65,6 @@ In addition to BRP, the client includes an in-process egui-based entity
 inspector via `bevy-inspector-egui` (using the
 [`taboky-dev` fork](https://github.com/taboky-dev/bevy-inspector-egui) for
 Bevy 0.19 compat).
-
-Enabled with the `inspector` feature (not in default set):
-
-```bash
-cargo run --features inspector
-```
-
-Once running, press **F1** to toggle the World Inspector window. It shows:
-- **Entities** — hierarchical list with all component values, editable in real time
-- **Resources** — all registered resources, including their fields
-- **Assets** — loaded asset handles and their data
 
 Components must derive `Reflect` (same as BRP) to appear in the inspector.
 No `register_type` call is needed for the inspector to discover them (Bevy's
