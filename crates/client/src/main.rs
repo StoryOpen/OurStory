@@ -186,7 +186,7 @@ fn setup(mut commands: Commands) {
         Name::new("DiagnosticsOverlay"),
         DiagnosticsOverlay {
         title: "Debug".into(),
-        diagnostic_overlay_items: vec![
+        items: vec![
             DiagnosticsOverlayItem {
                 path: WORLD_X,
                 statistic: DiagnosticsOverlayStatistic::Value,
