@@ -8,6 +8,60 @@ use crate::physics::PhysicsState;
 #[derive(Component, Reflect)]
 pub struct IsLocalPlayer;
 
+/// Maps `UI/UIWindow.img/KeyConfig/icon` node IDs to their display labels.
+pub fn key_config_icon_label(id: u32) -> Option<&'static str> {
+    match id {
+        0 => Some("EQUIPMENT"),
+        1 => Some("ITEM"),
+        2 => Some("ABILITY"),
+        3 => Some("SKILL"),
+        4 => Some("BUDDY"),
+        5 => Some("WORLD MAP"),
+        6 => Some("MESSENGER"),
+        7 => Some("MINI MAP"),
+        8 => Some("QUEST"),
+        9 => Some("SET KEY"),
+        10 => Some("TO ALL"),
+        11 => Some("WHISPER"),
+        12 => Some("TO THE PARTY"),
+        13 => Some("TO A FRIEND"),
+        14 => Some("SHORTCUT"),
+        15 => Some("QUICK SLOT"),
+        16 => Some("CHAT+"),
+        17 => Some("GUILD"),
+        18 => Some("TO GUILD"),
+        19 => Some("PARTY"),
+        20 => Some("HELPER"),
+        21 => Some("TO SPOUSE"),
+        22 => Some("MONSTER BOOK"),
+        23 => Some("CASH SHOP"),
+        24 => Some("TO ALLIANCE"),
+        25 => Some("PARTY SEARCH"),
+        26 => Some("FAMILY"),
+        27 => Some("MEDAL"),
+        50 => Some("PICK UP"),
+        51 => Some("SIT"),
+        52 => Some("ATTACK"),
+        53 => Some("JUMP"),
+        54 => Some("NPC CHAT"),
+        _ => None,
+    }
+}
+
+/// Maps `UI/UIWindow.img/KeyConfig/icon` face emote IDs to their expression name.
+pub fn key_config_emote_label(id: u32) -> Option<&'static str> {
+    match id {
+        100 => Some("Angry"),
+        101 => Some("Happy"),
+        102 => Some("Annoyed"),
+        103 => Some("Crying"),
+        104 => Some("Yelling"),
+        105 => Some("Content"),
+        106 => Some("Sweating"),
+        _ => None,
+    }
+}
+
 /// Every discrete action a key can be bound to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyAction {
