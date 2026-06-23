@@ -4,6 +4,7 @@ pub mod job;
 pub mod skills;
 pub mod systems;
 pub mod types;
+pub mod weapon_stances;
 
 use bevy::prelude::*;
 
@@ -31,9 +32,6 @@ impl Plugin for CharacterPlugin {
             .register_type::<components::CharacterConfig>()
             .register_type::<components::CharacterLabels>()
             .register_type::<components::CharacterFaceAnimation>()
-            .register_type::<components::CharacterActionLabel>()
-            .register_type::<components::CharacterJobLabel>()
-            .register_type::<components::SkillNameLabel>()
             .register_type::<types::ZMap>()
             .register_type::<types::EquipSlot>()
             .register_type::<job::Job>()
@@ -60,7 +58,8 @@ impl Plugin for CharacterPlugin {
             )
             .add_systems(Update, advance_character_frames.in_set(GameSet::Animation))
             .add_systems(Update, animate_face.in_set(GameSet::Animation))
-            .add_systems(Update, animate_skill_effects.in_set(GameSet::Animation));
+            .add_systems(Update, animate_skill_effects.in_set(GameSet::Animation))
+            .add_systems(Update, draw_character_labels.in_set(GameSet::Visuals));
 
         #[cfg(not(feature = "map"))]
         app.add_systems(Startup, spawn_character_at_origin);

@@ -149,6 +149,7 @@ pub struct SkillEffect {
     pub frame_idx: usize,
     pub timer: Timer,
     pub finished: bool,
+    pub label: Option<String>,
 }
 
 #[derive(Component, Reflect)]

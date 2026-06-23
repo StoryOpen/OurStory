@@ -94,23 +94,11 @@ pub enum PendingCharacterAction {
     },
 }
 
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct CharacterActionLabel;
-
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct CharacterJobLabel;
-
-/// Stores entity references for child labels, avoiding children iteration.
+/// Stores the current label text for gizmo rendering.
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct CharacterLabels {
-    pub action: Entity,
-    pub job: Entity,
+    pub action: String,
+    pub job: String,
 }
-
-#[derive(Component, Reflect)]
-#[reflect(Component)]
-pub struct SkillNameLabel;
 

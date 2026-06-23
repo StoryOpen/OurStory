@@ -131,7 +131,6 @@ fn main() {
             Update,
             (
                 GameSet::Input,
-                physics::PhysicsSet::Simulate,
                 GameSet::Animation,
                 GameSet::Camera,
                 GameSet::Audio,
