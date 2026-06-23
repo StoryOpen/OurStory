@@ -4,11 +4,9 @@ use bevy::sprite::Anchor;
 use crate::character::components::*;
 use crate::character::events::*;
 use crate::character::skills::{SkillEffect, SkillEffectRoot};
-use crate::input::IsLocalPlayer;
 use crate::layer::GameLayer;
-use crate::physics::PhysicsState;
 
-use super::{DEFAULT_CHARACTER_ACTION, MIN_TIMER_SECS};
+use super::MIN_TIMER_SECS;
 
 // ── Utilities ──
 
@@ -42,6 +40,7 @@ fn tick_body_animation(
     commands: &mut Commands,
     entity: Entity,
 ) {
+    anim.timer.tick(time.delta());
     anim.timer.tick(time.delta());
     if anim.timer.just_finished() {
         let total_frames = if anim.frame_count > 1 {
@@ -241,46 +240,6 @@ pub fn on_set_facing(
         return;
     };
     anim.facing_left = ev.facing_left;
-}
-
-pub fn update_character_facing_from_intent(
-    mut commands: Commands,
-    mut query: Query<
-        (&PhysicsState, &mut CharacterActionAnimation, Entity),
-        (With<CharacterRoot>, With<IsLocalPlayer>),
-    >,
-) {
-    for (phys, anim, entity) in &mut query {
-        let moving = phys.left || phys.right;
-        let walking = moving && anim.action == "stand1";
-        let idle = !moving && anim.action == "walk1";
-
-        if walking {
-            commands.trigger(SetAction {
-                entity,
-                action: "walk1".to_string(),
-                return_to_default: false,
-            });
-        } else if idle {
-            commands.trigger(SetAction {
-                entity,
-                action: DEFAULT_CHARACTER_ACTION.to_string(),
-                return_to_default: false,
-            });
-        }
-
-        if !moving {
-            continue;
-        }
-        let facing_left = phys.left;
-        if anim.facing_left == facing_left {
-            continue;
-        }
-        commands.trigger(SetFacing {
-            entity,
-            facing_left,
-        });
-    }
 }
 
 // ── Skills ──

@@ -445,6 +445,7 @@ pub fn spawn_character(
                 frames: Vec::new(),
                 face_entity: None,
             },
+            crate::character::stance::CharacterStance::default(),
             ev.config.job,
             LearnedSkills::default(),
             ev.transform,

@@ -73,6 +73,8 @@ pub enum KeyAction {
     // Discrete triggers
     Jump,
     JumpAction,
+    // Combat
+    Attack,
     // Action cycling
     CycleBasic,
     CycleComposite,
@@ -118,6 +120,7 @@ impl Default for KeyBindings {
         inner.insert(KeyCode::KeyJ, KeyAction::CycleJob);
         inner.insert(KeyCode::KeyV, KeyAction::CycleSkill);
         inner.insert(KeyCode::Space, KeyAction::JumpAction);
+        inner.insert(KeyCode::KeyZ, KeyAction::Attack);
         Self { inner }
     }
 }

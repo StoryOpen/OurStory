@@ -5,6 +5,7 @@ use crate::character::components::*;
 use crate::character::events::*;
 use crate::character::job::{Job, JobCatalog};
 use crate::character::skills::SkillDatabase;
+use crate::character::stance::RequestAttack;
 use crate::input::{IsLocalPlayer, KeyAction};
 
 use super::DEFAULT_CHARACTER_ACTION;
@@ -122,6 +123,12 @@ pub fn on_character_action(
 
     // Side-effect actions
     match key {
+        KeyAction::Attack => {
+            commands.trigger(RequestAttack {
+                entity,
+                action: "swingO1".to_string(),
+            });
+        }
         KeyAction::CycleJob => {
             let Some(next_job) = job_catalog.next_after(*job) else {
                 return;

@@ -2,6 +2,7 @@ pub mod components;
 pub mod events;
 pub mod job;
 pub mod skills;
+pub mod stance;
 pub mod systems;
 pub mod types;
 pub mod weapon_stances;
@@ -32,6 +33,7 @@ impl Plugin for CharacterPlugin {
             .register_type::<components::CharacterConfig>()
             .register_type::<components::CharacterLabels>()
             .register_type::<components::CharacterFaceAnimation>()
+            .register_type::<stance::CharacterStance>()
             .register_type::<types::ZMap>()
             .register_type::<types::EquipSlot>()
             .register_type::<job::Job>()
@@ -47,14 +49,22 @@ impl Plugin for CharacterPlugin {
             .add_observer(on_set_face_expression)
             .add_observer(on_set_facing)
             .add_observer(on_character_action)
-            .add_observer(on_use_skill);
+            .add_observer(on_use_skill)
+            .add_observer(stance::on_request_attack)
+            .add_observer(stance::on_hit_by_mob);
         #[cfg(feature = "map")]
         app.add_observer(spawn_character_on_map);
         app.add_systems(
                 Update,
-                update_character_facing_from_intent
+                stance::update_movement_stance
                     .in_set(GameSet::Input)
                     .after(crate::input::dispatch_actions),
+            )
+            .add_systems(
+                Update,
+                stance::tick_stance
+                    .in_set(GameSet::Animation)
+                    .after(advance_character_frames),
             )
             .add_systems(Update, advance_character_frames.in_set(GameSet::Animation))
             .add_systems(Update, animate_face.in_set(GameSet::Animation))

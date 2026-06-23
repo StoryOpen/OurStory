@@ -35,3 +35,9 @@ pub struct UseSkill {
     pub entity: Entity,
     pub skill_id: u32,
 }
+
+#[derive(EntityEvent)]
+pub struct ActionCompleted {
+    pub entity: Entity,
+    pub action: String,
+}
