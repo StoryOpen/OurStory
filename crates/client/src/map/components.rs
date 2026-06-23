@@ -77,4 +77,4 @@ pub struct BackgroundTile {
 }
 
 #[derive(Component)]
-pub struct MapSprite;
+pub struct Portal;

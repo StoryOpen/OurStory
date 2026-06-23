@@ -243,6 +243,7 @@ pub fn spawn_map(
     }
 
     spawn_life(&map.life, &mut commands);
+    spawn_portals(&map.portals, &mut commands, &mut images, &mut sprites);
 
     info!("spawned {} sprites for map {}", sprites.len(), ev.path);
     *current_map = CurrentMap(MapState::Loaded {
@@ -277,6 +278,89 @@ fn spawn_life(life: &[wz::LifeSpawn], commands: &mut Commands) {
             }
             _ => {}
         }
+    }
+}
+
+// TODO: this is not optimal, improve and refactor.
+fn spawn_portals(
+    portals: &[wz::PortalData],
+    commands: &mut Commands,
+    images: &mut Assets<Image>,
+    sprites: &mut Vec<Entity>,
+) {
+    let base = wz::get_cached_base();
+    let pv_root = match base.at_path("Map/MapHelper.img/portal/game/pv") {
+        Ok(n) => n,
+        Err(_) => return,
+    };
+
+    let mut pv_children = pv_root.children();
+    pv_children.sort_by(|a, _, b, _| {
+        let ai = a.as_str().parse::<i32>().unwrap_or(0);
+        let bi = b.as_str().parse::<i32>().unwrap_or(0);
+        ai.cmp(&bi)
+    });
+
+    let mut frames = Vec::new();
+    for (_name, child) in &pv_children {
+        let origin = child
+            .try_get("origin")
+            .and_then(|n| n.read_origin(&child).ok())
+            .map(|o| Vec2::new(o.0, o.1))
+            .unwrap_or_default();
+
+        let dynamic_image = match child.extract_image() {
+            Ok(img) => img,
+            Err(_) => continue,
+        };
+        let rgba = dynamic_image.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        let image = Image::new(
+            Extent3d { width, height, depth_or_array_layers: 1 },
+            TextureDimension::D2,
+            rgba.into_raw(),
+            TextureFormat::Rgba8Unorm,
+            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+        );
+
+        frames.push(MapAnimFrame {
+            image: images.add(image),
+            origin,
+            delay: 100,
+        });
+    }
+
+    if frames.is_empty() {
+        return;
+    }
+
+    for portal in portals {
+        if portal.pt != 2 {
+            continue;
+        }
+
+        let pos = Vec2::new(portal.pos.0, portal.pos.1);
+        let name = if portal.pn.is_empty() {
+            format!("Portal(pt={})", portal.pt)
+        } else {
+            format!("Portal({})", portal.pn)
+        };
+
+        let entity = commands.spawn((
+            Name::new(name),
+            Sprite::from_image(frames[0].image.clone()),
+            Transform::from_translation((pos - frames[0].origin).extend(GameLayer::ObjFront.with_offset(0.0))),
+            Portal,
+            MapAnimator {
+                frames: frames.clone(),
+                current: 0,
+                timer: Timer::from_seconds(frames[0].delay.max(50) as f32 / 1000.0, TimerMode::Repeating),
+                pos,
+                flip: false,
+            },
+        )).id();
+
+        sprites.push(entity);
     }
 }
 
@@ -341,7 +425,6 @@ fn spawn_tile_entity(
         Name::new(format!("Tile({})", tile.z)),
         Sprite::from_image(handle),
         Transform::from_translation(base.extend(z)),
-        MapSprite,
     ));
 
     if !tile.animation_frames.is_empty() {
@@ -382,7 +465,6 @@ fn spawn_obj_entity(
             ..default()
         },
         Transform::from_translation(base.extend(z)),
-        MapSprite,
     ));
 
     if !obj.animation_frames.is_empty() {
@@ -461,16 +543,15 @@ fn spawn_background_entity(
     let tile_y = matches!(bg.btype, 2 | 3 | 5 | 6 | 7);
 
     if !tile_x && !tile_y {
-        let mut entity = commands.spawn((
-            Name::new(format!("Bg({})", bg.index)),
-            Sprite {
-                image: handle,
-                flip_x: bg.flip,
-                ..default()
-            },
-            Transform::from_translation((pos - origin).round().extend(z)),
-            MapSprite,
-        ));
+    let mut entity = commands.spawn((
+        Name::new(format!("Bg({})", bg.index)),
+        Sprite {
+            image: handle,
+            flip_x: bg.flip,
+            ..default()
+        },
+        Transform::from_translation((pos - origin).round().extend(z)),
+    ));
 
         insert_background_motion(&mut entity, pos, origin, bg.rx, bg.ry, bg.btype);
 
@@ -536,7 +617,6 @@ fn spawn_background_entity(
                     spacing_x,
                     spacing_y,
                 },
-                MapSprite,
             ));
 
             insert_background_motion(&mut entity, pos, origin, bg.rx, bg.ry, bg.btype);
