@@ -13,11 +13,13 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use tokio::net::TcpListener;
+use tokio::fs;
 use tracing::{error, info};
 use wz::source::{NativeWzSource, WzSource};
 
 static SEARCH_INDEX: OnceLock<SearchIndex> = OnceLock::new();
 static INDEX_PATH: OnceLock<PathBuf> = OnceLock::new();
+static WWW_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 fn index_html() -> &'static str {
     static HTML: OnceLock<String> = OnceLock::new();
@@ -39,6 +41,9 @@ struct Args {
 
     #[arg(long, default_value = "./wz/search-index.json")]
     index_path: PathBuf,
+
+    #[arg(long, default_value = "./www")]
+    www_dir: PathBuf,
 }
 
 #[tokio::main]
@@ -49,6 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
     INDEX_PATH.set(args.index_path.clone()).ok();
+    WWW_DIR.set(args.www_dir.clone()).ok();
 
     if args.build_index {
         info!("Building search index...");
@@ -289,7 +295,7 @@ async fn route(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallib
                 Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
             }
         }
-        _ => response(StatusCode::NOT_FOUND, "text/plain", "not found"),
+        _ => serve_static(req.uri().path()).await.unwrap_or_else(|_| response(StatusCode::NOT_FOUND, "text/plain", "not found")),
     };
 
     Ok(response)
@@ -317,6 +323,46 @@ fn cors_response(response: Response<Full<Bytes>>) -> Response<Full<Bytes>> {
         HeaderValue::from_static("Content-Type"),
     );
     Response::from_parts(parts, body)
+}
+
+async fn serve_static(request_path: &str) -> Result<Response<Full<Bytes>>, ()> {
+    let www_dir = WWW_DIR.get().ok_or(())?;
+
+    // Normalize: strip leading slash, default to index.html
+    let relative = request_path.trim_start_matches('/');
+    let file_path = if relative.is_empty() || relative == "index.html" {
+        www_dir.join("index.html")
+    } else {
+        // Prevent path traversal
+        let sanitized = relative
+            .split('/')
+            .filter(|seg| !seg.is_empty() && seg != &"..")
+            .collect::<Vec<_>>()
+            .join("/");
+        www_dir.join(&sanitized)
+    };
+
+    // Only serve files under www_dir
+    if !file_path.starts_with(www_dir) {
+        return Err(());
+    }
+
+    let data = fs::read(&file_path).await.map_err(|_| ())?;
+
+    let content_type = match file_path.extension().and_then(|e| e.to_str()) {
+        Some("html") => "text/html",
+        Some("js") => "application/javascript",
+        Some("wasm") => "application/wasm",
+        Some("css") => "text/css",
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("svg") => "image/svg+xml",
+        Some("json") => "application/json",
+        Some("woff2") => "font/woff2",
+        _ => "application/octet-stream",
+    };
+
+    Ok(response(StatusCode::OK, content_type, data))
 }
 
 fn decode_path(path: &str) -> String {
