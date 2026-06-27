@@ -17,15 +17,15 @@ jobs:
           toolchain: 1.95.0
           targets: wasm32-unknown-unknown
 
-      - name: Install trunk
-        uses: jetli/trunk-action@v0.5.1
-        with:
-          version: 'latest'
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli
 
       - name: Build wasm client
         run: |
-          cd crates/client
-          trunk build --release
+          cargo build --release --package client --target wasm32-unknown-unknown
+          wasm-bindgen --target web --out-dir crates/client/dist \
+            target/wasm32-unknown-unknown/release/client.wasm
+          cp crates/client/index.html crates/client/dist/
 
       - name: Package wasm client
         run: |
