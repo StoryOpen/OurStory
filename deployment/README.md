@@ -70,7 +70,7 @@ Run these commands from your local machine (inside the repo):
 
 ```bash
 # Set the VM public IP
-gh secret set VM_HOST --body "213.35.123.95"
+gh secret set OCI_VM_HOST --body "213.35.123.95"
 
 # Set the SSH private key (reads the file contents)
 gh secret set VM_SSH_KEY < ~/.ssh/oci_free_key
@@ -81,7 +81,7 @@ These secrets are:
 - Never exposed in workflow logs
 - Only accessible to the Actions workflow
 
-> **Note:** If the VM's ephemeral public IP changes, update `VM_HOST` with the new IP.
+> **Note:** If the VM's ephemeral public IP changes, update `OCI_VM_HOST` with the new IP.
 
 ---
 
@@ -153,7 +153,7 @@ Developer                        GitHub Actions                        VM
 
 | Problem | Likely cause | Fix |
 |---|---|---|
-| SSH connection refused | VM IP changed (ephemeral) | Update `VM_HOST` secret: `gh secret set VM_HOST --body "<new-ip>"` |
+| SSH connection refused | VM IP changed (ephemeral) | Update `OCI_VM_HOST` secret: `gh secret set OCI_VM_HOST --body "<new-ip>"` |
 | `cargo binstall` fails | No matching release for tag | Check release exists on GitHub with the binary asset |
 | Service won't start | Binary path wrong or missing deps | SSH in and run `/home/ubuntu/.cargo/bin/wz-server` manually to see errors |
 | Workflow fails at build | Cross-compilation deps missing | Check `gcc-aarch64-linux-gnu` is installed in the runner |
