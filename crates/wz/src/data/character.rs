@@ -5,7 +5,7 @@ use crate::vector2d::Vector2D;
 
 // ── BodyPart ──
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BodyPart {
     pub image_path: String,
     pub origin: Vector2D,
@@ -17,7 +17,7 @@ pub struct BodyPart {
 
 // ── BodyFrame ──
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BodyFrame {
     pub parts: Vec<BodyPart>,
     pub delay: u32,
@@ -25,7 +25,7 @@ pub struct BodyFrame {
 
 // ── CharacterBody ──
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CharacterBody {
     pub frames: Vec<BodyFrame>,
 }
@@ -149,7 +149,7 @@ pub(crate) fn load_body_part(frame_node: &crate::node::Node, part_name: &str) ->
 
 // ── HairBody ──
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HairBody {
     pub frames: Vec<BodyFrame>,
 }
@@ -195,13 +195,13 @@ impl HairBody {
 
 // ── FaceFrame / FaceExpression ──
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FaceFrame {
     pub part: BodyPart,
     pub delay: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FaceExpression {
     pub frames: Vec<FaceFrame>,
 }

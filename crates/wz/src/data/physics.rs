@@ -1,7 +1,7 @@
 use crate::error::WzError;
 use crate::node::Node;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PhysicsConstants {
     pub gravity_acc: f32,
     pub jump_speed: f32,

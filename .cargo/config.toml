@@ -11,6 +11,9 @@
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=/usr/bin/mold"]
 
+[target.wasm32-unknown-unknown]
+linker = "/tmp/wasm-ld"
+
 # macOS: uncomment after installing a fast linker:
 # [target.aarch64-apple-darwin]
 # linker = "/opt/homebrew/bin/zld"

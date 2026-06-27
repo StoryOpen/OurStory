@@ -4,19 +4,19 @@ use crate::error::WzError;
 use crate::node::Node;
 use crate::vector2d::Vector2D;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NpcData {
     pub id: i32,
     pub name: String,
     pub actions: HashMap<String, NpcAction>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NpcAction {
     pub frames: Vec<NpcFrame>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NpcFrame {
     pub delay: u32,
     pub image_path: String,

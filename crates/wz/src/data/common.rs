@@ -1,6 +1,6 @@
 use crate::vector2d::Vector2D;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AnimFrame {
     pub image_path: String,
     pub origin: Vector2D,
@@ -14,13 +14,13 @@ pub struct AnimFrame {
     pub a1: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FrameData {
     pub parts: Vec<SpriteLayerData>,
     pub delay: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SpriteLayerData {
     pub image_path: String,
     pub origin: Vector2D,
@@ -28,9 +28,19 @@ pub struct SpriteLayerData {
     pub z: f32,
     pub part_name: String,
     pub slot: Option<String>,
+    pub source: PartSource,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum PartSource {
+    Body,
+    Head,
+    Hair,
+    Face,
+    Equipment,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Foothold {
     pub id: i32,
     pub group: i32,

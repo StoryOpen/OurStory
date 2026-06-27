@@ -1,6 +1,7 @@
 use image::DynamicImage;
 use indexmap::IndexMap;
 use log::warn;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -518,5 +519,46 @@ impl<T: TryFrom<Node, Error = WzError>, K: TryFrom<NodeName> + Hash + Eq> TryFro
             .into_iter()
             .filter_map(|(key, node)| Some((K::try_from(key).ok()?, node.try_into().ok()?)))
             .collect())
+    }
+}
+
+/// A serializable representation of a WZ node tree, used for HTTP transfer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodePayload {
+    pub name: String,
+    pub value: Option<serde_json::Value>,
+    pub children: Vec<NodePayload>,
+}
+
+impl Node {
+    /// Convert this node to a serializable payload, limited to `depth` levels.
+    pub fn to_node_payload(&self, depth: usize) -> Result<NodePayload, WzError> {
+        self._to_node_payload(depth, 0)
+    }
+
+    fn _to_node_payload(&self, depth: usize, current: usize) -> Result<NodePayload, WzError> {
+        let name = self.name();
+        let value = self.extract_value().ok();
+
+        let children = if current < depth {
+            self.children()
+                .into_iter()
+                .filter_map(|(_, child)| child._to_node_payload(depth, current + 1).ok())
+                .collect()
+        } else {
+            vec![]
+        };
+
+        Ok(NodePayload { name, value, children })
+    }
+
+    fn extract_value(&self) -> Result<serde_json::Value, WzError> {
+        let guard = self.wz_node.read().map_err(|_| WzError::LockPoisoned)?;
+        use wz_reader::WzObjectType;
+        match &guard.object_type {
+            WzObjectType::Value(v) => Ok(serde_json::to_value(v).unwrap_or(serde_json::Value::Null)),
+            WzObjectType::Property(p) => Ok(serde_json::to_value(p).unwrap_or(serde_json::Value::Null)),
+            _ => Ok(serde_json::Value::Null),
+        }
     }
 }

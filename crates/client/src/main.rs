@@ -72,6 +72,10 @@ pub enum GameSet {
     Visuals,
 }
 
+#[cfg(target_arch = "wasm32")]
+fn main() {}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let args = Args::parse();
     let workspace_id: String = std::env::var("WORKSPACE_ID").unwrap_or_default();
@@ -170,6 +174,7 @@ fn main() {
         .run();
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn setup(mut commands: Commands) {
     let viewport_height = camera::resources::BaseResolution::default().height;
     commands.spawn((
@@ -218,6 +223,7 @@ fn setup(mut commands: Commands) {
     }));
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn write_coords(
     window: Query<&Window>,
     camera: Query<(&Camera, &GlobalTransform)>,

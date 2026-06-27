@@ -220,21 +220,40 @@ async fn route(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallib
             }
         }
         (&Method::GET, path) if path.starts_with("/wz/data/character/") => {
-            // /wz/data/character/{skin_suffix}/{hair_id}/{face_id}
+            // /wz/data/character/{skin_suffix}/{hair_id}/{face_id}/{action}/{expression}
             let rest = &path["/wz/data/character/".len()..];
             let parts: Vec<&str> = rest.split('/').collect();
-            if parts.len() != 3 {
-                return Ok(response(StatusCode::BAD_REQUEST, "text/plain", b"expected skin/hair/face".to_vec()));
+            if parts.len() != 5 {
+                return Ok(response(StatusCode::BAD_REQUEST, "text/plain", b"expected skin/hair/face/action/expression".to_vec()));
             }
             let skin: u32 = parts[0].parse().unwrap_or(0);
             let hair: u32 = parts[1].parse().unwrap_or(0);
             let face: u32 = parts[2].parse().unwrap_or(0);
-            match wz::WzData::global().load_character(skin, hair, face) {
-                Ok(data) => match serde_json::to_vec(&*data) {
-                    Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
-                    Err(err) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", err.to_string().into_bytes()),
-                },
-                Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
+            let action = parts[3];
+            let expression = parts[4];
+            let wz_data = wz::WzData::global();
+            let body = match wz_data.load_character_body(skin, action) {
+                Ok(b) => b,
+                Err(err) => return Ok(response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes())),
+            };
+            let hair_body = match wz_data.load_hair_body(hair, action) {
+                Ok(h) => h,
+                Err(err) => return Ok(response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes())),
+            };
+            let face_expr = match wz_data.load_face_expression(face, expression) {
+                Ok(f) => f,
+                Err(err) => return Ok(response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes())),
+            };
+            #[derive(serde::Serialize)]
+            struct CharacterResponse {
+                body: std::sync::Arc<wz::CharacterBody>,
+                hair: std::sync::Arc<wz::HairBody>,
+                face_expression: std::sync::Arc<wz::FaceExpression>,
+            }
+            let data = CharacterResponse { body, hair: hair_body, face_expression: face_expr };
+            match serde_json::to_vec(&data) {
+                Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                Err(err) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", err.to_string().into_bytes()),
             }
         }
         (&Method::GET, path) if path.starts_with("/wz/data/equip/") => {
@@ -260,15 +279,7 @@ async fn route(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallib
                 Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
             }
         }
-        (&Method::GET, path) if path == "/wz/data/smap" => {
-            match wz::WzData::global().load_smap() {
-                Ok(data) => match serde_json::to_vec(&data) {
-                    Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
-                    Err(err) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", err.to_string().into_bytes()),
-                },
-                Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
-            }
-        }
+
         (&Method::GET, path) if path == "/wz/data/physics" => {
             match wz::WzData::global().load_physics() {
                 Ok(data) => match serde_json::to_vec(&*data) {

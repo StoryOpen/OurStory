@@ -16,3 +16,11 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 2
+
+[profile.release]
+opt-level = "z"       # Optimize for size
+lto = true            # Link-time optimization
+codegen-units = 1     # Single codegen unit for maximum optimization
+strip = "symbols"     # Strip symbols
+panic = "abort"       # Abort on panic (no unwinding tables)
+incremental = false

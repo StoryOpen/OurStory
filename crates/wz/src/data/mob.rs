@@ -4,7 +4,7 @@ use crate::error::WzError;
 use crate::node::Node;
 use crate::vector2d::Vector2D;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MobData {
     pub id: i32,
     pub name: String,
@@ -12,7 +12,7 @@ pub struct MobData {
     pub actions: HashMap<String, MobAction>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MobInfo {
     pub level: i32,
     pub max_hp: i32,
@@ -34,18 +34,18 @@ pub struct MobInfo {
     pub fs: Option<f32>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MobAction {
     pub frames: Vec<MobFrame>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MobFrame {
     pub delay: u32,
     pub parts: Vec<MobPart>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MobPart {
     pub name: String,
     pub image_path: String,

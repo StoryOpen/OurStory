@@ -3,7 +3,7 @@ use crate::error::WzError;
 use crate::node::Node;
 use crate::data::character::{BodyFrame, load_body_part};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EquipData {
     pub id: i32,
     pub slot: EquipSlot,
@@ -15,7 +15,7 @@ pub struct EquipAction {
     pub frames: Vec<BodyFrame>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum EquipSlot {
     Cap,
     Cape,
@@ -80,7 +80,7 @@ impl EquipSlot {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct EquipInfo {
     pub cash: bool,
     pub islot: Option<String>,

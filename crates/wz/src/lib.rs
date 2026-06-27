@@ -3,10 +3,12 @@ pub mod vector2d;
 pub mod node;
 pub mod data;
 pub mod source;
+pub mod node_trait;
+pub mod json_node;
 
-pub use error::WzError;
+pub use error::{WzError, NodeError};
 pub use vector2d::Vector2D;
-pub use node::{Node, NodeName};
+pub use node::{Node, NodeName, NodePayload};
 pub use data::WzData;
 pub use data::common::{Foothold, AnimFrame};
 pub use data::map::*;

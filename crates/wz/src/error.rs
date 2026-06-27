@@ -15,3 +15,11 @@ pub enum WzError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
+
+#[derive(Debug, Error)]
+pub enum NodeError {
+    #[error("node not found: {0}")]
+    NodeNotFound(String),
+    #[error("value error: {0}")]
+    ValueError(String),
+}

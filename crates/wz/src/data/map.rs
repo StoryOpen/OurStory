@@ -4,7 +4,7 @@ use crate::node::Node;
 use crate::vector2d::Vector2D;
 use crate::data::common::{AnimFrame, Foothold};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MapData {
     pub id: i32,
     pub name: String,
@@ -21,7 +21,7 @@ pub struct MapData {
     pub minimap: Option<MiniMapData>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapInfo {
     pub bgm: Option<String>,
     pub cloud: Option<i32>,
@@ -53,13 +53,13 @@ pub struct MapInfo {
     pub version: Option<i32>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MapLayer {
     pub tiles: Vec<TilePlacement>,
     pub objs: Vec<ObjPlacement>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TilePlacement {
     pub image_path: String,
     pub pos: Vector2D,
@@ -69,7 +69,7 @@ pub struct TilePlacement {
     pub animation_frames: Vec<AnimFrame>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ObjPlacement {
     pub image_path: String,
     pub pos: Vector2D,
@@ -85,7 +85,7 @@ pub struct ObjPlacement {
     pub cy: i32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BackgroundData {
     pub image_path: String,
     pub front: bool,
@@ -102,7 +102,7 @@ pub struct BackgroundData {
     pub animation_frames: Vec<AnimFrame>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LifeSpawn {
     pub spawn_type: String,
     pub id: i32,
@@ -116,7 +116,7 @@ pub struct LifeSpawn {
     pub flip: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PortalData {
     pub pt: i32,
     pub pn: String,
@@ -130,7 +130,7 @@ pub struct PortalData {
     pub only_once: Option<i32>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LadderRopeData {
     pub x: f32,
     pub y1: f32,
@@ -140,12 +140,12 @@ pub struct LadderRopeData {
     pub page: i32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SeatData {
     pub pos: Vector2D,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AreaData {
     pub x1: i32,
     pub y1: i32,
@@ -153,7 +153,7 @@ pub struct AreaData {
     pub y2: i32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MiniMapData {
     pub image_path: String,
     pub x: Option<i32>,
