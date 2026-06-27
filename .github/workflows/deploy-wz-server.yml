@@ -31,8 +31,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: wz-server-v0.1.0-${{ github.run_number }}
-          name: wz-server v0.1.0 (build ${{ github.run_number }})
+          tag_name: ${{ github.ref_name }}
+          name: wz-server v0.1.0 (${{ github.ref_name }})
           files: wz-server-aarch64-unknown-linux-gnu.tar.gz
           make_latest: true
           generate_release_notes: true
