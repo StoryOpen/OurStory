@@ -89,7 +89,7 @@ These secrets are:
 
 ### Workflow: `.github/workflows/deploy-wz-server.yml`
 
-Triggers on pushes to `main` that change `wz-server` or `wz` crate code.
+Triggers on pushes of tags matching `wz-server-v*`.
 
 | Step | Action |
 |---|---|
@@ -100,6 +100,18 @@ Triggers on pushes to `main` that change `wz-server` or `wz` crate code.
 | 5 | Package binary as `wz-server-aarch64.tar.gz` |
 | 6 | Create GitHub Release with the asset |
 | 7 | SSH into VM → `cargo binstall` → `systemctl restart wz-server` |
+
+### Triggering a release
+
+To deploy a new version, push a tag matching `wz-server-v*`:
+
+```bash
+git tag wz-server-v0.1.0
+git push origin wz-server-v0.1.0
+```
+
+The tag name becomes the GitHub Release title and is used by `cargo binstall`
+to find the matching binary asset.
 
 ### How the update works
 
@@ -119,7 +131,8 @@ Triggers on pushes to `main` that change `wz-server` or `wz` crate code.
 ```
 Developer                        GitHub Actions                        VM
     │                                  │                                │
-    ├── git push (main) ──────────────►│                                │
+    ├── git tag wz-server-v0.1.0 ─────►│                                │
+    │   git push origin <tag>          │                                │
     │                                  │                                │
     │                                  ├── cross-compile wz-server     │
     │                                  │    (x86_64 → aarch64)         │

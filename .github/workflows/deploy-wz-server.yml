@@ -2,13 +2,8 @@ name: Build & Deploy wz-server
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'crates/wz-server/**'
-      - 'crates/wz/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'rust-toolchain.toml'
+    tags:
+      - 'wz-server-v*'
 
 jobs:
   build-and-deploy:
