@@ -177,6 +177,107 @@ async fn route(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallib
                 Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
             }
         }
+        (&Method::GET, path) if path.starts_with("/wz/data/map/") => {
+            let id_str = &path["/wz/data/map/".len()..];
+            let id: i32 = match id_str.parse() {
+                Ok(id) => id,
+                Err(_) => return Ok(response(StatusCode::BAD_REQUEST, "text/plain", b"invalid map id".to_vec())),
+            };
+            match wz::WzData::global().load_map(id) {
+                Ok(data) => match serde_json::to_vec(&*data) {
+                    Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                    Err(err) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", err.to_string().into_bytes()),
+                },
+                Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
+            }
+        }
+        (&Method::GET, path) if path.starts_with("/wz/data/mob/") => {
+            let id_str = &path["/wz/data/mob/".len()..];
+            let id: i32 = match id_str.parse() {
+                Ok(id) => id,
+                Err(_) => return Ok(response(StatusCode::BAD_REQUEST, "text/plain", b"invalid mob id".to_vec())),
+            };
+            match wz::WzData::global().load_mob(id) {
+                Ok(data) => match serde_json::to_vec(&*data) {
+                    Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                    Err(err) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", err.to_string().into_bytes()),
+                },
+                Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
+            }
+        }
+        (&Method::GET, path) if path.starts_with("/wz/data/npc/") => {
+            let id_str = &path["/wz/data/npc/".len()..];
+            let id: i32 = match id_str.parse() {
+                Ok(id) => id,
+                Err(_) => return Ok(response(StatusCode::BAD_REQUEST, "text/plain", b"invalid npc id".to_vec())),
+            };
+            match wz::WzData::global().load_npc(id) {
+                Ok(data) => match serde_json::to_vec(&*data) {
+                    Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                    Err(err) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", err.to_string().into_bytes()),
+                },
+                Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
+            }
+        }
+        (&Method::GET, path) if path.starts_with("/wz/data/character/") => {
+            // /wz/data/character/{skin_suffix}/{hair_id}/{face_id}
+            let rest = &path["/wz/data/character/".len()..];
+            let parts: Vec<&str> = rest.split('/').collect();
+            if parts.len() != 3 {
+                return Ok(response(StatusCode::BAD_REQUEST, "text/plain", b"expected skin/hair/face".to_vec()));
+            }
+            let skin: u32 = parts[0].parse().unwrap_or(0);
+            let hair: u32 = parts[1].parse().unwrap_or(0);
+            let face: u32 = parts[2].parse().unwrap_or(0);
+            match wz::WzData::global().load_character(skin, hair, face) {
+                Ok(data) => match serde_json::to_vec(&*data) {
+                    Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                    Err(err) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", err.to_string().into_bytes()),
+                },
+                Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
+            }
+        }
+        (&Method::GET, path) if path.starts_with("/wz/data/equip/") => {
+            let id_str = &path["/wz/data/equip/".len()..];
+            let id: i32 = match id_str.parse() {
+                Ok(id) => id,
+                Err(_) => return Ok(response(StatusCode::BAD_REQUEST, "text/plain", b"invalid equip id".to_vec())),
+            };
+            match wz::WzData::global().load_equip(id) {
+                Ok(data) => match serde_json::to_vec(&*data) {
+                    Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                    Err(err) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", err.to_string().into_bytes()),
+                },
+                Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
+            }
+        }
+        (&Method::GET, path) if path == "/wz/data/zmap" => {
+            match wz::WzData::global().load_zmap() {
+                Ok(data) => match serde_json::to_vec(&data) {
+                    Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                    Err(err) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", err.to_string().into_bytes()),
+                },
+                Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
+            }
+        }
+        (&Method::GET, path) if path == "/wz/data/smap" => {
+            match wz::WzData::global().load_smap() {
+                Ok(data) => match serde_json::to_vec(&data) {
+                    Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                    Err(err) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", err.to_string().into_bytes()),
+                },
+                Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
+            }
+        }
+        (&Method::GET, path) if path == "/wz/data/physics" => {
+            match wz::WzData::global().load_physics() {
+                Ok(data) => match serde_json::to_vec(&*data) {
+                    Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                    Err(err) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", err.to_string().into_bytes()),
+                },
+                Err(err) => response(StatusCode::NOT_FOUND, "text/plain", err.to_string().into_bytes()),
+            }
+        }
         _ => response(StatusCode::NOT_FOUND, "text/plain", "not found"),
     };
 
