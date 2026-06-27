@@ -7,7 +7,7 @@ edition = "2024"
 wz_reader = { version = "0.0.20", default-features = false, features = ["rayon", "json"] }
 image = { version = "0.25.10", optional = true }
 indexmap = "2.14.0"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 thiserror = "2.0.18"
 lru = "0.13"
