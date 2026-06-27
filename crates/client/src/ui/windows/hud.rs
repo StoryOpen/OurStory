@@ -8,7 +8,7 @@ pub fn spawn_hud(
     cache: &mut ResMut<WzImageCache>,
     images: &mut ResMut<Assets<Image>>,
 ) {
-    let wz = wz::WzData::global();
+    let _wz = wz::WzData::global();
     let sb_path = "UI/StatusBar.img";
 
     // Load base sprites

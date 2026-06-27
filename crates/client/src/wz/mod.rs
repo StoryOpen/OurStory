@@ -25,6 +25,10 @@ pub struct WzImageCache {
 }
 
 impl WzImageCache {
+    pub fn get(&self, path: &str) -> Option<Handle<Image>> {
+        self.cache.get(path).cloned()
+    }
+
     pub fn get_or_load(
         &mut self,
         path: &str,
