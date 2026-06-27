@@ -6,18 +6,21 @@ and the wasm client (static files) to an OCI free-tier ARM VM.
 ## Architecture
 
 ```
-[git tag v0.1.0] → [GitHub Actions]
+                        ┌── Deploy Server ──► cross-compile wz-server (aarch64)
+                        │                          │
+[git tag v0.1.0] ───────┤                          └──► VM: /home/ubuntu/.cargo/bin/wz-server
                         │
-                        ├── cross-compile wz-server (x86_64 → aarch64)
-                        ├── build wasm client via trunk
-                        ├── create GitHub Release with both assets
-                        └── SSH into VM
-                             ├── download & install wz-server binary
-                             ├── download & extract wasm client to /home/ubuntu/www/
-                             └── systemctl restart wz-server
+                        └── Deploy Wasm Client ──► trunk build
+                                                      │
+                                                      └──► VM: /home/ubuntu/www/
 ```
 
-The wz-server serves both the API (`/wz/...`) and the wasm client static files (`/`).
+Nginx on the VM acts as a reverse proxy:
+- `/wz/...` → `127.0.0.1:3000` (wz-server API)
+- `/` → `/home/ubuntu/www/` (wasm client static files)
+- Port 3000 exposed only to `127.0.0.1` (not public)
+
+**Native Rust client** deploys separately (not via this pipeline).
 
 ---
 
@@ -48,7 +51,41 @@ cd /home/ubuntu
 /home/ubuntu/.cargo/bin/wz-server --build-index --index-path ./wz/search-index.json
 ```
 
-### 3. Set up systemd service on the VM
+### 3. Set up nginx
+
+```bash
+ssh -i ~/.ssh/oci_free_key ubuntu@213.35.123.95
+sudo apt-get install -y nginx
+```
+
+Create `/etc/nginx/sites-available/wz-server`:
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    # Wasm client static files
+    root /home/ubuntu/www;
+    index index.html;
+
+    # API proxy to wz-server
+    location /wz/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+Enable it:
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/wz-server /etc/nginx/sites-enabled/default
+sudo systemctl enable --now nginx
+```
+
+### 4. Set up wz-server systemd service
 
 Create `/etc/systemd/system/wz-server.service`:
 
@@ -58,9 +95,7 @@ Description=wz-server
 After=network.target
 
 [Service]
-ExecStart=/home/ubuntu/.cargo/bin/wz-server \
-  --bind 0.0.0.0:3000 \
-  --www-dir /home/ubuntu/www
+ExecStart=/home/ubuntu/.cargo/bin/wz-server --bind 127.0.0.1:3000
 Restart=always
 User=ubuntu
 WorkingDirectory=/home/ubuntu
@@ -69,14 +104,12 @@ WorkingDirectory=/home/ubuntu
 WantedBy=multi-user.target
 ```
 
-Enable and start it:
-
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now wz-server
 ```
 
-### 4. Configure GitHub secrets
+### 5. Configure GitHub secrets
 
 ```bash
 # Set the VM public IP
@@ -99,24 +132,29 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The CI will:
-1. Cross-compile `wz-server` for `aarch64-unknown-linux-gnu`
-2. Build the wasm client via `trunk build --release`
-3. Create a GitHub Release with both assets
-4. SSH into the VM, install the binary, extract the wasm client, restart the service
+Two workflows run in parallel:
+
+| Workflow | Builds | Deploys to |
+|---|---|---|
+| `deploy-server.yml` | `wz-server` for `aarch64-unknown-linux-gnu` | `/home/ubuntu/.cargo/bin/wz-server` |
+| `deploy-wasm-client.yml` | `trunk build --release` from `crates/client/` | `/home/ubuntu/www/` |
+
+Each creates a GitHub Release asset and then SSHes into the VM to update its respective artifact.
 
 ---
 
 ## What gets deployed
 
-| Asset | Source | Destination on VM |
-|---|---|---|
-| `wz-server-aarch64-unknown-linux-gnu.tar.gz` | `cargo build --target aarch64-unknown-linux-gnu` | `/home/ubuntu/.cargo/bin/wz-server` |
-| `client-wasm.tar.gz` | `trunk build` from `crates/client/` | `/home/ubuntu/www/` (extracted) |
+| Asset | Source | Destination on VM | Served by |
+|---|---|---|---|
+| `wz-server-aarch64-...tar.gz` | `cargo build --target aarch64...` | `/home/ubuntu/.cargo/bin/wz-server` | nginx → `127.0.0.1:3000` |
+| `client-wasm.tar.gz` | `trunk build --release` | `/home/ubuntu/www/` | nginx (static files) |
 
-The wz-server serves:
-- `/wz/...` — API endpoints (node data, images, search, structured data)
-- `/` — wasm client static files (index.html, .wasm, .js)
+Nginx serves:
+- `/wz/...` → proxy to wz-server API
+- `/` → wasm client static files from `/home/ubuntu/www/`
+
+Port 3000 is **not** exposed to the internet — only nginx on port 80 is public.
 
 ---
 
@@ -126,5 +164,6 @@ The wz-server serves:
 |---|---|---|
 | SSH connection refused | VM IP changed (ephemeral) | Update `OCI_VM_HOST` secret |
 | wz-server won't start | Missing WZ files or search index | Run `--build-index` on the VM |
-| Wasm client shows blank page | CORS or wrong API URL | Check browser console for errors |
+| Wasm client shows blank page | Nginx config or wrong www path | Check nginx error logs on VM |
+| nginx fails to proxy | wz-server not running | `sudo systemctl status wz-server` |
 | Workflow fails at build | Missing deps | Check `gcc-aarch64-linux-gnu` or trunk install |

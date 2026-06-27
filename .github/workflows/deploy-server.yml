@@ -1,4 +1,4 @@
-name: Build & Deploy
+name: Deploy Server
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 jobs:
-  build-and-deploy:
+  deploy-server:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,17 +15,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.95.0
-          targets: aarch64-unknown-linux-gnu, wasm32-unknown-unknown
+          targets: aarch64-unknown-linux-gnu
 
       - name: Install cross-compilation dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-
-      - name: Install trunk
-        uses: jetli/trunk-action@v0.5
-        with:
-          version: 'latest'
 
       - name: Build wz-server (aarch64)
         run: |
@@ -33,27 +28,14 @@ jobs:
           tar czf wz-server-aarch64-unknown-linux-gnu.tar.gz \
             -C target/aarch64-unknown-linux-gnu/release wz-server
 
-      - name: Build wasm client
-        run: |
-          cd crates/client
-          trunk build --release
-
-      - name: Package wasm client
-        run: |
-          tar czf client-wasm.tar.gz -C crates/client/dist .
-
-      - name: Create GitHub Release
+      - name: Upload wz-server asset
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
-          files: |
-            wz-server-aarch64-unknown-linux-gnu.tar.gz
-            client-wasm.tar.gz
-          make_latest: true
-          generate_release_notes: true
+          files: wz-server-aarch64-unknown-linux-gnu.tar.gz
+          append_body: true
 
-      - name: Trigger update on VM
+      - name: Deploy to VM
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.OCI_VM_HOST }}
@@ -63,21 +45,12 @@ jobs:
             set -e
             TAG="${{ github.ref_name }}"
             REPO="${{ github.repository }}"
-            BASE_URL="https://github.com/$REPO/releases/download/$TAG"
-
+            URL="https://github.com/$REPO/releases/download/$TAG/wz-server-aarch64-unknown-linux-gnu.tar.gz"
             echo "Downloading wz-server..."
-            curl -sL "$BASE_URL/wz-server-aarch64-unknown-linux-gnu.tar.gz" -o /tmp/wz-server.tar.gz
+            curl -sL "$URL" -o /tmp/wz-server.tar.gz
             tar xzf /tmp/wz-server.tar.gz -C /tmp
             sudo mv /tmp/wz-server /home/ubuntu/.cargo/bin/wz-server
             sudo chmod +x /home/ubuntu/.cargo/bin/wz-server
-
-            echo "Downloading wasm client..."
-            curl -sL "$BASE_URL/client-wasm.tar.gz" -o /tmp/client-wasm.tar.gz
-            rm -rf /home/ubuntu/www
-            mkdir -p /home/ubuntu/www
-            tar xzf /tmp/client-wasm.tar.gz -C /home/ubuntu/www
-
-            echo "Restarting service..."
+            echo "Restarting wz-server..."
             sudo systemctl restart wz-server
-            echo "Done. Service status:"
-            sudo systemctl status wz-server --no-pager
+            echo "Done."

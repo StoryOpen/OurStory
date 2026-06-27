@@ -1,0 +1,59 @@
+name: Deploy Wasm Client
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  deploy-wasm-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          targets: wasm32-unknown-unknown
+
+      - name: Install trunk
+        uses: jetli/trunk-action@v0.5
+        with:
+          version: 'latest'
+
+      - name: Build wasm client
+        run: |
+          cd crates/client
+          trunk build --release
+
+      - name: Package wasm client
+        run: |
+          tar czf client-wasm.tar.gz -C crates/client/dist .
+
+      - name: Upload client asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: client-wasm.tar.gz
+          append_body: true
+
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.OCI_VM_HOST }}
+          username: ubuntu
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -e
+            TAG="${{ github.ref_name }}"
+            REPO="${{ github.repository }}"
+            URL="https://github.com/$REPO/releases/download/$TAG/client-wasm.tar.gz"
+            echo "Downloading wasm client..."
+            curl -sL "$URL" -o /tmp/client-wasm.tar.gz
+            rm -rf /home/ubuntu/www
+            mkdir -p /home/ubuntu/www
+            tar xzf /tmp/client-wasm.tar.gz -C /home/ubuntu/www
+            echo "Reloading nginx..."
+            sudo systemctl reload nginx
+            echo "Done."
