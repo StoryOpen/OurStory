@@ -1,0 +1,12 @@
+[Unit]
+Description=wz-server
+After=network.target
+
+[Service]
+ExecStart=/home/ubuntu/.cargo/bin/wz-server --bind 127.0.0.1:3000
+Restart=always
+User=ubuntu
+WorkingDirectory=/home/ubuntu
+
+[Install]
+WantedBy=multi-user.target
