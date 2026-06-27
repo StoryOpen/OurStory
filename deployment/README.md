@@ -5,9 +5,9 @@ Automated CI/CD pipeline for deploying `wz-server` to an OCI free-tier ARM VM.
 ## Architecture
 
 ```
-[git push] → [GitHub Actions: cross-compile for aarch64] → [GitHub Release asset]
-                                                               ↓
-[VM: cargo binstall] → [binary in ~/.cargo/bin/] → [systemctl restart wz-server]
+[git tag push] → [GitHub Actions: cross-compile for aarch64] → [GitHub Release asset]
+                                                                     ↓
+[VM: curl release asset] → [binary in ~/.cargo/bin/] → [systemctl restart wz-server]
 ```
 
 **Constraints:**
@@ -119,10 +119,12 @@ to find the matching binary asset.
 2. The binary is published as a GitHub Release asset
 3. The workflow SSHes into the VM and runs:
    ```bash
-   cargo binstall wz-server --git https://github.com/StoryOpen/OurStory --force --no-confirm
+   curl -sL "$RELEASE_URL/wz-server-aarch64-unknown-linux-gnu.tar.gz" -o /tmp/wz-server.tar.gz
+   tar xzf /tmp/wz-server.tar.gz -C /tmp
+   sudo mv /tmp/wz-server ~/.cargo/bin/wz-server
    sudo systemctl restart wz-server
    ```
-4. `cargo binstall` downloads the matching release asset for `aarch64-unknown-linux-gnu` and places it in `~/.cargo/bin/`
+4. The binary is downloaded directly from the public GitHub Release asset URL (no auth needed)
 
 ---
 

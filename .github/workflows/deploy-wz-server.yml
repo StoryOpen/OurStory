@@ -45,13 +45,15 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
             set -e
-            export PATH="$HOME/.cargo/bin:$PATH"
-            echo "Updating wz-server via cargo binstall..."
-            cargo binstall wz-server \
-              --git https://github.com/StoryOpen/OurStory \
-              --force \
-              --no-confirm \
-              --log-level info
+            TAG="${{ github.ref_name }}"
+            ASSET="wz-server-aarch64-unknown-linux-gnu.tar.gz"
+            URL="https://github.com/${{ github.repository }}/releases/download/$TAG/$ASSET"
+            echo "Downloading $TAG release asset..."
+            curl -sL "$URL" -o /tmp/wz-server.tar.gz
+            echo "Extracting and installing..."
+            tar xzf /tmp/wz-server.tar.gz -C /tmp
+            sudo mv /tmp/wz-server /home/ubuntu/.cargo/bin/wz-server
+            sudo chmod +x /home/ubuntu/.cargo/bin/wz-server
             echo "Restarting service..."
             sudo systemctl restart wz-server
             echo "Done. Service status:"
