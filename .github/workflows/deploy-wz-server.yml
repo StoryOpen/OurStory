@@ -1,0 +1,63 @@
+name: Build & Deploy wz-server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/wz-server/**'
+      - 'crates/wz/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install cross-compilation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build wz-server (aarch64)
+        run: |
+          cargo build --release --package wz-server --target aarch64-unknown-linux-gnu
+          tar czf wz-server-aarch64-unknown-linux-gnu.tar.gz \
+            -C target/aarch64-unknown-linux-gnu/release wz-server
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: wz-server-v0.1.0-${{ github.run_number }}
+          name: wz-server v0.1.0 (build ${{ github.run_number }})
+          files: wz-server-aarch64-unknown-linux-gnu.tar.gz
+          make_latest: true
+          generate_release_notes: true
+
+      - name: Trigger update on VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ubuntu
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -e
+            export PATH="$HOME/.cargo/bin:$PATH"
+            echo "Updating wz-server via cargo binstall..."
+            cargo binstall wz-server \
+              --git https://github.com/StoryOpen/OurStory \
+              --force \
+              --no-confirm \
+              --log-level info
+            echo "Restarting service..."
+            sudo systemctl restart wz-server
+            echo "Done. Service status:"
+            sudo systemctl status wz-server --no-pager
