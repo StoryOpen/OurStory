@@ -4,20 +4,51 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.19.0", features = ["bevy_dev_tools", "bevy_remote"] }
-bevy-inspector-egui = { git = "https://github.com/taboky-dev/bevy-inspector-egui", rev = "873c32b", optional = true }
+# Core Bevy: explicitly list only what we need, no default features.
+# For wasm we drop 3D, audio, gamepad, picking, scene, animation, remote, etc.
+bevy = { version = "0.19.0", default-features = false, features = [
+    # Individual crate features (avoid meta-features that pull in 3D/audio/scene/picking)
+    "debug",
+    "bevy_sprite",
+    "bevy_sprite_render",
+    "bevy_window",
+    "bevy_winit",
+    "bevy_asset",
+    "bevy_image",
+    "bevy_state",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_ui_render",
+    "bevy_ui_widgets",
+    "bevy_picking",
+    "bevy_gizmos",
+    "bevy_gizmos_render",
+    "bevy_color",
+    "bevy_log",
+    "bevy_camera",
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_mesh",
+    "bevy_material",
+    "bevy_shader",
+    "async_executor",
+    "webgl2",
+    "png",
+    "reflect_auto_register",
+    "x11",
+    "bevy_remote",
+] }
 wz = { path = "../wz" }
-image = "0.25.10"
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+wasm-bindgen-futures = "0.4"
+bincode = { version = "2.0.1", features = ["serde"] }
+# Minimal image: only PNG decoder (no gif, jpeg, webp, tiff, etc.)
+image = { version = "0.25.10", default-features = false, features = ["png"] }
 indexmap = "2.14.0"
 thiserror = "2.0.18"
-clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+urlencoding = "2"
 
-[features]
-default = ["map", "mob", "npc", "character", "inspector", "ui"]
-character = []
-map = []
-mob = []
-npc = []
-ui = []
-inspector = ["bevy-inspector-egui"]
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Location"] }
+console_error_panic_hook = "0.1"

@@ -1,4 +1,4 @@
-use crate::wz::asset_loaders::WzMapAsset;
+use crate::wz::asset_loaders::{WzMapAsset, PortalFrame};
 use wz::Foothold;
 use bevy::prelude::*;
 
@@ -86,6 +86,11 @@ pub struct MapCache {
     entries: Vec<(String, Handle<WzMapAsset>)>,
     capacity: usize,
 }
+
+/// Pre-loaded portal animation frames (global, shared across all maps).
+/// Populated by `init_portal_frames` startup system once the asset loads.
+#[derive(Resource, Default)]
+pub struct PortalFrames(pub Vec<PortalFrame>);
 
 impl MapCache {
     pub fn new(capacity: usize) -> Self {

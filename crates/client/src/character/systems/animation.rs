@@ -247,9 +247,10 @@ pub fn on_set_facing(
 pub fn on_use_skill(
     trigger: On<UseSkill>,
     mut commands: Commands,
-    skill_db: Res<crate::character::skills::SkillDatabase>,
+    skill_db: Option<Res<crate::character::skills::SkillDatabase>>,
     mut char_query: Query<&mut CharacterActionAnimation, With<CharacterRoot>>,
 ) {
+    let Some(skill_db) = skill_db else { return };
     let ev = trigger.event();
     let target = ev.entity;
     let Some(skill) = skill_db.get(ev.skill_id) else {

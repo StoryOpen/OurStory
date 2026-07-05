@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 
+/// Z-ordering for character layers.
+/// Loaded from WZ at startup via WzZMapAsset.
 #[derive(Resource, Reflect)]
 #[reflect(Resource)]
 pub struct ZMap {
@@ -19,29 +21,13 @@ impl ZMap {
     }
 }
 
-pub fn load_zmap(wz: &wz::WzData) -> ZMap {
+/// Build a ZMap from the raw Vec returned by WzData::load_zmap().
+pub fn zmap_from_entries(entries: Vec<(String, usize)>) -> ZMap {
     let mut layers = HashMap::new();
-    match wz.load_zmap() {
-        Ok(entries) => {
-            for (name, i) in entries {
-                layers.insert(name, i);
-            }
-        }
-        Err(e) => warn!("load_zmap: failed to load zmap: {e}, using empty ZMap"),
+    for (name, i) in entries {
+        layers.insert(name, i);
     }
     ZMap { layers }
-}
-
-/// Bevy Resource wrapper around the global `WzData` singleton.
-/// Makes the dependency visible to the ECS scheduler and enables testing.
-#[derive(Resource)]
-pub struct WzDataRes(pub &'static wz::WzData);
-
-impl std::ops::Deref for WzDataRes {
-    type Target = wz::WzData;
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Reflect)]
@@ -98,4 +84,3 @@ impl EquipSlot {
         }
     }
 }
-

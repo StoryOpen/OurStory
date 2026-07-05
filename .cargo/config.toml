@@ -22,3 +22,13 @@ linker = "aarch64-linux-gnu-gcc"
 
 [env]
 RUST_BACKTRACE = "1"
+
+[alias]
+# Start wz-server serving wasm client from /tmp/wasm-dist (assumes already built+packaged)
+# One-stop shop: ./scripts/run-wasm.sh
+serve-wasm = [
+    "run", "--package", "wz-server", "--",
+    "--bind", "127.0.0.1:3001",
+    "--index-path", "./wz/search-index.json",
+    "--serve-dir", "/tmp/wasm-dist",
+]

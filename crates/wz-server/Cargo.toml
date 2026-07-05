@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 wz = { path = "../wz" }
+bincode = { version = "2.0.1", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "http1"] }

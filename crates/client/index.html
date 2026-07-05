@@ -2,17 +2,49 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover">
     <title>OurStory</title>
     <style>
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
-        canvas { display: block; }
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
     </style>
 </head>
 <body>
     <script type="module">
         import init from './client.js';
-        init();
+        const wasmUrl = new URL('client-opt_bg.wasm', document.baseURI).href;
+
+        const W = 1024, H = 768;
+
+        function resize() {
+            const c = document.querySelector('canvas');
+            if (!c) { requestAnimationFrame(resize); return; }
+
+            let vw = window.innerWidth;
+            let vh = window.innerHeight;
+            let scale = Math.min(vw / W, vh / H);
+            let cw = W * scale;
+            let ch = H * scale;
+
+            c.setAttribute('width', W);
+            c.setAttribute('height', H);
+            c.style.setProperty('width', cw + 'px', 'important');
+            c.style.setProperty('height', ch + 'px', 'important');
+            c.style.setProperty('position', 'fixed', 'important');
+            c.style.setProperty('left', '50%', 'important');
+            c.style.setProperty('top', '50%', 'important');
+            c.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
+            c.style.setProperty('display', 'block', 'important');
+        }
+
+        // Initial resize when canvas appears; notify Bevy once.
+        function initialResize() {
+            resize();
+            window.dispatchEvent(new Event('resize'));
+        }
+
+        requestAnimationFrame(initialResize);
+        window.addEventListener('resize', resize);
+        init(wasmUrl).catch(e => console.error('Wasm init failed:', e));
     </script>
 </body>
 </html>

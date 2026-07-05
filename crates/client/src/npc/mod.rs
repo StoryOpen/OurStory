@@ -21,7 +21,6 @@ impl Plugin for NpcPlugin {
         app.init_asset::<WzNpcAsset>()
             .init_asset_loader::<crate::wz::asset_loaders::WzNpcLoader>()
             .insert_resource(NpcAssetRegistry::new(self.cache_capacity))
-            .init_resource::<crate::wz::WzImageCache>()
             .insert_resource(PendingNpcSpawns::default())
             .register_type::<NpcId>()
             .add_systems(

@@ -27,6 +27,8 @@ impl Plugin for MapPlugin {
             .init_asset_loader::<WzMapLoader>()
             .insert_resource(resources::MapCache::new(self.cache_capacity))
             .insert_resource(resources::CurrentMap(resources::MapState::None))
+            .insert_resource(resources::PortalFrames::default())
+            .add_systems(Startup, systems::init_portal_frames)
             .add_systems(
                 Update,
                 (

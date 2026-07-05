@@ -9,31 +9,23 @@ pub mod weapon_stances;
 
 use bevy::prelude::*;
 
+use self::job::JobCatalog;
 use self::skills::SkillDatabase;
 use self::systems::*;
-use self::types::{load_zmap, WzDataRes};
+use self::types::zmap_from_entries;
 use crate::GameSet;
-#[cfg(feature = "map")]
+use crate::ui::loading::LoadingState;
+use crate::wz::asset_loaders::*;
 use crate::map::events::MapLoaded;
 
 pub struct CharacterPlugin;
 
 impl Plugin for CharacterPlugin {
     fn build(&self, app: &mut App) {
-        let wz = wz::WzData::global();
-        let skill_db = SkillDatabase::load(wz);
-
-        app.insert_resource(WzDataRes(wz))
-            .insert_resource(load_zmap(wz))
-            .insert_resource(job::load_job_catalog(wz))
-            .insert_resource(skill_db)
-            .insert_resource(load_action_lists(wz))
-            .init_resource::<ActionCycle>()
-            .register_type::<components::CharacterActionAnimation>()
+        app.register_type::<components::CharacterActionAnimation>()
             .register_type::<components::CharacterConfig>()
             .register_type::<components::CharacterLabels>()
             .register_type::<components::CharacterFaceAnimation>()
-            .register_type::<stance::CharacterStance>()
             .register_type::<types::ZMap>()
             .register_type::<types::EquipSlot>()
             .register_type::<job::Job>()
@@ -42,8 +34,8 @@ impl Plugin for CharacterPlugin {
             .register_type::<skills::LearnedSkills>()
             .register_type::<skills::SkillEffect>()
             .register_type::<skills::SkillEffectRoot>()
-            .register_type::<ActionLists>()
-            .register_type::<ActionCycle>()
+            .register_type::<systems::input::ActionLists>()
+            .register_type::<systems::input::ActionCycle>()
             .add_observer(spawn_character)
             .add_observer(on_set_action)
             .add_observer(on_set_face_expression)
@@ -51,8 +43,8 @@ impl Plugin for CharacterPlugin {
             .add_observer(on_character_action)
             .add_observer(on_use_skill)
             .add_observer(stance::on_request_attack)
-            .add_observer(stance::on_hit_by_mob);
-        #[cfg(feature = "map")]
+            .add_observer(stance::on_hit_by_mob)
+            .add_systems(Startup, init_startup_assets);
         app.add_observer(spawn_character_on_map);
         app.add_systems(
                 Update,
@@ -69,14 +61,54 @@ impl Plugin for CharacterPlugin {
             .add_systems(Update, advance_character_frames.in_set(GameSet::Animation))
             .add_systems(Update, animate_face.in_set(GameSet::Animation))
             .add_systems(Update, animate_skill_effects.in_set(GameSet::Animation))
+            .add_systems(Update, process_pending_action_load.in_set(GameSet::Animation))
+            .add_systems(Update, process_pending_face_load.in_set(GameSet::Animation))
             .add_systems(Update, draw_character_labels.in_set(GameSet::Visuals));
-
-        #[cfg(not(feature = "map"))]
-        app.add_systems(Startup, spawn_character_at_origin);
     }
 }
 
-#[cfg(feature = "map")]
+/// Startup system that loads singleton character assets (zmap, skill db, job catalog, action lists).
+/// Runs once when all assets are ready.
+pub fn init_startup_assets(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    zmap_assets: Res<Assets<WzZMapAsset>>,
+    skill_assets: Res<Assets<WzSkillDatabaseAsset>>,
+    job_assets: Res<Assets<WzJobCatalogAsset>>,
+    act_assets: Res<Assets<WzActionListsAsset>>,
+    mut loading_state: Option<ResMut<LoadingState>>,
+    mut initialized: Local<bool>,
+) {
+    if *initialized {
+        return;
+    }
+
+    let zmap_handle = asset_server.load::<WzZMapAsset>("wz://zmap.zmap");
+    let skill_handle = asset_server.load::<WzSkillDatabaseAsset>("wz://skill-database.skilldb");
+    let job_handle = asset_server.load::<WzJobCatalogAsset>("wz://job-catalog.jobcat");
+    let act_handle = asset_server.load::<WzActionListsAsset>("wz://action-lists.actlist");
+
+    let zmap_ready = zmap_assets.get(&zmap_handle);
+    let skill_ready = skill_assets.get(&skill_handle);
+    let job_ready = job_assets.get(&job_handle);
+    let act_ready = act_assets.get(&act_handle);
+
+    if let (Some(zmap), Some(skill), Some(job), Some(act)) =
+        (zmap_ready, skill_ready, job_ready, act_ready)
+    {
+        commands.insert_resource(zmap_from_entries(zmap.0.clone()));
+        commands.insert_resource(SkillDatabase::from_raw(&skill.0));
+        commands.insert_resource(JobCatalog::from_raw(&job.0));
+        commands.insert_resource(systems::input::ActionLists::from_raw(&act));
+        if let Some(ref mut loading) = loading_state {
+            loading.zmap_loaded = true;
+            loading.ready = loading.physics_loaded && loading.zmap_loaded;
+        }
+        *initialized = true;
+        info!("Character startup assets loaded");
+    }
+}
+
 fn spawn_character_on_map(
     trigger: On<MapLoaded>,
     mut commands: Commands,
@@ -93,7 +125,7 @@ fn spawn_character_on_map(
     };
 
     let spawn_pos = asset
-        .0
+        .data
         .portals
         .iter()
         .find(|p| p.pt == 0)
@@ -127,25 +159,6 @@ fn spawn_character_on_map(
                 (EquipSlot::Accessory, 01010000),
                 (EquipSlot::Ring, 01112000),
             ],
-        },
-        action: DEFAULT_CHARACTER_ACTION.into(),
-        face_expression: "blink".into(),
-    });
-}
-
-#[cfg(not(feature = "map"))]
-fn spawn_character_at_origin(mut commands: Commands) {
-    use crate::character::{
-        components::CharacterConfig, events::SpawnCharacter, job::Job, types::EquipSlot,
-    };
-    commands.trigger(SpawnCharacter {
-        transform: Transform::from_xyz(0.0, 0.0, 0.0),
-        config: CharacterConfig {
-            skin_suffix: 2000,
-            hair_id: 30000,
-            face_id: 20000,
-            job: Job(112),
-            equipment: vec![],
         },
         action: DEFAULT_CHARACTER_ACTION.into(),
         face_expression: "blink".into(),

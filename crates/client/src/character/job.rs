@@ -16,6 +16,14 @@ pub struct JobCatalog {
 }
 
 impl JobCatalog {
+    /// Build from raw (job_id, label) pairs loaded from WZ.
+    pub fn from_raw(entries: &[(u32, String)]) -> Self {
+        let entries: Vec<JobEntry> = entries.iter().map(|(id, label)| {
+            JobEntry { job: Job(*id), label: label.clone() }
+        }).collect();
+        JobCatalog { entries }
+    }
+
     pub fn label_for(&self, job: Job) -> Option<&str> {
         self.entries
             .iter()
@@ -50,39 +58,7 @@ impl JobCatalog {
     }
 }
 
-pub fn load_job_catalog(wz: &wz::WzData) -> JobCatalog {
-    let class_names = match wz.list_children("Skill") {
-        Ok(names) => names,
-        Err(e) => {
-            warn!("load_job_catalog: failed to list Skill children: {e}, returning empty");
-            return JobCatalog::default();
-        }
-    };
 
-    let mut entries = Vec::new();
-    for class_name in class_names {
-        let Some(job_key) = class_name.strip_suffix(".img") else {
-            continue;
-        };
-        let Ok(job_id) = job_key.parse::<u32>() else {
-            continue;
-        };
-        let Some(label) = wz.read_string(&format!("String/Skill.img/{job_key}/bookName"))
-            .map(|label: String| label.trim().to_string())
-            .filter(|label| !label.is_empty())
-        else {
-            continue;
-        };
-
-        entries.push(JobEntry {
-            job: Job(job_id),
-            label,
-        });
-    }
-
-    entries.sort_by_key(|entry| entry.job.0);
-    JobCatalog { entries }
-}
 
 impl Job {
     pub fn parent(&self) -> Option<Job> {

@@ -2,53 +2,142 @@ use bevy::prelude::*;
 
 use crate::ui::components::*;
 use crate::ui::loader::*;
+use crate::wz::asset_loaders::WzUiSpriteAsset;
 
-pub fn spawn_hud(
-    commands: &mut Commands,
-    cache: &mut ResMut<WzImageCache>,
-    images: &mut ResMut<Assets<Image>>,
+// ── Pending load state ──
+
+#[derive(Resource)]
+pub struct PendingHud {
+    handles: HudSpriteHandles,
+    spawned: bool,
+}
+
+struct HudSpriteHandles {
+    bg: UiSpriteHandle,
+    bg2: UiSpriteHandle,
+    quickslot_bg: UiSpriteHandle,
+    chat_line: UiSpriteHandle,
+    chat_target: UiSpriteHandle,
+    gauge_bar: UiSpriteHandle,
+    gauge_graduation: UiSpriteHandle,
+    gauge_gray: UiSpriteHandle,
+    bt_menu: ButtonSpriteHandles,
+    bt_shop: ButtonSpriteHandles,
+    bt_short: ButtonSpriteHandles,
+    bt_npt: ButtonSpriteHandles,
+    bt_claim: ButtonSpriteHandles,
+    bt_whisper: ButtonSpriteHandles,
+    stat_key: ButtonSpriteHandles,
+    equip_key: ButtonSpriteHandles,
+    inven_key: ButtonSpriteHandles,
+    skill_key: ButtonSpriteHandles,
+}
+
+impl HudSpriteHandles {
+    fn load(asset_server: &AssetServer) -> Self {
+        let sb_path = "UI/StatusBar.img";
+        Self {
+            bg: UiSpriteHandle::load(&format!("{sb_path}/base/backgrnd"), asset_server),
+            bg2: UiSpriteHandle::load(&format!("{sb_path}/base/backgrnd2"), asset_server),
+            quickslot_bg: UiSpriteHandle::load(&format!("{sb_path}/base/quickSlot"), asset_server),
+            chat_line: UiSpriteHandle::load(&format!("{sb_path}/base/chat"), asset_server),
+            chat_target: UiSpriteHandle::load(&format!("{sb_path}/base/chatTarget"), asset_server),
+            gauge_bar: UiSpriteHandle::load(&format!("{sb_path}/gauge/bar"), asset_server),
+            gauge_graduation: UiSpriteHandle::load(&format!("{sb_path}/gauge/graduation"), asset_server),
+            gauge_gray: UiSpriteHandle::load(&format!("{sb_path}/gauge/gray"), asset_server),
+            bt_menu: ButtonSpriteHandles::load(&format!("{sb_path}/BtMenu"), asset_server),
+            bt_shop: ButtonSpriteHandles::load(&format!("{sb_path}/BtShop"), asset_server),
+            bt_short: ButtonSpriteHandles::load(&format!("{sb_path}/BtShort"), asset_server),
+            bt_npt: ButtonSpriteHandles::load(&format!("{sb_path}/BtNPT"), asset_server),
+            bt_claim: ButtonSpriteHandles::load(&format!("{sb_path}/BtClaim"), asset_server),
+            bt_whisper: ButtonSpriteHandles::load(&format!("{sb_path}/BtWhisper"), asset_server),
+            stat_key: ButtonSpriteHandles::load(&format!("{sb_path}/StatKey"), asset_server),
+            equip_key: ButtonSpriteHandles::load(&format!("{sb_path}/EquipKey"), asset_server),
+            inven_key: ButtonSpriteHandles::load(&format!("{sb_path}/InvenKey"), asset_server),
+            skill_key: ButtonSpriteHandles::load(&format!("{sb_path}/SkillKey"), asset_server),
+        }
+    }
+
+    fn is_ready(&self, assets: &Assets<WzUiSpriteAsset>) -> bool {
+        self.bg.is_ready(assets)
+            && self.bg2.is_ready(assets)
+            && self.quickslot_bg.is_ready(assets)
+            && self.chat_line.is_ready(assets)
+            && self.chat_target.is_ready(assets)
+            && self.gauge_bar.is_ready(assets)
+            && self.gauge_graduation.is_ready(assets)
+            && self.gauge_gray.is_ready(assets)
+            && self.bt_menu.is_ready(assets)
+            && self.bt_shop.is_ready(assets)
+            && self.bt_short.is_ready(assets)
+            && self.bt_npt.is_ready(assets)
+            && self.bt_claim.is_ready(assets)
+            && self.bt_whisper.is_ready(assets)
+            && self.stat_key.is_ready(assets)
+            && self.equip_key.is_ready(assets)
+            && self.inven_key.is_ready(assets)
+            && self.skill_key.is_ready(assets)
+    }
+}
+
+// ── Entry point ──
+
+pub fn start_hud_load(commands: &mut Commands, asset_server: &AssetServer) {
+    let handles = HudSpriteHandles::load(asset_server);
+    commands.insert_resource(PendingHud {
+        handles,
+        spawned: false,
+    });
+}
+
+// ── Check readiness → spawn ──
+
+pub fn check_hud_ready(
+    mut commands: Commands,
+    mut pending: Option<ResMut<PendingHud>>,
+    sprite_assets: Res<Assets<WzUiSpriteAsset>>,
 ) {
-    let _wz = wz::WzData::global();
-    let sb_path = "UI/StatusBar.img";
+    let Some(ref mut pending) = pending else { return };
+    if pending.spawned {
+        return;
+    }
+    if !pending.handles.is_ready(&sprite_assets) {
+        return;
+    }
 
-    // Load base sprites
-    let bg = load_ui_sprite(&format!("{sb_path}/base/backgrnd"), cache, images);
-    let bg2 = load_ui_sprite(&format!("{sb_path}/base/backgrnd2"), cache, images);
-    let quickslot_bg = load_ui_sprite(&format!("{sb_path}/base/quickSlot"), cache, images);
-    let chat_line = load_ui_sprite(&format!("{sb_path}/base/chat"), cache, images);
-    let chat_target = load_ui_sprite(&format!("{sb_path}/base/chatTarget"), cache, images);
+    info!("All HUD assets loaded, spawning");
+    spawn_hud(&mut commands, &sprite_assets, &pending.handles);
+    pending.spawned = true;
+}
 
-    // Load gauges
-    let gauge_bar = load_ui_sprite(&format!("{sb_path}/gauge/bar"), cache, images);
-    let gauge_graduation = load_ui_sprite(&format!("{sb_path}/gauge/graduation"), cache, images);
-    let gauge_gray = load_ui_sprite(&format!("{sb_path}/gauge/gray"), cache, images);
+// ── Spawn (called once assets are ready) ──
 
-    // Load buttons
-    let bt_menu = load_ui_button(&format!("{sb_path}/BtMenu"), cache, images);
-    let bt_shop = load_ui_button(&format!("{sb_path}/BtShop"), cache, images);
-    let bt_short = load_ui_button(&format!("{sb_path}/BtShort"), cache, images);
-    let bt_npt = load_ui_button(&format!("{sb_path}/BtNPT"), cache, images);
-    let bt_claim = load_ui_button(&format!("{sb_path}/BtClaim"), cache, images);
-    let bt_whisper = load_ui_button(&format!("{sb_path}/BtWhisper"), cache, images);
+fn spawn_hud(
+    commands: &mut Commands,
+    sprite_assets: &Assets<WzUiSpriteAsset>,
+    handles: &HudSpriteHandles,
+) {
+    let bg_image = handles.bg.image(sprite_assets);
+    let bg2_image = handles.bg2.image(sprite_assets);
+    let quickslot_bg_image = handles.quickslot_bg.image(sprite_assets);
+    let chat_line_image = handles.chat_line.image(sprite_assets);
+    let chat_target_image = handles.chat_target.image(sprite_assets);
+    let gauge_bar_image = handles.gauge_bar.image(sprite_assets);
+    let gauge_graduation_image = handles.gauge_graduation.image(sprite_assets);
+    let gauge_gray_image = handles.gauge_gray.image(sprite_assets);
 
-    // Load key slots
-    let stat_key = load_ui_button(&format!("{sb_path}/StatKey"), cache, images);
-    let equip_key = load_ui_button(&format!("{sb_path}/EquipKey"), cache, images);
-    let inven_key = load_ui_button(&format!("{sb_path}/InvenKey"), cache, images);
-    let skill_key = load_ui_button(&format!("{sb_path}/SkillKey"), cache, images);
+    let bt_menu = handles.bt_menu.to_button(sprite_assets, "BtMenu");
+    let bt_shop = handles.bt_shop.to_button(sprite_assets, "BtShop");
+    let bt_short = handles.bt_short.to_button(sprite_assets, "BtShort");
+    let bt_npt = handles.bt_npt.to_button(sprite_assets, "BtNPT");
+    let bt_claim = handles.bt_claim.to_button(sprite_assets, "BtClaim");
+    let bt_whisper = handles.bt_whisper.to_button(sprite_assets, "BtWhisper");
+    let stat_key = handles.stat_key.to_button(sprite_assets, "StatKey");
+    let equip_key = handles.equip_key.to_button(sprite_assets, "EquipKey");
+    let inven_key = handles.inven_key.to_button(sprite_assets, "InvenKey");
+    let skill_key = handles.skill_key.to_button(sprite_assets, "SkillKey");
 
-    // HUD layout using flexbox:
-    //
-    // Root (800x71, anchored bottom):
-    //   bg image (absolute, full size)
-    //   Main row (flex-row, fill parent):
-    //     Left: key buttons row (flex-row, gap 2px)
-    //     Center: gauge + menu area (flex-column):
-    //       Gauge stack (flex-row): gray bg + bar + graduation
-    //       Menu row (flex-row): BtMenu + BtShort + chat target
-    //     Right: shop buttons row (flex-row) + quickslot panel
-
-    let hud_entity = commands
+    commands
         .spawn((
             Name::new("HUD"),
             Node {
@@ -64,34 +153,30 @@ pub fn spawn_hud(
         ))
         .with_children(|parent| {
             // Background image (absolute, behind everything)
-            if let Some(bg) = bg {
-                parent.spawn((
-                    Node {
-                        width: Val::Px(800.0),
-                        height: Val::Px(71.0),
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(0.0),
-                        top: Val::Px(0.0),
-                        ..default()
-                    },
-                    ImageNode::from(bg.handle),
-                ));
-            }
+            parent.spawn((
+                Node {
+                    width: Val::Px(800.0),
+                    height: Val::Px(71.0),
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.0),
+                    top: Val::Px(0.0),
+                    ..default()
+                },
+                ImageNode::from(bg_image),
+            ));
 
             // Secondary background
-            if let Some(bg2) = bg2 {
-                parent.spawn((
-                    Node {
-                        width: Val::Px(570.0),
-                        height: Val::Px(71.0),
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(230.0),
-                        top: Val::Px(0.0),
-                        ..default()
-                    },
-                    ImageNode::from(bg2.handle),
-                ));
-            }
+            parent.spawn((
+                Node {
+                    width: Val::Px(570.0),
+                    height: Val::Px(71.0),
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(230.0),
+                    top: Val::Px(0.0),
+                    ..default()
+                },
+                ImageNode::from(bg2_image),
+            ));
 
             // === MAIN CONTENT ROW (flex-row) ===
             parent
@@ -113,30 +198,23 @@ pub fn spawn_hud(
                         ..default()
                     })
                     .with_children(|keys| {
-                        for (name, btn_data) in [
-                            ("StatKey", stat_key),
-                            ("EquipKey", equip_key),
-                            ("InvenKey", inven_key),
-                            ("SkillKey", skill_key),
-                        ] {
-                            if let Some(btn) = btn_data {
-                                keys.spawn((
-                                    Node {
-                                        width: Val::Px(28.0),
-                                        height: Val::Px(20.0),
-                                        ..default()
-                                    },
-                                    ImageNode::from(btn.normal.clone()),
-                                    Interaction::default(),
-                                    UiButton {
-                                        name: name.into(),
-                                        normal: btn.normal,
-                                        hover: btn.hover,
-                                        pressed: btn.pressed,
-                                        disabled: btn.disabled,
-                                    },
-                                ));
-                            }
+                        for btn in [&stat_key, &equip_key, &inven_key, &skill_key] {
+                            keys.spawn((
+                                Node {
+                                    width: Val::Px(28.0),
+                                    height: Val::Px(20.0),
+                                    ..default()
+                                },
+                                ImageNode::from(btn.normal.clone()),
+                                Interaction::default(),
+                                UiButton {
+                                    name: btn.name.clone(),
+                                    normal: btn.normal.clone(),
+                                    hover: btn.hover.clone(),
+                                    pressed: btn.pressed.clone(),
+                                    disabled: btn.disabled.clone(),
+                                },
+                            ));
                         }
                     });
 
@@ -158,45 +236,36 @@ pub fn spawn_hud(
                                 ..default()
                             })
                             .with_children(|gauge_row| {
-                                // Gray background
-                                if let Some(gray) = gauge_gray {
-                                    gauge_row.spawn((
-                                        Node {
-                                            width: Val::Px(340.0),
-                                            height: Val::Px(16.0),
-                                            ..default()
-                                        },
-                                        ImageNode::from(gray.handle),
-                                    ));
-                                }
-                                // Bar overlay
-                                if let Some(bar) = gauge_bar {
-                                    gauge_row.spawn((
-                                        Node {
-                                            width: Val::Px(340.0),
-                                            height: Val::Px(31.0),
-                                            position_type: PositionType::Absolute,
-                                            left: Val::Px(0.0),
-                                            top: Val::Px(0.0),
-                                            ..default()
-                                        },
-                                        ImageNode::from(bar.handle),
-                                    ));
-                                }
-                                // Graduation marks
-                                if let Some(grad) = gauge_graduation {
-                                    gauge_row.spawn((
-                                        Node {
-                                            width: Val::Px(340.0),
-                                            height: Val::Px(31.0),
-                                            position_type: PositionType::Absolute,
-                                            left: Val::Px(0.0),
-                                            top: Val::Px(0.0),
-                                            ..default()
-                                        },
-                                        ImageNode::from(grad.handle),
-                                    ));
-                                }
+                                gauge_row.spawn((
+                                    Node {
+                                        width: Val::Px(340.0),
+                                        height: Val::Px(16.0),
+                                        ..default()
+                                    },
+                                    ImageNode::from(gauge_gray_image.clone()),
+                                ));
+                                gauge_row.spawn((
+                                    Node {
+                                        width: Val::Px(340.0),
+                                        height: Val::Px(31.0),
+                                        position_type: PositionType::Absolute,
+                                        left: Val::Px(0.0),
+                                        top: Val::Px(0.0),
+                                        ..default()
+                                    },
+                                    ImageNode::from(gauge_bar_image.clone()),
+                                ));
+                                gauge_row.spawn((
+                                    Node {
+                                        width: Val::Px(340.0),
+                                        height: Val::Px(31.0),
+                                        position_type: PositionType::Absolute,
+                                        left: Val::Px(0.0),
+                                        top: Val::Px(0.0),
+                                        ..default()
+                                    },
+                                    ImageNode::from(gauge_graduation_image.clone()),
+                                ));
                             });
 
                         // Menu row (flex-row)
@@ -208,55 +277,47 @@ pub fn spawn_hud(
                                 ..default()
                             })
                             .with_children(|menu_row| {
-                                for (name, btn_data) in [("BtMenu", bt_menu), ("BtShort", bt_short)]
-                                {
-                                    if let Some(btn) = btn_data {
-                                        menu_row.spawn((
-                                            Node {
-                                                width: Val::Px(54.0),
-                                                height: Val::Px(34.0),
-                                                ..default()
-                                            },
-                                            ImageNode::from(btn.normal.clone()),
-                                            Interaction::default(),
-                                            UiButton {
-                                                name: name.into(),
-                                                normal: btn.normal,
-                                                hover: btn.hover,
-                                                pressed: btn.pressed,
-                                                disabled: btn.disabled,
-                                            },
-                                        ));
-                                    }
-                                }
-
-                                // Chat target
-                                if let Some(ct) = chat_target {
+                                for btn in [&bt_menu, &bt_short] {
                                     menu_row.spawn((
                                         Node {
-                                            width: Val::Px(81.0),
-                                            height: Val::Px(20.0),
+                                            width: Val::Px(54.0),
+                                            height: Val::Px(34.0),
                                             ..default()
                                         },
-                                        ImageNode::from(ct.handle),
+                                        ImageNode::from(btn.normal.clone()),
+                                        Interaction::default(),
+                                        UiButton {
+                                            name: btn.name.clone(),
+                                            normal: btn.normal.clone(),
+                                            hover: btn.hover.clone(),
+                                            pressed: btn.pressed.clone(),
+                                            disabled: btn.disabled.clone(),
+                                        },
                                     ));
                                 }
+
+                                menu_row.spawn((
+                                    Node {
+                                        width: Val::Px(81.0),
+                                        height: Val::Px(20.0),
+                                        ..default()
+                                    },
+                                    ImageNode::from(chat_target_image.clone()),
+                                ));
                             });
 
                         // Chat line
-                        if let Some(chat) = chat_line {
-                            center.spawn((
-                                Node {
-                                    width: Val::Px(566.0),
-                                    height: Val::Px(5.0),
-                                    ..default()
-                                },
-                                ImageNode::from(chat.handle),
-                            ));
-                        }
+                        center.spawn((
+                            Node {
+                                width: Val::Px(566.0),
+                                height: Val::Px(5.0),
+                                ..default()
+                            },
+                            ImageNode::from(chat_line_image.clone()),
+                        ));
                     });
 
-                    // --- RIGHT: Shop buttons + Quickslot (flex-column) ---
+                    // --- RIGHT: Shop buttons + Quickslot (flex-row) ---
                     row.spawn(Node {
                         flex_direction: FlexDirection::Row,
                         column_gap: Val::Px(2.0),
@@ -272,7 +333,6 @@ pub fn spawn_hud(
                                 ..default()
                             })
                             .with_children(|shop_col| {
-                                // Top row: Shop + NPT
                                 shop_col
                                     .spawn(Node {
                                         flex_direction: FlexDirection::Row,
@@ -280,31 +340,26 @@ pub fn spawn_hud(
                                         ..default()
                                     })
                                     .with_children(|top_row| {
-                                        for (name, btn_data) in
-                                            [("BtShop", bt_shop), ("BtNPT", bt_npt)]
-                                        {
-                                            if let Some(btn) = btn_data {
-                                                top_row.spawn((
-                                                    Node {
-                                                        width: Val::Px(54.0),
-                                                        height: Val::Px(34.0),
-                                                        ..default()
-                                                    },
-                                                    ImageNode::from(btn.normal.clone()),
-                                                    Interaction::default(),
-                                                    UiButton {
-                                                        name: name.into(),
-                                                        normal: btn.normal,
-                                                        hover: btn.hover,
-                                                        pressed: btn.pressed,
-                                                        disabled: btn.disabled,
-                                                    },
-                                                ));
-                                            }
+                                        for btn in [&bt_shop, &bt_npt] {
+                                            top_row.spawn((
+                                                Node {
+                                                    width: Val::Px(54.0),
+                                                    height: Val::Px(34.0),
+                                                    ..default()
+                                                },
+                                                ImageNode::from(btn.normal.clone()),
+                                                Interaction::default(),
+                                                UiButton {
+                                                    name: btn.name.clone(),
+                                                    normal: btn.normal.clone(),
+                                                    hover: btn.hover.clone(),
+                                                    pressed: btn.pressed.clone(),
+                                                    disabled: btn.disabled.clone(),
+                                                },
+                                            ));
                                         }
                                     });
 
-                                // Bottom row: Claim + Whisper
                                 shop_col
                                     .spawn(Node {
                                         flex_direction: FlexDirection::Row,
@@ -312,46 +367,37 @@ pub fn spawn_hud(
                                         ..default()
                                     })
                                     .with_children(|bot_row| {
-                                        for (name, btn_data) in
-                                            [("BtClaim", bt_claim), ("BtWhisper", bt_whisper)]
-                                        {
-                                            if let Some(btn) = btn_data {
-                                                bot_row.spawn((
-                                                    Node {
-                                                        width: Val::Px(20.0),
-                                                        height: Val::Px(19.0),
-                                                        ..default()
-                                                    },
-                                                    ImageNode::from(btn.normal.clone()),
-                                                    Interaction::default(),
-                                                    UiButton {
-                                                        name: name.into(),
-                                                        normal: btn.normal,
-                                                        hover: btn.hover,
-                                                        pressed: btn.pressed,
-                                                        disabled: btn.disabled,
-                                                    },
-                                                ));
-                                            }
+                                        for btn in [&bt_claim, &bt_whisper] {
+                                            bot_row.spawn((
+                                                Node {
+                                                    width: Val::Px(20.0),
+                                                    height: Val::Px(19.0),
+                                                    ..default()
+                                                },
+                                                ImageNode::from(btn.normal.clone()),
+                                                Interaction::default(),
+                                                UiButton {
+                                                    name: btn.name.clone(),
+                                                    normal: btn.normal.clone(),
+                                                    hover: btn.hover.clone(),
+                                                    pressed: btn.pressed.clone(),
+                                                    disabled: btn.disabled.clone(),
+                                                },
+                                            ));
                                         }
                                     });
                             });
 
                         // Quickslot panel
-                        if let Some(qs) = quickslot_bg {
-                            right.spawn((
-                                Node {
-                                    width: Val::Px(151.0),
-                                    height: Val::Px(80.0),
-                                    ..default()
-                                },
-                                ImageNode::from(qs.handle),
-                            ));
-                        }
+                        right.spawn((
+                            Node {
+                                width: Val::Px(151.0),
+                                height: Val::Px(80.0),
+                                ..default()
+                            },
+                            ImageNode::from(quickslot_bg_image),
+                        ));
                     });
                 });
-        })
-        .id();
-
-    info!("spawned HUD entity: {hud_entity:?}");
+        });
 }

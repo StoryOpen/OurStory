@@ -1,6 +1,6 @@
 use log::warn;
 use crate::error::WzError;
-use crate::node::Node;
+use crate::node_trait::{WzNode, TryFromNode};
 use crate::vector2d::Vector2D;
 use crate::data::common::{AnimFrame, Foothold};
 
@@ -164,19 +164,21 @@ pub struct MiniMapData {
 }
 
 impl MapData {
-    pub(crate) fn load(base: &Node, id: i32) -> Result<Self, WzError> {
+    pub(crate) fn load<N: WzNode>(base: &N, id: i32) -> Result<Self, WzError>
+    where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+{
         let region = id / 100000000;
         let wz_path = format!("Map/Map/Map{region}/{id}.img");
         let map = base.at_path(&wz_path)?;
 
         let name = base.at_path(&format!("String/Map.img/{id}/mapName"))
-            .ok().and_then(|n| -> Option<String> { n.try_into().ok() })
+            .ok().and_then(|n| -> Option<String> { n.into_val().ok() })
             .unwrap_or_else(|| {
                 warn!("Map {id}: mapName not found, using default");
                 String::new()
             });
         let street_name = base.at_path(&format!("String/Map.img/{id}/streetName"))
-            .ok().and_then(|n| -> Option<String> { n.try_into().ok() })
+            .ok().and_then(|n| -> Option<String> { n.into_val().ok() })
             .unwrap_or_else(|| {
                 warn!("Map {id}: streetName not found, using default");
                 String::new()
@@ -211,7 +213,8 @@ impl MapData {
     }
 }
 
-fn load_info(map: &Node) -> MapInfo {
+fn load_info<N: WzNode>(map: &N) -> MapInfo where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let info_node = match map.at_path("info") {
         Ok(n) => n,
         Err(_) => return MapInfo::default(),
@@ -253,7 +256,8 @@ fn load_info(map: &Node) -> MapInfo {
     }
 }
 
-fn load_footholds(map: &Node) -> Vec<Foothold> {
+fn load_footholds<N: WzNode>(map: &N) -> Vec<Foothold> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let mut footholds = Vec::new();
     if let Ok(fh_root) = map.at_path("foothold") {
         for (layer_name, group_node) in fh_root.children() {
@@ -301,7 +305,8 @@ fn load_footholds(map: &Node) -> Vec<Foothold> {
     footholds
 }
 
-fn load_layers(map: &Node, base: &Node) -> Vec<MapLayer> {
+fn load_layers<N: WzNode>(map: &N, base: &N) -> Vec<MapLayer> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let mut layers = Vec::new();
     for i in 0..8u8 {
         let layer = match map.at_path(&i.to_string()) {
@@ -316,7 +321,8 @@ fn load_layers(map: &Node, base: &Node) -> Vec<MapLayer> {
     layers
 }
 
-fn load_tiles(layer: &Node, base: &Node) -> Vec<TilePlacement> {
+fn load_tiles<N: WzNode>(layer: &N, base: &N) -> Vec<TilePlacement> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let mut tiles = Vec::new();
     let Some(tile_set) = layer.get_opt::<String>("info/tS") else { return tiles; };
 
@@ -363,7 +369,8 @@ fn load_tiles(layer: &Node, base: &Node) -> Vec<TilePlacement> {
     tiles
 }
 
-fn load_objs(layer: &Node, base: &Node) -> Vec<ObjPlacement> {
+fn load_objs<N: WzNode>(layer: &N, base: &N) -> Vec<ObjPlacement> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let mut objs = Vec::new();
     if let Ok(obj_root) = layer.at_path("obj") {
         for (name, obj_node) in obj_root.children() {
@@ -413,7 +420,8 @@ fn load_objs(layer: &Node, base: &Node) -> Vec<ObjPlacement> {
     objs
 }
 
-fn load_backgrounds(map: &Node, base: &Node) -> Vec<BackgroundData> {
+fn load_backgrounds<N: WzNode>(map: &N, base: &N) -> Vec<BackgroundData> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let back_root = match map.at_path("back") {
         Ok(n) => n,
         Err(_) => return Vec::new(),
@@ -472,7 +480,8 @@ fn load_backgrounds(map: &Node, base: &Node) -> Vec<BackgroundData> {
     backgrounds
 }
 
-fn load_life(map: &Node) -> Vec<LifeSpawn> {
+fn load_life<N: WzNode>(map: &N) -> Vec<LifeSpawn> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let life_root = match map.at_path("life") {
         Ok(n) => n,
         Err(_) => return Vec::new(),
@@ -507,7 +516,8 @@ fn load_life(map: &Node) -> Vec<LifeSpawn> {
     life
 }
 
-fn load_portals(map: &Node) -> Vec<PortalData> {
+fn load_portals<N: WzNode>(map: &N) -> Vec<PortalData> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let portal_root = match map.at_path("portal") {
         Ok(n) => n,
         Err(_) => return Vec::new(),
@@ -535,7 +545,8 @@ fn load_portals(map: &Node) -> Vec<PortalData> {
     portals
 }
 
-fn load_ladder_ropes(map: &Node) -> Vec<LadderRopeData> {
+fn load_ladder_ropes<N: WzNode>(map: &N) -> Vec<LadderRopeData> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let lr_root = match map.at_path("ladderRope") {
         Ok(n) => n,
         Err(_) => return Vec::new(),
@@ -558,7 +569,8 @@ fn load_ladder_ropes(map: &Node) -> Vec<LadderRopeData> {
     lrs
 }
 
-fn load_seats(map: &Node) -> Vec<SeatData> {
+fn load_seats<N: WzNode>(map: &N) -> Vec<SeatData> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let seat_root = match map.at_path("seat") {
         Ok(n) => n,
         Err(_) => return Vec::new(),
@@ -576,7 +588,8 @@ fn load_seats(map: &Node) -> Vec<SeatData> {
     seats
 }
 
-fn load_areas(map: &Node) -> Vec<AreaData> {
+fn load_areas<N: WzNode>(map: &N) -> Vec<AreaData> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let area_root = match map.at_path("area") {
         Ok(n) => n,
         Err(_) => return Vec::new(),
@@ -594,7 +607,8 @@ fn load_areas(map: &Node) -> Vec<AreaData> {
     areas
 }
 
-fn load_minimap(map: &Node) -> Option<MiniMapData> {
+fn load_minimap<N: WzNode>(map: &N) -> Option<MiniMapData> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let mm_node = map.at_path("miniMap").ok()?;
     let canvas_node = mm_node.at_path("canvas").ok()?;
     let image_path = canvas_node.path();
@@ -608,13 +622,9 @@ fn load_minimap(map: &Node) -> Option<MiniMapData> {
     Some(MiniMapData { image_path, x, y, width, height, mag })
 }
 
-fn load_animated_node(node: &Node, _base_path: &str) -> (Vec<AnimFrame>, String, Vector2D) {
-    let is_animated = node.has("0") && {
-        #[cfg(feature = "image-data")]
-        { TryInto::<image::DynamicImage>::try_into(node.clone()).is_err() }
-        #[cfg(not(feature = "image-data"))]
-        { false }
-    };
+fn load_animated_node<N: WzNode>(node: &N, _base_path: &str) -> (Vec<AnimFrame>, String, Vector2D) where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
+    let is_animated = node.has("0") && !node.has_image_data();
 
     if !is_animated {
         let image_path = node.path();
@@ -649,7 +659,7 @@ fn load_animated_node(node: &Node, _base_path: &str) -> (Vec<AnimFrame>, String,
         {
             if name.as_str().parse::<i32>().ok().filter(|v| *v >= 0).is_none() { continue; }
 
-            if TryInto::<image::DynamicImage>::try_into(child.clone()).is_err() { continue; }
+            if !child.has_image_data() { continue; }
 
             let image_path = child.path();
             let origin = child.try_get("origin")

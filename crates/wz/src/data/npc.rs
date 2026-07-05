@@ -1,7 +1,7 @@
 use log::warn;
 use std::collections::{BTreeMap, HashMap};
 use crate::error::WzError;
-use crate::node::Node;
+use crate::node_trait::{WzNode, TryFromNode};
 use crate::vector2d::Vector2D;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -24,13 +24,15 @@ pub struct NpcFrame {
 }
 
 impl NpcData {
-    pub(crate) fn load(base: &Node, id: i32) -> Result<Self, WzError> {
+    pub(crate) fn load<N: WzNode>(base: &N, id: i32) -> Result<Self, WzError>
+    where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+{
         let wz_path = format!("Npc/{:07}.img", id);
         let npc_node = base.at_path(&wz_path)?;
 
         let name = base.at_path(&format!("String/Npc.img/{id}/name"))
             .ok()
-            .and_then(|n| -> Option<String> { n.try_into().ok() })
+            .and_then(|n| -> Option<String> { n.into_val().ok() })
             .unwrap_or_else(|| {
                 warn!("Npc {id}: name not found, using default");
                 String::new()

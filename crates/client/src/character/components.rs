@@ -102,3 +102,22 @@ pub struct CharacterLabels {
     pub job: String,
 }
 
+/// Pending action data being loaded asynchronously via assets.
+/// Inserted by on_set_action, removed by process_pending_action_load.
+/// (return_to_default is stored on CharacterActionAnimation, not here.)
+#[derive(Component)]
+pub struct PendingActionLoad {
+    pub body_handle: Handle<crate::wz::asset_loaders::WzCharBodyAsset>,
+    pub hair_handle: Option<Handle<crate::wz::asset_loaders::WzHairBodyAsset>>,
+    pub equip_handles: Vec<Handle<crate::wz::asset_loaders::WzEquipActionAsset>>,
+    pub face_handle: Option<Handle<crate::wz::asset_loaders::WzFaceExpressionAsset>>,
+    pub action: String,
+}
+
+/// Pending face expression data being loaded asynchronously.
+/// Inserted by on_set_face_expression, removed by process_pending_face_load.
+#[derive(Component)]
+pub struct PendingFaceLoad(
+    pub Handle<crate::wz::asset_loaders::WzFaceExpressionAsset>,
+);
+

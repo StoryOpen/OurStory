@@ -1,8 +1,12 @@
+use bevy::asset::AssetEvent;
+use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 
-use crate::ui::loader::WzImageCache;
+use crate::ui::UiState;
+use crate::ui::screens::logo::LogoPhase::{Nexon, Wizet};
+use crate::wz::asset_loaders::WzImageFramesAsset;
 
-const FRAME_DURATION_MS: f32 = 100.0;
+const FRAME_DURATION: f32 = 0.1;
 
 #[derive(Component)]
 pub struct UiLogoScreen;
@@ -10,168 +14,209 @@ pub struct UiLogoScreen;
 #[derive(Component)]
 pub struct LogoSprite;
 
-#[derive(Resource)]
-pub struct LogoAnimation {
-    nexon_frames: Vec<Handle<Image>>,
-    wizet_frames: Vec<Handle<Image>>,
-    current_phase: LogoPhase,
+#[derive(Component)]
+struct WizetLogo;
+
+#[derive(Component)]
+struct NexonLogo;
+
+#[derive(Component)]
+pub(crate) struct LogoAnim {
+    frames: Vec<Handle<Image>>,
     current_frame: usize,
-    timer: Timer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LogoPhase {
-    Nexon,
     Wizet,
-    Done,
+    Nexon,
 }
 
-pub fn preload_logo_frames(
-    commands: &mut Commands,
-    cache: &mut ResMut<WzImageCache>,
-    images: &mut ResMut<Assets<Image>>,
-) {
-    let mut nexon_frames = Vec::new();
-    for i in 0..=136 {
-        let path = format!("UI/Logo.img/Nexon/{i}");
-        let handle = cache.get_or_load(&path, images);
-        nexon_frames.push(handle);
-    }
+#[derive(Resource)]
+pub(crate) struct LogoPhaseState {
+    phase: LogoPhase,
+}
 
-    let mut wizet_frames = Vec::new();
-    for i in 0..=60 {
-        let path = format!("UI/Logo.img/Wizet/{i}");
-        let handle = cache.get_or_load(&path, images);
-        wizet_frames.push(handle);
-    }
+#[derive(Resource)]
+pub struct PendingLogoLoad {
+    wizet: Handle<WzImageFramesAsset>,
+    nexon: Handle<WzImageFramesAsset>,
+}
 
-    commands.insert_resource(LogoAnimation {
-        nexon_frames,
-        wizet_frames,
-        current_phase: LogoPhase::Nexon,
-        current_frame: 0,
-        timer: Timer::from_seconds(FRAME_DURATION_MS / 1000.0, TimerMode::Once),
+#[derive(Resource)]
+pub struct LogoTimer {
+    timer: Timer,
+}
+
+pub fn start_logo_load(mut commands: Commands, asset_server: Res<AssetServer>) {
+    spawn_ui(&mut commands);
+    let wizet = asset_server.load::<WzImageFramesAsset>("wz://UI/Logo/Wizet.frames");
+    let nexon = asset_server.load::<WzImageFramesAsset>("wz://UI/Logo/Nexon.frames");
+    commands.insert_resource(PendingLogoLoad { nexon, wizet });
+    commands.insert_resource(LogoTimer {
+        timer: Timer::from_seconds(FRAME_DURATION, TimerMode::Repeating),
+    });
+    commands.insert_resource(LogoEntities {
+        wizet: None,
+        nexon: None,
     });
 }
 
-pub fn spawn_logo_screen(commands: &mut Commands) {
+fn spawn_ui(commands: &mut Commands) {
     commands
         .spawn((
-            Name::new("LogoScreen"),
+            UiLogoScreen,
             Node {
+                position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                top: Val::Px(0.0),
+                display: Display::Flex,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(Color::WHITE),
-            UiLogoScreen,
+            GlobalZIndex(-1),
         ))
         .with_children(|parent| {
             parent.spawn((
+                LogoSprite,
+                ImageNode::default(),
                 Node {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
+                    width: Val::Px(800.0),
+                    height: Val::Px(600.0),
                     ..default()
                 },
-                ImageNode::default(),
-                Interaction::default(),
-                Visibility::Visible,
-                LogoSprite,
             ));
         });
 }
 
-pub fn update_logo_animation(
-    time: Res<Time>,
-    mut animation: ResMut<LogoAnimation>,
-    mut sprite_query: Query<&mut ImageNode, With<LogoSprite>>,
-    mut next_state: ResMut<NextState<crate::ui::UiState>>,
-) {
-    animation.timer.tick(time.delta());
-
-    if !animation.timer.just_finished() {
-        return;
-    }
-
-    let frame_count = match animation.current_phase {
-        LogoPhase::Nexon => animation.nexon_frames.len(),
-        LogoPhase::Wizet => animation.wizet_frames.len(),
-        LogoPhase::Done => return,
-    };
-
-    if animation.current_frame >= frame_count {
-        match animation.current_phase {
-            LogoPhase::Nexon => {
-                animation.current_phase = LogoPhase::Wizet;
-                animation.current_frame = 0;
-                info!("Nexon logo done, starting Wizet");
-            }
-            LogoPhase::Wizet => {
-                animation.current_phase = LogoPhase::Done;
-                info!("Wizet logo done, transitioning to Login");
-                next_state.set(crate::ui::UiState::Login);
-                return;
-            }
-            LogoPhase::Done => return,
-        }
-    }
-
-    let frame_idx = animation.current_frame;
-    let handle = match animation.current_phase {
-        LogoPhase::Nexon => animation.nexon_frames.get(frame_idx).cloned(),
-        LogoPhase::Wizet => animation.wizet_frames.get(frame_idx).cloned(),
-        LogoPhase::Done => None,
-    };
-
-    if let Some(handle) = handle {
-        for mut sprite in &mut sprite_query {
-            sprite.image = handle.clone();
-        }
-    }
-
-    animation.current_frame += 1;
-    animation.timer.reset();
-}
-
-pub fn handle_logo_click(
-    interaction_query: Query<&Interaction, (With<LogoSprite>, Changed<Interaction>)>,
-    mut animation: ResMut<LogoAnimation>,
-    mut next_state: ResMut<NextState<crate::ui::UiState>>,
-) {
-    for interaction in &interaction_query {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        match animation.current_phase {
-            LogoPhase::Nexon => {
-                animation.current_phase = LogoPhase::Wizet;
-                animation.current_frame = 0;
-                animation.timer.reset();
-                info!("Logo skipped: Nexon -> Wizet");
-            }
-            LogoPhase::Wizet => {
-                animation.current_phase = LogoPhase::Done;
-                info!("Logo skipped: Wizet -> Login");
-                next_state.set(crate::ui::UiState::Login);
-            }
-            LogoPhase::Done => {}
-        }
-    }
-}
-
-pub fn despawn_logo_screen(
-    mut commands: Commands,
-    query: Query<Entity, With<UiLogoScreen>>,
-    animation: Option<ResMut<LogoAnimation>>,
-) {
+pub fn despawn_logo_screen(mut commands: Commands, query: Query<Entity, With<UiLogoScreen>>) {
     for entity in &query {
         commands.entity(entity).despawn();
     }
-    if let Some(mut anim) = animation {
-        anim.current_phase = LogoPhase::Done;
-        anim.current_frame = 0;
+}
+
+#[derive(Resource, Default)]
+pub(crate) struct LogoEntities {
+    wizet: Option<Entity>,
+    nexon: Option<Entity>,
+}
+
+pub fn on_logo_loaded(
+    mut events: MessageReader<AssetEvent<WzImageFramesAsset>>,
+    logo_assets: Res<Assets<WzImageFramesAsset>>,
+    mut logo_entities: ResMut<LogoEntities>,
+    pending: Option<Res<PendingLogoLoad>>,
+    mut commands: Commands,
+) {
+    let Some(pending) = pending else { return };
+    for event in events.read() {
+        if let AssetEvent::LoadedWithDependencies { id } = event {
+            if let Some(asset) = logo_assets.get(*id) {
+                if pending.wizet.id() == *id {
+                    let entity = commands.spawn((
+                        LogoAnim {
+                            current_frame: 0,
+                            frames: asset.frames.clone(),
+                        },
+                        WizetLogo,
+                    ));
+                    logo_entities.wizet = Some(entity.id());
+                }
+                if pending.nexon.id() == *id {
+                    commands.insert_resource(LogoPhaseState {
+                        phase: LogoPhase::Nexon,
+                    });
+                    let entity = commands.spawn((
+                        LogoAnim {
+                            current_frame: 0,
+                            frames: asset.frames.clone(),
+                        },
+                        NexonLogo,
+                    ));
+                    logo_entities.nexon = Some(entity.id());
+                }
+            }
+        }
+    }
+}
+
+pub fn update_logo_animation(
+    time: Res<Time>,
+    phase_state: Option<ResMut<LogoPhaseState>>,
+    mut logo_entities: ResMut<LogoEntities>,
+    mut timer: ResMut<LogoTimer>,
+    mut logo_query: Query<(Entity, &mut LogoAnim)>,
+    mut sprite_query: Query<&mut ImageNode, With<LogoSprite>>,
+    mut next_state: ResMut<NextState<UiState>>,
+    mut commands: Commands,
+) {
+    let Some(mut phase_state) = phase_state else {
+        return;
+    };
+
+    match phase_state.phase {
+        Nexon => {
+            if let Some(nexon_logo) = logo_entities.nexon {
+                if let Ok(mut logo) = logo_query.get_mut(nexon_logo) {
+                    if timer.timer.tick(time.delta()).just_finished() {
+                        if let Ok(mut sprite) = sprite_query.single_mut() {
+                            let frame = logo.1.frames.get(logo.1.current_frame).unwrap();
+                            sprite.image = frame.clone();
+                            logo.1.current_frame += 1;
+                            if logo.1.current_frame >= logo.1.frames.len() {
+                                timer.timer.reset();
+                                phase_state.phase = LogoPhase::Wizet;
+                                commands.entity(nexon_logo).despawn();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Wizet => {
+            if let Some(wizet_logo) = logo_entities.wizet {
+                if let Ok(mut logo) = logo_query.get_mut(wizet_logo) {
+                    if timer.timer.tick(time.delta()).just_finished() {
+                        if let Ok(mut sprite) = sprite_query.single_mut() {
+                            let frame = logo.1.frames.get(logo.1.current_frame).unwrap();
+                            sprite.image = frame.clone();
+                            logo.1.current_frame += 1;
+                            if logo.1.current_frame >= logo.1.frames.len() {
+                                commands.entity(wizet_logo).despawn();
+                                next_state.set(UiState::Login);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn handle_logo_click(
+    mut next_state: ResMut<NextState<UiState>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    phase_state: Option<ResMut<LogoPhaseState>>,
+    mut logo_entities: ResMut<LogoEntities>,
+    mut commands: Commands,
+) {
+    if !buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+    let Some(mut phase_state) = phase_state else {
+        return;
+    };
+    match phase_state.phase {
+        LogoPhase::Wizet => {
+            phase_state.phase = LogoPhase::Nexon;
+        }
+        LogoPhase::Nexon => {
+            if let Some(e) = logo_entities.nexon {
+                commands.entity(e).despawn();
+            }
+            commands.remove_resource::<LogoPhaseState>();
+            next_state.set(UiState::Login);
+        }
     }
 }

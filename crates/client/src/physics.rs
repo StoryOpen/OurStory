@@ -3,13 +3,36 @@ use std::sync::Arc;
 use bevy::prelude::*;
 
 use wz::Foothold;
+use crate::wz::asset_loaders::WzPhysicsAsset;
+use crate::ui::loading::LoadingState;
 use crate::GameSet;
 
 #[derive(Resource)]
 pub struct PhysicsConstants(pub Arc<wz::PhysicsConstants>);
 
-pub fn load_physics() -> PhysicsConstants {
-    PhysicsConstants(wz::WzData::global().load_physics().expect("physics constants"))
+/// System that checks if the WzPhysicsAsset has been loaded and inserts
+/// the PhysicsConstants resource. Runs as a startup system.
+pub fn init_physics_from_asset(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    assets: Res<Assets<WzPhysicsAsset>>,
+    mut initialized: Local<bool>,
+    mut loading_state: Option<ResMut<LoadingState>>,
+) {
+    if *initialized {
+        return;
+    }
+    // Use a fixed path for the physics asset
+    let handle = asset_server.load::<WzPhysicsAsset>("wz://physics.physics");
+    if let Some(asset) = assets.get(&handle) {
+        commands.insert_resource(PhysicsConstants(asset.0.clone()));
+        *initialized = true;
+        if let Some(ref mut loading) = loading_state {
+            loading.physics_loaded = true;
+            loading.ready = loading.physics_loaded && loading.zmap_loaded;
+        }
+        info!("Physics constants loaded from asset");
+    }
 }
 
 pub const PHYSICS_DT: f32 = 1.0 / 100.0;
@@ -60,6 +83,7 @@ impl FootholdGraph {
         let mut prev_idx = vec![None; n];
         for i in 0..n {
             if let Some(nid) = footholds[i].next_id {
+                if nid == 0 { continue; }
                 if let Ok(j) = footholds.binary_search_by_key(&nid, |f| f.id) {
                     next_idx[i] = Some(j);
                 } else {
@@ -67,6 +91,7 @@ impl FootholdGraph {
                 }
             }
             if let Some(pid) = footholds[i].prev_id {
+                if pid == 0 { continue; }
                 if let Ok(j) = footholds.binary_search_by_key(&pid, |f| f.id) {
                     prev_idx[i] = Some(j);
                 } else {
@@ -89,6 +114,7 @@ impl Plugin for PhysicsPlugin {
         app.init_resource::<PhysicsAccumulator>()
             .register_type::<PhysicsState>()
             .configure_sets(Update, PhysicsSet::Simulate)
+            .add_systems(Startup, init_physics_from_asset)
             .add_systems(
                 Update,
                 (
@@ -114,11 +140,12 @@ pub fn draw_foothold_gizmos(graph: Option<Res<FootholdGraph>>, mut gizmos: Gizmo
 
 pub fn physics_update(
     time: Res<Time>,
-    constants: Res<PhysicsConstants>,
+    constants: Option<Res<PhysicsConstants>>,
     graph: Option<Res<FootholdGraph>>,
     mut accumulator: ResMut<PhysicsAccumulator>,
     mut query: Query<&mut PhysicsState>,
 ) {
+    let Some(constants) = constants else { return };
     accumulator.0 += time.delta_secs();
     while accumulator.0 >= PHYSICS_DT {
         let graph = graph.as_deref();

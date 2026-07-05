@@ -27,27 +27,17 @@ impl Default for ActionLists {
     }
 }
 
-pub fn load_action_lists(wz: &wz::WzData) -> ActionLists {
-    let basic: Vec<String> = wz
-        .list_children("Character/00002001.img")
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|a| a != "info")
-        .collect();
-    let basic_set: HashSet<&str> = basic.iter().map(|s| s.as_str()).collect();
-    let all = wz
-        .list_children("Character/00002000.img")
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|a| a != "info");
-    let composite: Vec<String> = all.filter(|a| !basic_set.contains(a.as_str())).collect();
-    info!(
-        "ActionLists: {} basic, {} composite actions",
-        basic.len(),
-        composite.len()
-    );
-    ActionLists { basic, composite }
+impl ActionLists {
+    /// Build from a WzActionListsAsset.
+    pub fn from_raw(asset: &crate::wz::asset_loaders::WzActionListsAsset) -> Self {
+        ActionLists {
+            basic: asset.basic.clone(),
+            composite: asset.composite.clone(),
+        }
+    }
 }
+
+
 
 #[derive(Resource, Default, Reflect)]
 #[reflect(Resource)]
@@ -91,11 +81,14 @@ pub fn on_character_action(
         (With<CharacterRoot>, With<IsLocalPlayer>),
     >,
     mut cycle: ResMut<ActionCycle>,
-    action_lists: Res<ActionLists>,
-    skill_db: Res<SkillDatabase>,
-    job_catalog: Res<JobCatalog>,
+    action_lists: Option<Res<ActionLists>>,
+    skill_db: Option<Res<SkillDatabase>>,
+    job_catalog: Option<Res<JobCatalog>>,
     mut commands: Commands,
 ) {
+    let Some(action_lists) = action_lists else { return };
+    let Some(skill_db) = skill_db else { return };
+    let Some(job_catalog) = job_catalog else { return };
     let (entity, mut job, mut config, mut labels, mut current_anim) = match query.iter_mut().next() {
         Some(result) => result,
         None => return,

@@ -1,6 +1,6 @@
 use crate::error::NodeError;
 use crate::NodePayload;
-use crate::source::{WzSource, WzSourceError, WzSourceFuture};
+use crate::source::{WzSource, WzSourceError, WzSourceFuture, wasm_fetch};
 use image::DynamicImage;
 
 pub struct HttpWzSource {
@@ -34,8 +34,8 @@ impl WzSource for HttpWzSource {
     fn node_payload_depth<'a>(&'a self, path: &'a str, depth: usize) -> WzSourceFuture<'a, NodePayload> {
         Box::pin(async move {
             let url = format!("{}/wz/node/{}?depth={}", self.base_url, path, depth);
-            let bytes = fetch_bytes(&url).await
-                .map_err(|e| WzSourceError::Node(NodeError::ValueError(e.to_string().as_string().unwrap_or_default())))?;
+            let bytes = wasm_fetch(&url).await
+                .map_err(|e| WzSourceError::Node(NodeError::ValueError(e.as_string().unwrap_or_else(|| "unknown error".into()))))?;
             let payload: NodePayload = serde_json::from_slice(&bytes)
                 .map_err(|e| WzSourceError::Node(NodeError::ValueError(e.to_string())))?;
             Ok(payload)
@@ -45,8 +45,8 @@ impl WzSource for HttpWzSource {
     fn image_png<'a>(&'a self, path: &'a str) -> WzSourceFuture<'a, Vec<u8>> {
         Box::pin(async move {
             let url = format!("{}/wz/image/{}", self.base_url, path);
-            fetch_bytes(&url).await
-                .map_err(|e| WzSourceError::Node(NodeError::ValueError(e.to_string().as_string().unwrap_or_default())))
+            wasm_fetch(&url).await
+                .map_err(|e| WzSourceError::Node(NodeError::ValueError(e.as_string().unwrap_or_else(|| "unknown error".into()))))
         })
     }
 
@@ -58,26 +58,11 @@ impl WzSource for HttpWzSource {
             Ok(img)
         })
     }
-}
 
-async fn fetch_bytes(url: &str) -> Result<Vec<u8>, js_sys::Error> {
-    use wasm_bindgen::JsCast;
-    use wasm_bindgen_futures::JsFuture;
-
-    let opts = web_sys::RequestInit::new();
-    opts.set_method("GET");
-    let request = web_sys::Request::new_with_str_and_init(url, &opts)?;
-    let window = web_sys::window().ok_or_else(|| js_sys::Error::new("no window"))?;
-    let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
-    let resp: web_sys::Response = resp_value.dyn_into().map_err(|_| js_sys::Error::new("not a response"))?;
-    let ok = resp.ok();
-    let status = resp.status();
-    if !ok {
-        return Err(js_sys::Error::new(&format!("HTTP {status}")));
+    fn json_node<'a>(&'a self, path: &'a str) -> WzSourceFuture<'a, crate::JsonNode> {
+        Box::pin(async move {
+            let payload = self.node_payload_depth(path, usize::MAX).await?;
+            Ok(crate::JsonNode::from_payload(&payload))
+        })
     }
-    let body = JsFuture::from(resp.array_buffer().map_err(|_| js_sys::Error::new("no array buffer"))?).await?;
-    let uint8 = js_sys::Uint8Array::new(&body);
-    let mut bytes = vec![0u8; uint8.length() as usize];
-    uint8.copy_to(&mut bytes);
-    Ok(bytes)
 }

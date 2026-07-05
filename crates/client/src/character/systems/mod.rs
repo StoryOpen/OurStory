@@ -8,6 +8,7 @@ use crate::character::skills::LearnedSkills;
 use crate::character::types::*;
 use crate::input::IsLocalPlayer;
 use crate::physics::PhysicsState;
+use crate::wz::asset_loaders::*;
 
 pub mod animation;
 pub mod input;
@@ -22,49 +23,10 @@ pub(crate) const MIN_TIMER_SECS: f32 = 0.016;
 const LABEL_Y: f32 = -48.0;
 const LABEL_GAP: f32 = 4.0;
 
-// ── Image loading ──
+// ── Image loading via asset system ──
 
-fn load_character_image(
-    wz: &wz::WzData,
-    path: &str,
-    images: &mut Assets<Image>,
-) -> (Handle<Image>, u32, u32) {
-    use bevy::asset::RenderAssetUsages;
-    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-    let dynamic_image = match wz.load_image(path) {
-        Ok(img) => img,
-        Err(e) => {
-            warn!("failed to load character image at {path}: {e}");
-            return (Handle::default(), 0, 0);
-        }
-    };
-    let rgba = dynamic_image.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    let handle = images.add(Image::new(
-        Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        rgba.into_raw(),
-        TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    ));
-    (handle, width, height)
-}
-
-fn load_cached_part_image(
-    wz: &wz::WzData,
-    path: &str,
-    cache: &mut HashMap<String, (Handle<Image>, u32, u32)>,
-    images: &mut Assets<Image>,
-) -> (Handle<Image>, u32, u32) {
-    cache.get(path).cloned().unwrap_or_else(|| {
-        let result = load_character_image(wz, path, images);
-        cache.insert(path.to_string(), result.clone());
-        result
-    })
+fn load_part_image(asset_server: &AssetServer, path: &str) -> Handle<Image> {
+    asset_server.load::<Image>(format!("wz://{path}.wzimg"))
 }
 
 // ── Z resolution ──
@@ -162,54 +124,7 @@ fn compute_body_part_positions<'a>(
     transforms
 }
 
-// ── Frame loading helpers ──
-
-fn load_body_frames(wz: &wz::WzData, skin: u32, action: &str, zmap: &ZMap) -> Vec<wz::BodyFrame> {
-    let mut frames = wz
-        .load_character_body(skin, action)
-        .unwrap_or_else(|e| panic!("action '{}' failed to load body frames: {:?}", action, e))
-        .frames
-        .clone();
-    assert!(!frames.is_empty(), "action '{}' has no body frames", action);
-    resolve_z_frames(&mut frames, zmap);
-    frames
-}
-
-fn load_hair_frames(
-    wz: &wz::WzData,
-    hair_id: u32,
-    action: &str,
-    zmap: &ZMap,
-) -> Vec<wz::BodyFrame> {
-    let mut frames = wz
-        .load_hair_body(hair_id, action)
-        .map(|hair| hair.frames.clone())
-        .unwrap_or_default();
-    resolve_z_frames(&mut frames, zmap);
-    frames
-}
-
-fn load_equip_frames(
-    wz: &wz::WzData,
-    equipment: &[(crate::character::types::EquipSlot, u32)],
-    action: &str,
-    zmap: &ZMap,
-) -> Vec<Vec<wz::BodyFrame>> {
-    equipment
-        .iter()
-        .filter_map(|(_slot, item_id)| {
-            let eq_action = wz.load_equip_action(*item_id as i32, action).ok()?;
-            if eq_action.frames.is_empty() {
-                return None;
-            }
-            let mut frames = eq_action.frames.clone();
-            resolve_z_frames(&mut frames, zmap);
-            Some(frames)
-        })
-        .collect()
-}
-
-// ── Pose baking ──
+// ── Pose baking (combines all component frames into ActionFrames) ──
 
 #[derive(Clone)]
 pub struct ActionFrame {
@@ -217,75 +132,43 @@ pub struct ActionFrame {
     pub parts: HashMap<String, PartPose>,
 }
 
-fn load_action_frames(
-    wz: &wz::WzData,
-    images: &mut Assets<Image>,
-    zmap: &ZMap,
-    config: &CharacterConfig,
-    action: &str,
-    face_expression: &str,
+/// Combine body, hair, equip, and face data into ActionFrames with image handles.
+fn combine_action_frames(
+    asset_server: &AssetServer,
+    body: &[wz::BodyFrame],
+    hair: &[wz::BodyFrame],
+    equips: &[Vec<wz::BodyFrame>],
+    face: Option<&wz::BodyPart>,
 ) -> Vec<ActionFrame> {
-    let body = load_body_frames(wz, config.skin_suffix, action, zmap);
-    let hair = load_hair_frames(wz, config.hair_id, action, zmap);
-    let equips = load_equip_frames(wz, &config.equipment, action, zmap);
-    let face = wz
-        .load_face_expression(config.face_id, face_expression)
-        .ok()
-        .and_then(|fe| {
-            fe.frames.first().map(|f| {
-                let mut part = f.part.clone();
-                if let Some(slot) = &part.slot {
-                    part.z = zmap.depth(slot);
-                }
-                part
-            })
-        });
-
     let frame_count = body.len();
-
-    let mut img_cache: HashMap<String, (Handle<Image>, u32, u32)> = HashMap::new();
     let mut frames = Vec::with_capacity(frame_count);
 
     for frame_idx in 0..frame_count {
-        let raw_parts = collect_raw_parts(&body, &hair, &equips, face.as_ref(), frame_idx);
+        let raw_parts = collect_raw_parts(body, hair, equips, face, frame_idx);
         let transforms = compute_body_part_positions(&raw_parts);
 
         let mut parts = HashMap::new();
         for (&part_name, part) in &raw_parts {
             let pos = *transforms.get(part_name).unwrap_or(&Vec3::ZERO);
-            let (handle, w, h) =
-                load_cached_part_image(wz, &part.image_path, &mut img_cache, images);
-            let anchor = compute_anchor(part.origin, w as f32, h as f32);
+            let handle = load_part_image(asset_server, &part.image_path);
             parts.insert(
                 part_name.to_string(),
                 PartPose {
                     image: handle,
                     position: pos,
-                    anchor,
+                    anchor: Vec2::new(-0.5, -0.5),
                     visible: true,
                 },
             );
         }
 
-        let delay_ms = body[frame_idx].delay;
-
         frames.push(ActionFrame {
-            delay_ms,
+            delay_ms: body[frame_idx].delay,
             parts,
         });
     }
 
     frames
-}
-
-fn compute_anchor(origin: wz::Vector2D, img_width: f32, img_height: f32) -> Vec2 {
-    if img_width == 0.0 || img_height == 0.0 {
-        return Vec2::ZERO;
-    }
-    Vec2::new(
-        origin.0 / img_width - 0.5,
-        origin.1 / img_height - 0.5,
-    )
 }
 
 // ── Labels ──
@@ -418,8 +301,12 @@ fn transform_action_to_entities(
 pub fn spawn_character(
     trigger: On<SpawnCharacter>,
     mut commands: Commands,
-    job_catalog: Res<crate::character::job::JobCatalog>,
+    job_catalog: Option<Res<crate::character::job::JobCatalog>>,
 ) {
+    let Some(job_catalog) = job_catalog else {
+        warn!("spawn_character: JobCatalog not ready yet, skipping");
+        return;
+    };
     let ev = trigger.event();
     let pos = ev.transform.translation;
 
@@ -489,44 +376,25 @@ pub fn spawn_character(
     });
 }
 
-// ── Action loading ──
+// ── Action loading (two-phase: kick off, then combine when assets ready) ──
 
 pub fn on_set_action(
     trigger: On<SetAction>,
     mut commands: Commands,
-    mut images: ResMut<Assets<Image>>,
-    wz: Res<WzDataRes>,
-    zmap: Res<ZMap>,
+    asset_server: Res<AssetServer>,
     mut query: Query<
         (
             Entity,
             &mut CharacterActionAnimation,
             &CharacterConfig,
-            Option<&Children>,
-            &mut CharacterLabels,
             &mut CharacterFaceAnimation,
         ),
-        With<CharacterRoot>,
+        (With<CharacterRoot>, Without<PendingActionLoad>),
     >,
-    body_query: Query<&Children, With<CharacterBody>>,
-    part_query: Query<&PartName>,
 ) {
     let ev = trigger.event();
-    let root = ev.entity;
-    let Ok((character_root, mut anim, config, children, mut labels, mut face_anim)) =
-        query.get_mut(root)
-    else {
+    let Ok((root, mut anim, config, mut face_anim)) = query.get_mut(ev.entity) else {
         return;
-    };
-
-    let default_children = Children::default();
-    let children_ref = children.unwrap_or(&default_children);
-    let (body_entity, body_children) = match children_ref
-        .iter()
-        .find_map(|child| body_query.get(child).ok().map(|c| (child, c)))
-    {
-        Some((entity, children)) => (Some(entity), children),
-        None => (None, &default_children),
     };
 
     if anim.return_to_default {
@@ -537,87 +405,195 @@ pub fn on_set_action(
         return;
     }
 
-    let action_frames = load_action_frames(
-        &wz,
-        &mut images,
-        &zmap,
-        config,
-        &ev.action,
-        &face_anim.expression,
-    );
+    // Build asset paths
+    let body_path = format!("wz://char-body/{}/{}.charbody", config.skin_suffix, ev.action);
+    let body_handle = asset_server.load::<WzCharBodyAsset>(&body_path);
 
-    let returned_face = transform_action_to_entities(
-        &mut commands,
-        &action_frames,
-        character_root,
-        body_entity,
-        body_children,
-        &part_query,
-    );
+    let hair_path = format!("wz://char-hair/{}/{}.charhair", config.hair_id, ev.action);
+    let hair_handle = asset_server.load::<WzHairBodyAsset>(&hair_path);
 
-    if face_anim.face_entity.is_none() {
-        face_anim.face_entity = returned_face;
-    }
+    let equip_handles: Vec<Handle<WzEquipActionAsset>> = config
+        .equipment
+        .iter()
+        .map(|(_slot, item_id)| {
+            let path = format!("wz://char-equip/{}/{}.charequip", item_id, ev.action);
+            asset_server.load::<WzEquipActionAsset>(&path)
+        })
+        .collect();
+
+    let face_path = format!("wz://char-face/{}/{}.charface", config.face_id, face_anim.expression);
+    let face_handle = asset_server.load::<WzFaceExpressionAsset>(&face_path);
+
+    // Store pending load handles
+    commands.entity(root).insert(PendingActionLoad {
+        body_handle,
+        hair_handle: Some(hair_handle),
+        equip_handles,
+        face_handle: Some(face_handle),
+        action: ev.action.clone(),
+    });
 
     anim.action = ev.action.clone();
     anim.return_to_default = ev.return_to_default;
-    anim.frame_idx = 0;
-    anim.frame_count = action_frames.len();
-    if let Some(first) = action_frames.first() {
-        let secs = (first.delay_ms as f32 / 1000.0).max(MIN_TIMER_SECS);
-        anim.timer = Timer::from_seconds(secs, TimerMode::Repeating);
-    }
-    info!(
-        "[char action] loaded '{}' | {} frames | parts_per_frame: {:?}",
-        ev.action,
-        action_frames.len(),
-        action_frames
-            .first()
-            .map(|f| f.parts.keys().collect::<Vec<_>>()),
-    );
-
-    labels.action.clone_from(&ev.action);
 }
 
-fn load_face_expression_image_frames(
-    wz: &wz::WzData,
-    images: &mut Assets<Image>,
-    face_id: u32,
-    expression: &str,
-) -> Vec<FaceFrame> {
-    let Ok(face_expr) = wz.load_face_expression(face_id, expression) else {
-        return Vec::new();
-    };
-    let mut img_cache: HashMap<String, (Handle<Image>, u32, u32)> = HashMap::new();
-    face_expr
-        .frames
-        .iter()
-        .map(|f| {
-            let (handle, w, h) =
-                load_cached_part_image(wz, &f.part.image_path, &mut img_cache, images);
-            FaceFrame {
-                image: handle,
-                anchor: compute_anchor(f.part.origin, w as f32, h as f32),
-                delay_ms: f.delay,
+pub fn process_pending_action_load(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    zmap: Option<Res<ZMap>>,
+    body_assets: Res<Assets<WzCharBodyAsset>>,
+    hair_assets: Res<Assets<WzHairBodyAsset>>,
+    equip_assets: Res<Assets<WzEquipActionAsset>>,
+    face_assets: Res<Assets<WzFaceExpressionAsset>>,
+    mut query: Query<
+        (
+            Entity,
+            &mut PendingActionLoad,
+            &CharacterConfig,
+            &mut CharacterActionAnimation,
+            Option<&Children>,
+            &mut CharacterLabels,
+            &mut CharacterFaceAnimation,
+        ),
+        With<CharacterRoot>,
+    >,
+    body_query: Query<&Children, With<CharacterBody>>,
+    part_query: Query<&PartName>,
+) {
+    let Some(zmap) = zmap else { return };
+
+    for (
+        root,
+        pending,
+        config,
+        mut anim,
+        children,
+        mut labels,
+        mut face_anim,
+    ) in &mut query
+    {
+        // Check all assets ready
+        let body = match body_assets.get(&pending.body_handle) {
+            Some(b) => b,
+            None => continue,
+        };
+
+        let hair = match &pending.hair_handle {
+            Some(h) => match hair_assets.get(h) {
+                Some(h) => Some(h),
+                None => continue,
+            },
+            None => None,
+        };
+
+        let mut equips = Vec::new();
+        for handle in &pending.equip_handles {
+            match equip_assets.get(handle) {
+                Some(e) => equips.push(e),
+                None => continue, // not all ready yet
             }
-        })
-        .collect()
+        }
+        if equips.len() != pending.equip_handles.len() {
+            continue;
+        }
+
+        let face = match &pending.face_handle {
+            Some(f) => match face_assets.get(f) {
+                Some(f) => Some(f),
+                None => continue,
+            },
+            None => None,
+        };
+
+        // All assets are ready — combine
+        info!("All character action assets loaded for '{}', combining", pending.action);
+
+        // Apply zmap resolution
+        let mut body_frames = body.frames.clone();
+        let mut hair_frames = hair.map(|h| h.frames.clone()).unwrap_or_default();
+        resolve_z_frames(&mut body_frames, &zmap);
+        resolve_z_frames(&mut hair_frames, &zmap);
+
+        let equip_frames: Vec<Vec<wz::BodyFrame>> = equips
+            .iter()
+            .map(|e| {
+                let mut frames = e.frames.clone();
+                resolve_z_frames(&mut frames, &zmap);
+                frames
+            })
+            .collect();
+
+        let face_part = face.and_then(|f| {
+            f.frames.first().map(|ff| {
+                let mut part = ff.part.clone();
+                if let Some(slot) = &part.slot {
+                    part.z = zmap.depth(slot);
+                }
+                part
+            })
+        });
+
+        let action_frames = combine_action_frames(
+            &asset_server,
+            &body_frames,
+            &hair_frames,
+            &equip_frames,
+            face_part.as_ref(),
+        );
+
+        // Apply to entity
+        let default_children = Children::default();
+        let children_ref = children.unwrap_or(&default_children);
+        let (body_entity, body_children) = match children_ref
+            .iter()
+            .find_map(|child| body_query.get(child).ok().map(|c| (child, c)))
+        {
+            Some((entity, children)) => (Some(entity), children),
+            None => (None, &default_children),
+        };
+
+        let returned_face = transform_action_to_entities(
+            &mut commands,
+            &action_frames,
+            root,
+            body_entity,
+            body_children,
+            &part_query,
+        );
+
+        if face_anim.face_entity.is_none() {
+            face_anim.face_entity = returned_face;
+        }
+
+        anim.frame_idx = 0;
+        anim.frame_count = action_frames.len();
+        if let Some(first) = action_frames.first() {
+            let secs = (first.delay_ms as f32 / 1000.0).max(MIN_TIMER_SECS);
+            anim.timer = Timer::from_seconds(secs, TimerMode::Repeating);
+        }
+        info!(
+            "[char action] combined '{}' | {} frames",
+            pending.action,
+            action_frames.len(),
+        );
+
+        labels.action.clone_from(&pending.action);
+
+        // Remove pending
+        commands.entity(root).remove::<PendingActionLoad>();
+    }
 }
+
+// ── Face expression loading ──
 
 pub fn on_set_face_expression(
     trigger: On<SetFaceExpression>,
+    mut commands: Commands,
     mut query: Query<
         (&CharacterConfig, &mut CharacterFaceAnimation, Option<&Children>),
         With<CharacterRoot>,
     >,
-    mut part_query: Query<(
-        &PartName,
-        &mut Sprite,
-        &mut Visibility,
-        &mut Anchor,
-    )>,
-    wz: Res<WzDataRes>,
-    mut images: ResMut<Assets<Image>>,
+    asset_server: Res<AssetServer>,
 ) {
     let ev = trigger.event();
     let Ok((config, mut face_anim, _root_children)) = query.get_mut(ev.entity) else {
@@ -627,33 +603,75 @@ pub fn on_set_face_expression(
 
     face_anim.expression = ev.expression.clone();
     face_anim.frame_idx = 0;
-    face_anim.frames = load_face_expression_image_frames(
-        &wz,
-        &mut images,
-        config.face_id,
-        &ev.expression,
-    );
 
-    let first = face_anim.frames.first().cloned();
-    let face_entity = face_anim.face_entity;
-    if let Some(first) = first {
-        let delay_secs = (first.delay_ms as f32 / 1000.0).max(MIN_TIMER_SECS);
-        face_anim.timer = Timer::from_seconds(delay_secs, TimerMode::Repeating);
+    // Load face expression data via asset
+    let face_path = format!("wz://char-face/{}/{}.charface", config.face_id, ev.expression);
+    let face_handle = asset_server.load::<WzFaceExpressionAsset>(&face_path);
 
-        if let Some(fe) = face_entity {
-            match part_query.get_mut(fe) {
-                Ok((_pn, mut sprite, mut visibility, mut anchor)) => {
-                    sprite.image = first.image;
-                    *anchor = Anchor(first.anchor);
-                    *visibility = Visibility::Visible;
-                }
-                Err(e) => {
-                    warn!(
-                        "[on_set_face_expression] FAILED to get face entity {:?}: {:?}",
-                        fe, e
-                    );
+    commands.entity(ev.entity).insert(PendingFaceLoad(face_handle));
+}
+
+pub fn process_pending_face_load(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    face_assets: Res<Assets<WzFaceExpressionAsset>>,
+    mut query: Query<
+        (
+            Entity,
+            &mut CharacterFaceAnimation,
+            &PendingFaceLoad,
+        ),
+        With<CharacterRoot>,
+    >,
+    mut part_query: Query<(
+        &PartName,
+        &mut Sprite,
+        &mut Visibility,
+        &mut Anchor,
+    )>,
+) {
+    for (entity, mut face_anim, pending_face) in &mut query {
+        let Some(face_expr) = face_assets.get(&pending_face.0) else {
+            continue;
+        };
+
+        // Convert face expression frames to FaceFrame with image handles
+        let mut frames = Vec::new();
+        for f in &face_expr.frames {
+            let image = load_part_image(&asset_server, &f.part.image_path);
+            frames.push(FaceFrame {
+                image,
+                anchor: Vec2::new(-0.5, -0.5),
+                delay_ms: f.delay,
+            });
+        }
+        face_anim.frames = frames;
+        face_anim.frame_idx = 0;
+
+        // Apply first frame
+        if let Some(first) = face_anim.frames.first().cloned() {
+            let delay_secs = (first.delay_ms as f32 / 1000.0).max(MIN_TIMER_SECS);
+            face_anim.timer = Timer::from_seconds(delay_secs, TimerMode::Repeating);
+
+            if let Some(fe) = face_anim.face_entity {
+                match part_query.get_mut(fe) {
+                    Ok((_pn, mut sprite, mut visibility, mut anchor)) => {
+                        sprite.image = first.image;
+                        *anchor = Anchor(first.anchor);
+                        *visibility = Visibility::Visible;
+                    }
+                    Err(e) => {
+                        warn!(
+                            "[on_set_face_expression] FAILED to get face entity {:?}: {:?}",
+                            fe, e
+                        );
+                    }
                 }
             }
         }
+
+        // Remove the face handle
+        commands.entity(entity).remove::<PendingFaceLoad>();
+        info!("[char face] loaded '{}' with {} frames", face_anim.expression, face_anim.frames.len());
     }
 }

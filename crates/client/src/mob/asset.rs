@@ -244,7 +244,7 @@ async fn load_or_decode_image(
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        dynamic_image.into_bytes(),
+        dynamic_image.to_rgba8().into_raw(),
         TextureFormat::Rgba8Unorm,
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );

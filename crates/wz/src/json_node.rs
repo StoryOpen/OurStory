@@ -1,3 +1,4 @@
+use image::DynamicImage;
 use indexmap::IndexMap;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -11,18 +12,32 @@ use crate::NodePayload;
 #[derive(Clone, Debug)]
 pub struct JsonNode {
     pub name: String,
+    pub path: String,
     pub value: Option<Value>,
     pub children: IndexMap<String, JsonNode>,
 }
 
 impl JsonNode {
     pub fn from_payload(payload: &NodePayload) -> Self {
+        Self::from_payload_with_parent(payload, "")
+    }
+
+    fn from_payload_with_parent(payload: &NodePayload, parent_path: &str) -> Self {
+        let path = if parent_path.is_empty() {
+            payload.name.clone()
+        } else {
+            format!("{}/{}", parent_path, payload.name)
+        };
         let mut children = IndexMap::new();
         for child in &payload.children {
-            children.insert(child.name.clone(), JsonNode::from_payload(child));
+            children.insert(
+                child.name.clone(),
+                JsonNode::from_payload_with_parent(child, &path),
+            );
         }
         JsonNode {
             name: payload.name.clone(),
+            path,
             value: payload.value.clone(),
             children,
         }
@@ -93,12 +108,69 @@ impl JsonNode {
 
     pub fn has_image_data(&self) -> bool {
         // In WASM mode, image data is fetched separately via HTTP.
-        // We assume any node with a "PNG" value type has image data.
-        self.value.as_ref().map_or(false, |v| {
-            v.get("type").and_then(|t| t.as_str()) == Some("PNG")
-        })
+        self.value.as_ref().and_then(|v| v.get("type")).and_then(|t| t.as_str()) == Some("PNG")
+            || self.has("_inlink")
+            || self.has("_outlink")
+    }
+
+    pub fn path(&self) -> String {
+        self.path.clone()
+    }
+
+    pub fn read_origin(&self, _img_node: &JsonNode) -> Result<Vector2D, WzError> {
+        let origin = self.at_path("origin")?;
+        let x: f32 = origin.at_path("x")?.try_into().unwrap_or(0.0);
+        let y: f32 = origin.at_path("y")?.try_into().unwrap_or(0.0);
+        Ok(Vector2D(x, y))
+    }
+
+    pub fn extract_image(&self) -> Result<DynamicImage, WzError> {
+        Err(WzError::ValueError("extract_image not available from JsonNode".into()))
     }
 }
+
+// ═════════════════════════════════════════════════════════════
+//  WzNode trait implementation (shared interface with Node)
+// ═════════════════════════════════════════════════════════════
+
+use crate::node_trait::{WzNode, TryFromNode};
+
+impl WzNode for JsonNode {
+    fn at_path(&self, path: &str) -> Result<Self, WzError> { JsonNode::at_path(self, path) }
+    fn children(&self) -> IndexMap<String, Self> { JsonNode::children(self) }
+    fn try_get(&self, name: &str) -> Option<Self> { JsonNode::try_get(self, name) }
+    fn has(&self, name: &str) -> bool { JsonNode::has(self, name) }
+    fn name(&self) -> String { JsonNode::name(self) }
+    fn path(&self) -> String { JsonNode::path(self) }
+    fn read_pos(&self) -> Result<Vector2D, WzError> { JsonNode::read_pos(self) }
+    fn read_pos_n(&self, n: u8) -> Result<Vector2D, WzError> { JsonNode::read_pos_n(self, n) }
+    fn read_origin(&self, img_node: &Self) -> Result<Vector2D, WzError> { JsonNode::read_origin(self, img_node) }
+    fn ordered_children(&self) -> Result<Vec<(String, Self)>, WzError> { JsonNode::ordered_children(self) }
+    fn has_image_data(&self) -> bool { JsonNode::has_image_data(self) }
+    fn extract_image(&self) -> Result<DynamicImage, WzError> { JsonNode::extract_image(self) }
+}
+
+impl TryFromNode<JsonNode> for i32 {
+    fn try_from_node(node: JsonNode) -> Result<Self, WzError> { i32::try_from(node) }
+}
+impl TryFromNode<JsonNode> for f32 {
+    fn try_from_node(node: JsonNode) -> Result<Self, WzError> { f32::try_from(node) }
+}
+impl TryFromNode<JsonNode> for String {
+    fn try_from_node(node: JsonNode) -> Result<Self, WzError> { String::try_from(node) }
+}
+impl TryFromNode<JsonNode> for bool {
+    fn try_from_node(node: JsonNode) -> Result<Self, WzError> { bool::try_from(node) }
+}
+impl TryFromNode<JsonNode> for wz_reader::property::Vector2D {
+    fn try_from_node(node: JsonNode) -> Result<Self, WzError> {
+        let x: i32 = node.get_opt("x").unwrap_or(0);
+        let y: i32 = node.get_opt("y").unwrap_or(0);
+        Ok(wz_reader::property::Vector2D(x, y))
+    }
+}
+
+
 
 impl TryFrom<JsonNode> for i32 {
     type Error = WzError;

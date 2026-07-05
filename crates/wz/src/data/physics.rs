@@ -1,5 +1,5 @@
 use crate::error::WzError;
-use crate::node::Node;
+use crate::node_trait::{WzNode, TryFromNode};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PhysicsConstants {
@@ -25,7 +25,9 @@ pub struct PhysicsConstants {
 }
 
 impl PhysicsConstants {
-    pub(crate) fn load(base: &Node) -> Result<Self, WzError> {
+    pub(crate) fn load<N: WzNode>(base: &N) -> Result<Self, WzError>
+    where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+{
         let physics_node = base.at_path("Map/Physics.img")?;
 
         Ok(PhysicsConstants {

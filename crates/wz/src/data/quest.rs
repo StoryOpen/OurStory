@@ -1,7 +1,7 @@
 use log::warn;
 use std::collections::HashMap;
 use crate::error::WzError;
-use crate::node::Node;
+use crate::node_trait::{WzNode, TryFromNode};
 
 #[derive(Debug, Clone)]
 pub struct QuestRegistry {
@@ -67,7 +67,8 @@ pub struct SkillGrant {
 }
 
 impl QuestRegistry {
-    pub(crate) fn load(base: &Node) -> Result<Self, WzError> {
+    pub(crate) fn load<N: WzNode>(base: &N) -> Result<Self, WzError>
+    where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N> {
         let mut quests = HashMap::new();
 
         let info_node = match base.at_path("Quest/QuestInfo.img") {
@@ -131,11 +132,11 @@ impl QuestRegistry {
 
             let start_script = check_node.as_ref()
                 .and_then(|n| n.at_path(&format!("{quest_id}/0/startscript")).ok())
-                .and_then(|n| n.try_into().ok());
+                .and_then(|n| n.into_val().ok());
 
             let end_script = check_node.as_ref()
                 .and_then(|n| n.at_path(&format!("{quest_id}/1/endscript")).ok())
-                .and_then(|n| n.try_into().ok());
+                .and_then(|n| n.into_val().ok());
 
             quests.insert(quest_id, QuestDef {
                 id: quest_id,
@@ -156,7 +157,8 @@ impl QuestRegistry {
     }
 }
 
-fn parse_check_conditions(node: &Node) -> CheckConditions {
+fn parse_check_conditions<N: WzNode>(node: &N) -> CheckConditions
+    where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N> {
     let mut conds = CheckConditions::default();
 
     conds.npc_id = node.get_opt::<i32>("npc").map(|v| v as u32);
@@ -173,7 +175,7 @@ fn parse_check_conditions(node: &Node) -> CheckConditions {
     if let Ok(job_node) = node.at_path("job") {
         let jobs: Vec<u32> = job_node.children().into_iter()
             .filter_map(|(_, child)| {
-                let v: Result<i32, _> = child.try_into();
+                let v: Result<i32, _> = child.into_val();
                 v.ok().map(|v| v as u32)
             })
             .collect();
@@ -243,7 +245,8 @@ fn parse_check_conditions(node: &Node) -> CheckConditions {
     conds
 }
 
-fn parse_quest_actions(node: &Node) -> QuestActions {
+fn parse_quest_actions<N: WzNode>(node: &N) -> QuestActions
+    where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N> {
     let mut actions = QuestActions::default();
 
     actions.exp = node.get_opt::<i32>("exp").unwrap_or_else(|| {
@@ -284,7 +287,7 @@ fn parse_quest_actions(node: &Node) -> QuestActions {
             let job_whitelist = child.at_path("job").ok()
                 .map(|jn| jn.children().into_iter()
                     .filter_map(|(_, c)| {
-                        let v: Result<i32, _> = c.try_into();
+                        let v: Result<i32, _> = c.into_val();
                         v.ok().map(|v| v as u32)
                     })
                     .collect())

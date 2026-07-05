@@ -1,14 +1,14 @@
 use log::warn;
 use std::collections::HashMap;
 use crate::error::WzError;
-use crate::node::Node;
+use crate::node_trait::{WzNode, TryFromNode};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SkillDatabase {
     pub skills: HashMap<u32, SkillEntry>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SkillEntry {
     pub id: u32,
     pub skill_type: SkillType,
@@ -29,7 +29,7 @@ pub struct SkillEntry {
     pub skill_type_raw: Option<i32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum SkillType {
     Passive,
     Active,
@@ -49,7 +49,7 @@ impl SkillType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SkillLevelData {
     pub damage: Option<i32>,
     pub mp_con: Option<i32>,
@@ -70,7 +70,9 @@ pub struct SkillLevelData {
 }
 
 impl SkillDatabase {
-    pub(crate) fn load(base: &Node) -> Result<Self, WzError> {
+    pub(crate) fn load<N: WzNode>(base: &N) -> Result<Self, WzError>
+    where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+{
         let mut skills = HashMap::new();
 
         let skill_root = match base.at_path("Skill") {
@@ -88,7 +90,7 @@ impl SkillDatabase {
                 let Ok(skill_id) = skill_id_str.to_string().parse::<u32>() else { continue; };
                 let Ok(skill_node) = skill_dir.at_path(&skill_id.to_string()) else { continue; };
 
-                let skill_type_raw: Option<i32> = skill_node.at_path("skillType").ok().and_then(|n| n.try_into().ok());
+                let skill_type_raw: Option<i32> = skill_node.at_path("skillType").ok().and_then(|n| n.into_val().ok());
                 let skill_type = skill_type_raw.map(SkillType::from_raw).unwrap_or_else(|| {
                     warn!("Skill {skill_id}: skillType missing/invalid, using Active");
                     SkillType::Active
@@ -96,7 +98,7 @@ impl SkillDatabase {
 
                 let name: String = base
                     .at_path(&format!("String/Skill.img/{skill_id}/name"))
-                    .ok().and_then(|n| n.try_into().ok())
+                    .ok().and_then(|n| n.into_val().ok())
                     .unwrap_or_else(|| {
                         warn!("Skill {skill_id}: name not found, using default");
                         String::new()
@@ -104,7 +106,7 @@ impl SkillDatabase {
 
                 let desc: String = base
                     .at_path(&format!("String/Skill.img/{skill_id}/desc"))
-                    .ok().and_then(|n| n.try_into().ok())
+                    .ok().and_then(|n| n.into_val().ok())
                     .unwrap_or_else(|| {
                         warn!("Skill {skill_id}: desc not found, using default");
                         String::new()
@@ -123,8 +125,8 @@ impl SkillDatabase {
                     String::new()
                 });
 
-                let action: Option<String> = skill_node.at_path("action/0").ok().and_then(|n| n.try_into().ok());
-                let prepare_action: Option<String> = skill_node.at_path("prepare/action").ok().and_then(|n| n.try_into().ok());
+                let action: Option<String> = skill_node.at_path("action/0").ok().and_then(|n| n.into_val().ok());
+                let prepare_action: Option<String> = skill_node.at_path("prepare/action").ok().and_then(|n| n.into_val().ok());
 
                 let effect_paths = collect_frame_paths(&skill_node, "effect");
                 let hit_paths = collect_frame_paths(&skill_node, "hit");
@@ -135,7 +137,7 @@ impl SkillDatabase {
 
                 let master_level: u32 = skill_node
                     .at_path("masterLevel").ok()
-                    .and_then(|n| -> Option<i32> { n.try_into().ok() })
+                    .and_then(|n| -> Option<i32> { n.into_val().ok() })
                     .map(|v| v as u32)
                     .unwrap_or_else(|| {
                         warn!("Skill {skill_id}: masterLevel missing, using 0");
@@ -144,7 +146,7 @@ impl SkillDatabase {
 
                 let invisible: bool = skill_node
                     .at_path("invisible").ok()
-                    .and_then(|n| n.try_into().ok())
+                    .and_then(|n| n.into_val().ok())
                     .unwrap_or_else(|| {
                         warn!("Skill {skill_id}: invisible flag missing, using false");
                         false
@@ -176,12 +178,14 @@ impl SkillDatabase {
     }
 }
 
-fn collect_frame_paths(skill_node: &Node, sub_path: &str) -> Vec<String> {
+fn collect_frame_paths<N: WzNode>(skill_node: &N, sub_path: &str) -> Vec<String> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let Ok(eff_node) = skill_node.at_path(sub_path) else { return Vec::new() };
     collect_paths_recursive(&eff_node)
 }
 
-fn collect_paths_recursive(node: &Node) -> Vec<String> {
+fn collect_paths_recursive<N: WzNode>(node: &N) -> Vec<String> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let children = node.children();
     let mut keys: Vec<u32> = children.keys()
         .filter_map(|k| k.to_string().parse::<u32>().ok())
@@ -200,40 +204,42 @@ fn collect_paths_recursive(node: &Node) -> Vec<String> {
     paths
 }
 
-fn load_skill_levels(skill_node: &Node) -> HashMap<u32, SkillLevelData> {
+fn load_skill_levels<N: WzNode>(skill_node: &N) -> HashMap<u32, SkillLevelData> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let Ok(level_node) = skill_node.at_path("level") else { return HashMap::new() };
     let mut levels = HashMap::new();
     for (key, _) in level_node.children() {
         let Ok(lvl) = key.to_string().parse::<u32>() else { continue; };
         let Ok(lvl_node) = level_node.at_path(&lvl.to_string()) else { continue; };
         levels.insert(lvl, SkillLevelData {
-            damage: lvl_node.at_path("damage").ok().and_then(|n| n.try_into().ok()),
-            mp_con: lvl_node.at_path("mpCon").ok().and_then(|n| n.try_into().ok()),
-            hp_con: lvl_node.at_path("hpCon").ok().and_then(|n| n.try_into().ok()),
-            x: lvl_node.at_path("x").ok().and_then(|n| n.try_into().ok()),
-            y: lvl_node.at_path("y").ok().and_then(|n| n.try_into().ok()),
-            time: lvl_node.at_path("time").ok().and_then(|n| n.try_into().ok()),
-            prop: lvl_node.at_path("prop").ok().and_then(|n| n.try_into().ok()),
-            pad: lvl_node.at_path("pad").ok().and_then(|n| n.try_into().ok()),
-            mad: lvl_node.at_path("mad").ok().and_then(|n| n.try_into().ok()),
-            pdd: lvl_node.at_path("pdd").ok().and_then(|n| n.try_into().ok()),
-            mdd: lvl_node.at_path("mdd").ok().and_then(|n| n.try_into().ok()),
-            acc: lvl_node.at_path("acc").ok().and_then(|n| n.try_into().ok()),
-            eva: lvl_node.at_path("eva").ok().and_then(|n| n.try_into().ok()),
-            speed: lvl_node.at_path("speed").ok().and_then(|n| n.try_into().ok()),
-            jump: lvl_node.at_path("jump").ok().and_then(|n| n.try_into().ok()),
-            hs: lvl_node.at_path("hs").ok().and_then(|n| n.try_into().ok()),
+            damage: lvl_node.at_path("damage").ok().and_then(|n| n.into_val().ok()),
+            mp_con: lvl_node.at_path("mpCon").ok().and_then(|n| n.into_val().ok()),
+            hp_con: lvl_node.at_path("hpCon").ok().and_then(|n| n.into_val().ok()),
+            x: lvl_node.at_path("x").ok().and_then(|n| n.into_val().ok()),
+            y: lvl_node.at_path("y").ok().and_then(|n| n.into_val().ok()),
+            time: lvl_node.at_path("time").ok().and_then(|n| n.into_val().ok()),
+            prop: lvl_node.at_path("prop").ok().and_then(|n| n.into_val().ok()),
+            pad: lvl_node.at_path("pad").ok().and_then(|n| n.into_val().ok()),
+            mad: lvl_node.at_path("mad").ok().and_then(|n| n.into_val().ok()),
+            pdd: lvl_node.at_path("pdd").ok().and_then(|n| n.into_val().ok()),
+            mdd: lvl_node.at_path("mdd").ok().and_then(|n| n.into_val().ok()),
+            acc: lvl_node.at_path("acc").ok().and_then(|n| n.into_val().ok()),
+            eva: lvl_node.at_path("eva").ok().and_then(|n| n.into_val().ok()),
+            speed: lvl_node.at_path("speed").ok().and_then(|n| n.into_val().ok()),
+            jump: lvl_node.at_path("jump").ok().and_then(|n| n.into_val().ok()),
+            hs: lvl_node.at_path("hs").ok().and_then(|n| n.into_val().ok()),
         });
     }
     levels
 }
 
-fn load_reqs(skill_node: &Node) -> HashMap<u32, u32> {
+fn load_reqs<N: WzNode>(skill_node: &N) -> HashMap<u32, u32> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
     let Ok(req_node) = skill_node.at_path("req") else { return HashMap::new() };
     let mut reqs = HashMap::new();
     for (key, _) in req_node.children() {
         let Ok(skill_id) = key.to_string().parse::<u32>() else { continue; };
-        let level: Result<i32, _> = req_node.at_path(&skill_id.to_string()).and_then(|n| n.try_into());
+        let level: Result<i32, _> = req_node.at_path(&skill_id.to_string()).and_then(|n| n.into_val());
         if let Ok(lvl) = level {
             reqs.insert(skill_id, lvl as u32);
         }

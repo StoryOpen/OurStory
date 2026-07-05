@@ -1,7 +1,5 @@
 use image::DynamicImage;
 use indexmap::IndexMap;
-use std::collections::HashMap;
-use std::hash::Hash;
 
 use crate::error::WzError;
 use crate::vector2d::Vector2D;
@@ -22,6 +20,11 @@ pub trait WzNode: Clone + Sized {
     fn has_image_data(&self) -> bool;
     fn extract_image(&self) -> Result<DynamicImage, WzError>;
 
+    /// Convert this node to a typed value, like `.try_into()` but using TryFromNode.
+    fn into_val<T: TryFromNode<Self>>(self) -> Result<T, WzError> {
+        T::try_from_node(self)
+    }
+
     fn get_opt<T: TryFromNode<Self>>(&self, path: &str) -> Option<T> {
         self.at_path(path).ok().and_then(|n| T::try_from_node(n).ok())
     }
@@ -41,41 +44,26 @@ pub trait WzNode: Clone + Sized {
 /// Trait for converting a WZ node to a scalar value.
 pub trait TryFromNode<N: WzNode>: Sized {
     fn try_from_node(node: N) -> Result<Self, WzError>;
-    fn try_into_node(self) -> Result<Self, WzError> where Self: Sized {
-        Ok(self)
-    }
 }
 
-// Blanket impl for Vec<T>
-impl<N: WzNode, T: TryFromNode<N>> TryFromNode<N> for Vec<T> {
-    fn try_from_node(value: N) -> Result<Self, WzError> {
-        Ok(value
-            .children()
-            .into_iter()
-            .filter(|(key, _)| key.parse::<u32>().is_ok())
-            .filter_map(|(_, node)| T::try_from_node(node).ok())
-            .collect())
-    }
+/// Marker trait for `WzNode` types that support scalar conversions.
+/// Implemented automatically for any `N: WzNode` where the four basic
+/// scalar conversions exist.  Data loaders bound on this instead of
+/// repeating `where i32: TryFromNode<N>, ...` everywhere.
+pub trait WzNodeConversions: WzNode
+where
+    i32: TryFromNode<Self>,
+    f32: TryFromNode<Self>,
+    String: TryFromNode<Self>,
+    bool: TryFromNode<Self>,
+{
 }
 
-// Blanket impl for HashMap
-impl<N: WzNode, T: TryFromNode<N>, K: TryFrom<String> + Hash + Eq> TryFromNode<N> for HashMap<K, T> {
-    fn try_from_node(value: N) -> Result<Self, WzError> {
-        Ok(value
-            .children()
-            .into_iter()
-            .filter_map(|(key, node)| Some((K::try_from(key).ok()?, T::try_from_node(node).ok()?)))
-            .collect())
-    }
-}
-
-// Blanket impl for IndexMap
-impl<N: WzNode, T: TryFromNode<N>, K: TryFrom<String> + Hash + Eq> TryFromNode<N> for IndexMap<K, T> {
-    fn try_from_node(value: N) -> Result<Self, WzError> {
-        Ok(value
-            .children()
-            .into_iter()
-            .filter_map(|(key, node)| Some((K::try_from(key).ok()?, T::try_from_node(node).ok()?)))
-            .collect())
-    }
+impl<N: WzNode> WzNodeConversions for N
+where
+    i32: TryFromNode<N>,
+    f32: TryFromNode<N>,
+    String: TryFromNode<N>,
+    bool: TryFromNode<N>,
+{
 }

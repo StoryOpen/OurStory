@@ -1,7 +1,7 @@
 use log::warn;
 use std::collections::{BTreeMap, HashMap};
 use crate::error::WzError;
-use crate::node::Node;
+use crate::node_trait::{WzNode, TryFromNode};
 use crate::vector2d::Vector2D;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -53,14 +53,16 @@ pub struct MobPart {
 }
 
 impl MobData {
-    pub(crate) fn load(base: &Node, id: i32) -> Result<Self, WzError> {
+    pub(crate) fn load<N: WzNode>(base: &N, id: i32) -> Result<Self, WzError>
+    where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+{
         let wz_path = format!("Mob/{:07}.img", id);
         let mob_node = base.at_path(&wz_path)?;
 
         let info = Self::load_info(base, id, &mob_node)?;
         let name = base.at_path(&format!("String/Mob.img/{id}/name"))
             .ok()
-            .and_then(|n| -> Option<String> { n.try_into().ok() })
+            .and_then(|n| -> Option<String> { n.into_val().ok() })
             .unwrap_or_else(|| {
                 warn!("Mob {id}: name not found, using default");
                 String::new()
@@ -127,11 +129,14 @@ impl MobData {
         Ok(MobData { id, name, info, actions })
     }
 
-    fn load_info(_base: &Node, mob_id: i32, mob_node: &Node) -> Result<MobInfo, WzError> {
+    fn load_info<N: WzNode>(_base: &N, mob_id: i32, mob_node: &N) -> Result<MobInfo, WzError> where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>
+    {
         let info = mob_node.at_path("info")?;
 
-        fn read_int(node: &Node, path: &str, mob_id: i32) -> i32 {
-            node.at_path(path).ok().and_then(|n| -> Option<i32> { n.try_into().ok() }).unwrap_or_else(|| {
+        fn read_int<N2: WzNode>(node: &N2, path: &str, mob_id: i32) -> i32
+        where i32: TryFromNode<N2>, String: TryFromNode<N2>, f32: TryFromNode<N2>, bool: TryFromNode<N2>
+        {
+            node.at_path(path).ok().and_then(|n| -> Option<i32> { n.into_val().ok() }).unwrap_or_else(|| {
                 warn!("Mob {mob_id}: stat '{}' missing/type-mismatch, using 0", path);
                 0
             })

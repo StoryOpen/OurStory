@@ -59,17 +59,56 @@ Custom types must derive `Reflect` and be registered with `app.register_type::<T
 > `Connection refused` — wait for the client's frame loop to start before
 > querying BRP.
 
-## In-Game Inspector (`bevy-inspector-egui`)
+## Deployment — Dev & Prod Coexistence
 
-In addition to BRP, the client includes an in-process egui-based entity
-inspector via `bevy-inspector-egui` (using the
-[`taboky-dev` fork](https://github.com/taboky-dev/bevy-inspector-egui) for
-Bevy 0.19 compat).
+Two environments run side-by-side on the same OCI VM:
 
-Components must derive `Reflect` (same as BRP) to appear in the inspector.
-No `register_type` call is needed for the inspector to discover them (Bevy's
-`reflect_auto_register` handles that), but calling `register_type` is still
-required for BRP visibility.
+| | Prod | Dev |
+|---|---|---|
+| **wz-server port** | `127.0.0.1:3000` | `127.0.0.1:3001` |
+| **wz-server binary** | `/home/ubuntu/.cargo/bin/wz-server` | `/home/ubuntu/.cargo/bin/wz-server-dev` |
+| **wz-server systemd** | `wz-server.service` | `wz-server-dev.service` |
+| **wasm client dir** | `/home/ubuntu/www/` | `/home/ubuntu/www-dev/` |
+| **nginx path** | `/` (root) | `/dev/` |
+| **API path** | `/wz/...` | `/dev-wz/...` |
 
-No connection is needed — the inspector renders inside the game window
-itself, so there is no startup-latency issue as with BRP.
+### Dev deployment script
+
+`scripts/deploy-dev.sh` builds and deploys both artifacts to the dev slots on the VM.
+
+Always use these exact values — no need to ask or confirm:
+```bash
+export OCI_VM_HOST="213.35.123.95"
+export OCI_VM_SSH_KEY="$HOME/.ssh/oci_free_key"
+./scripts/deploy-dev.sh
+```
+
+The script:
+1. Cross-compiles `wz-server` for `aarch64-unknown-linux-musl` using `rust-lld` — **no external C cross-compiler needed**
+2. Builds the wasm client for `wasm32-unknown-unknown` + runs `wasm-bindgen`
+3. Injects `<base href="/dev/">` into the wasm client's `index.html`
+4. SCPs the binary and wasm tarball to the VM
+5. On the VM: installs the binary, restarts `wz-server-dev.service`, extracts wasm files to `/home/ubuntu/www-dev/`, and updates/reloads nginx
+
+The one-time setup (systemd unit, nginx locations) is handled automatically and idempotently.
+
+### Prerequisites
+
+- `wasm-bindgen-cli` (`cargo install wasm-bindgen-cli`)
+- SSH access to the OCI VM
+- The `aarch64-unknown-linux-musl` target is auto-installed by the script
+- No external C cross-compiler is required — `rust-lld` handles the link step
+
+### Cross-compilation strategy
+
+`wz-server` uses `aarch64-unknown-linux-musl` instead of `aarch64-unknown-linux-gnu` because:
+- **No external linker needed** — `rust-lld` (ships with rustup) can link musl targets
+- **Statically linked** — the binary bundles its own libc, zero runtime dependencies on the VM
+- The binary is ~1.8 MB, same as the glibc version
+
+### Release deployment
+
+Push a `v*` tag to trigger the GitHub Actions workflows (`.github/workflows/deploy-server.yml` and `deploy-wasm-client.yml`), which deploy to the **prod** slots.
+
+---
+

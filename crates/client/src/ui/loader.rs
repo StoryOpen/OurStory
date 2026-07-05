@@ -1,49 +1,84 @@
 use bevy::prelude::*;
 
-pub use crate::wz::WzImageCache;
+use crate::wz::asset_loaders::WzUiSpriteAsset;
 
-pub struct UiSprite {
-    pub handle: Handle<Image>,
-    pub origin: Vec2,
+/// Handles for a single UI sprite asset (image + origin).
+/// Created by kicking off an asset load; use `is_ready()` to check
+/// when the asset has resolved, then read `.image` and `.origin`.
+pub struct UiSpriteHandle(pub Handle<WzUiSpriteAsset>);
+
+impl UiSpriteHandle {
+    pub fn load(path: &str, asset_server: &AssetServer) -> Self {
+        Self(asset_server.load::<WzUiSpriteAsset>(format!("wz://{path}.wzuisprite")))
+    }
+
+    pub fn is_ready(&self, assets: &Assets<WzUiSpriteAsset>) -> bool {
+        assets.contains(&self.0)
+    }
+
+    pub fn image(&self, assets: &Assets<WzUiSpriteAsset>) -> Handle<Image> {
+        assets
+            .get(&self.0)
+            .map(|a| a.image.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn origin(&self, assets: &Assets<WzUiSpriteAsset>) -> Vec2 {
+        assets
+            .get(&self.0)
+            .map(|a| a.origin)
+            .unwrap_or(Vec2::ZERO)
+    }
 }
 
-pub fn load_ui_sprite(
-    path: &str,
-    cache: &mut WzImageCache,
-    images: &mut Assets<Image>,
-) -> Option<UiSprite> {
-    let wz = wz::WzData::global();
-    let origin = match wz.load_origin(path) {
-        Ok(v) => Vec2::new(v.0, v.1),
-        Err(e) => {
-            warn!("load_ui_sprite: origin not found for '{}': {e}, using ZERO", path);
-            Vec2::ZERO
+/// Handles for a UI button's four sprites (normal, hover, pressed, disabled).
+pub struct ButtonSpriteHandles {
+    pub normal: UiSpriteHandle,
+    pub hover: UiSpriteHandle,
+    pub pressed: UiSpriteHandle,
+    pub disabled: UiSpriteHandle,
+}
+
+impl ButtonSpriteHandles {
+    pub fn load(button_path: &str, asset_server: &AssetServer) -> Self {
+        Self {
+            normal: UiSpriteHandle::load(
+                &format!("{button_path}/normal/0"),
+                asset_server,
+            ),
+            hover: UiSpriteHandle::load(
+                &format!("{button_path}/mouseOver/0"),
+                asset_server,
+            ),
+            pressed: UiSpriteHandle::load(
+                &format!("{button_path}/pressed/0"),
+                asset_server,
+            ),
+            disabled: UiSpriteHandle::load(
+                &format!("{button_path}/disabled/0"),
+                asset_server,
+            ),
         }
-    };
-    let handle = cache.get_or_load(path, images);
-    Some(UiSprite { handle, origin })
-}
+    }
 
-pub struct UiButtonSprites {
-    pub normal: Handle<Image>,
-    pub hover: Handle<Image>,
-    pub pressed: Handle<Image>,
-    pub disabled: Handle<Image>,
-}
+    pub fn is_ready(&self, assets: &Assets<WzUiSpriteAsset>) -> bool {
+        self.normal.is_ready(assets)
+            && self.hover.is_ready(assets)
+            && self.pressed.is_ready(assets)
+            && self.disabled.is_ready(assets)
+    }
 
-pub fn load_ui_button(
-    button_path: &str,
-    cache: &mut WzImageCache,
-    images: &mut Assets<Image>,
-) -> Option<UiButtonSprites> {
-    let normal = load_ui_sprite(&format!("{button_path}/normal/0"), cache, images)?;
-    let hover = load_ui_sprite(&format!("{button_path}/mouseOver/0"), cache, images)?;
-    let pressed = load_ui_sprite(&format!("{button_path}/pressed/0"), cache, images)?;
-    let disabled = load_ui_sprite(&format!("{button_path}/disabled/0"), cache, images)?;
-    Some(UiButtonSprites {
-        normal: normal.handle,
-        hover: hover.handle,
-        pressed: pressed.handle,
-        disabled: disabled.handle,
-    })
+    pub fn to_button(
+        &self,
+        assets: &Assets<WzUiSpriteAsset>,
+        name: &str,
+    ) -> crate::ui::components::UiButton {
+        crate::ui::components::UiButton {
+            name: name.into(),
+            normal: self.normal.image(assets),
+            hover: self.hover.image(assets),
+            pressed: self.pressed.image(assets),
+            disabled: self.disabled.image(assets),
+        }
+    }
 }

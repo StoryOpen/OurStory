@@ -1,16 +1,14 @@
 pub mod components;
 pub mod loader;
+pub mod loading;
 pub mod screens;
 pub mod windows;
 
 use bevy::prelude::*;
 
-use components::{UiButton, UiLoginCheckbox, UiLoginScreen};
-use loader::WzImageCache;
-use screens::{login, logo};
-use windows::{hud, stat};
 use crate::GameSet;
-
+use components::{UiButton, UiLoginCheckbox, UiLoginScreen};
+use loading::LoadingState;
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum UiState {
     #[default]
@@ -28,7 +26,7 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<UiState>()
-            .init_resource::<WzImageCache>()
+            .insert_resource(LoadingState::default())
             .add_systems(OnEnter(UiState::Logo), enter_logo)
             .add_systems(OnExit(UiState::Logo), exit_logo)
             .add_systems(OnEnter(UiState::Login), enter_login)
@@ -42,40 +40,41 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (
-                    logo::update_logo_animation,
-                    logo::handle_logo_click,
-                    update_button_sprites,
-                    handle_login_button_click,
+                    screens::logo::on_logo_loaded,
+                    screens::logo::update_logo_animation,
+                    screens::logo::handle_logo_click,
+                )
+                    .run_if(in_state(UiState::Logo))
+                    .in_set(GameSet::Ui),
+            )
+            .add_systems(
+                Update,
+                (update_button_sprites, handle_login_button_click).in_set(GameSet::Ui),
+            )
+            .add_systems(
+                Update,
+                (
                     handle_checkbox_toggle,
+                    screens::login::check_login_ready,
+                    windows::hud::check_hud_ready,
+                    windows::stat::check_stat_ready,
                 )
                     .in_set(GameSet::Ui),
             );
     }
 }
 
-fn enter_logo(
-    mut commands: Commands,
-    mut cache: ResMut<WzImageCache>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    logo::preload_logo_frames(&mut commands, &mut cache, &mut images);
-    logo::spawn_logo_screen(&mut commands);
+fn enter_logo(commands: Commands, asset_server: Res<AssetServer>) {
+    screens::logo::start_logo_load(commands, asset_server);
 }
 
-fn exit_logo(
-    commands: Commands,
-    query: Query<Entity, With<logo::UiLogoScreen>>,
-    animation: Option<ResMut<logo::LogoAnimation>>,
-) {
-    logo::despawn_logo_screen(commands, query, animation);
+fn exit_logo(mut commands: Commands, query: Query<Entity, With<screens::logo::UiLogoScreen>>) {
+    commands.remove_resource::<screens::logo::PendingLogoLoad>();
+    screens::logo::despawn_logo_screen(commands, query);
 }
 
-fn enter_login(
-    mut commands: Commands,
-    mut cache: ResMut<WzImageCache>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    login::spawn_login_screen(&mut commands, &mut cache, &mut images);
+fn enter_login(mut commands: Commands, asset_server: Res<AssetServer>) {
+    screens::login::start_login_load(&mut commands, &asset_server);
 }
 
 fn exit_login(mut commands: Commands, query: Query<Entity, With<UiLoginScreen>>) {
@@ -84,13 +83,9 @@ fn exit_login(mut commands: Commands, query: Query<Entity, With<UiLoginScreen>>)
     }
 }
 
-fn enter_ingame(
-    mut commands: Commands,
-    mut cache: ResMut<WzImageCache>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    hud::spawn_hud(&mut commands, &mut cache, &mut images);
-    stat::spawn_stat_window(&mut commands, &mut cache, &mut images);
+fn enter_ingame(mut commands: Commands, asset_server: Res<AssetServer>) {
+    windows::hud::start_hud_load(&mut commands, &asset_server);
+    windows::stat::start_stat_load(&mut commands, &asset_server);
 }
 
 fn exit_ingame(
@@ -169,7 +164,7 @@ fn handle_login_button_click(
 fn handle_checkbox_toggle(
     interaction_query: Query<(&Interaction, &UiButton)>,
     mut checkbox_query: Query<(&mut UiLoginCheckbox, &mut ImageNode)>,
-    cache: Res<WzImageCache>,
+    asset_server: Res<AssetServer>,
 ) {
     for (interaction, button) in &interaction_query {
         if *interaction == Interaction::Pressed && button.name == "BtEmailSave" {
@@ -180,9 +175,7 @@ fn handle_checkbox_toggle(
                 } else {
                     "UI/Login.img/Title/check/0"
                 };
-                if let Some(handle) = cache.get(path) {
-                    image_node.image = handle;
-                }
+                image_node.image = asset_server.load::<Image>(format!("wz://{path}.wzimg"));
                 info!("Email save checkbox toggled: {}", checkbox.0);
             }
         }

@@ -562,3 +562,44 @@ impl Node {
         }
     }
 }
+
+// ═════════════════════════════════════════════════════════════
+//  WzNode trait implementation (shared interface with JsonNode)
+// ═════════════════════════════════════════════════════════════
+
+use crate::node_trait::{WzNode, TryFromNode};
+
+impl WzNode for Node {
+    fn at_path(&self, path: &str) -> Result<Self, WzError> { Node::at_path(self, path) }
+    fn children(&self) -> IndexMap<String, Self> {
+        Node::children(self).into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+    }
+    fn try_get(&self, name: &str) -> Option<Self> { Node::try_get(self, name) }
+    fn has(&self, name: &str) -> bool { Node::has(self, name) }
+    fn name(&self) -> String { Node::name(self) }
+    fn path(&self) -> String { Node::path(self) }
+    fn read_pos(&self) -> Result<Vector2D, WzError> { Node::read_pos(self) }
+    fn read_pos_n(&self, n: u8) -> Result<Vector2D, WzError> { Node::read_pos_n(self, n) }
+    fn read_origin(&self, img_node: &Self) -> Result<Vector2D, WzError> { Node::read_origin(self, img_node) }
+    fn ordered_children(&self) -> Result<Vec<(String, Self)>, WzError> { Node::ordered_children(self) }
+    fn has_image_data(&self) -> bool { Node::has_image_data(self) }
+    fn extract_image(&self) -> Result<DynamicImage, WzError> { Node::extract_image(self) }
+}
+
+impl TryFromNode<Node> for i32 {
+    fn try_from_node(node: Node) -> Result<Self, WzError> { i32::try_from(node) }
+}
+impl TryFromNode<Node> for f32 {
+    fn try_from_node(node: Node) -> Result<Self, WzError> { f32::try_from(node) }
+}
+impl TryFromNode<Node> for String {
+    fn try_from_node(node: Node) -> Result<Self, WzError> { String::try_from(node) }
+}
+impl TryFromNode<Node> for bool {
+    fn try_from_node(node: Node) -> Result<Self, WzError> { bool::try_from(node) }
+}
+impl TryFromNode<Node> for wz_reader::property::Vector2D {
+    fn try_from_node(node: Node) -> Result<Self, WzError> { wz_reader::property::Vector2D::try_from(node) }
+}
+
+

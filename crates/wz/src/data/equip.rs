@@ -1,6 +1,6 @@
 use log::warn;
 use crate::error::WzError;
-use crate::node::Node;
+use crate::node_trait::{WzNode, TryFromNode};
 use crate::data::character::{BodyFrame, load_body_part};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -10,7 +10,7 @@ pub struct EquipData {
     pub info: EquipInfo,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EquipAction {
     pub frames: Vec<BodyFrame>,
 }
@@ -104,8 +104,9 @@ pub struct EquipInfo {
 }
 
 impl EquipData {
-    pub(crate) fn load(item_id: i32) -> Result<Self, WzError> {
-        let base = crate::get_cached_base();
+    pub(crate) fn load<N: WzNode>(base: &N, item_id: i32) -> Result<Self, WzError>
+    where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>, wz_reader::property::Vector2D: TryFromNode<N>
+    {
         let slot = categorize_item(item_id);
         let dir = slot.dir_name();
         let wz_path = format!("Character/{dir}/{item_id:08}.img");
@@ -116,8 +117,9 @@ impl EquipData {
 }
 
 impl EquipAction {
-    pub fn load(item_id: i32, action: &str) -> Result<Self, WzError> {
-        let base = crate::get_cached_base();
+    pub fn load<N: WzNode>(base: &N, item_id: i32, action: &str) -> Result<Self, WzError>
+    where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>, wz_reader::property::Vector2D: TryFromNode<N>
+    {
         let slot = categorize_item(item_id);
         let dir = slot.dir_name();
         let action_path = format!("Character/{dir}/{item_id:08}.img/{action}");
@@ -176,7 +178,9 @@ fn categorize_item(item_id: i32) -> EquipSlot {
     }
 }
 
-fn load_equip_info(item_node: &Node) -> EquipInfo {
+fn load_equip_info<N: WzNode>(item_node: &N) -> EquipInfo
+where i32: TryFromNode<N>, f32: TryFromNode<N>, String: TryFromNode<N>, bool: TryFromNode<N>, wz_reader::property::Vector2D: TryFromNode<N>
+{
     let info_node = match item_node.at_path("info") {
         Ok(n) => n,
         Err(_) => return EquipInfo::default(),

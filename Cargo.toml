@@ -22,5 +22,14 @@ opt-level = "z"       # Optimize for size
 lto = true            # Link-time optimization
 codegen-units = 1     # Single codegen unit for maximum optimization
 strip = "symbols"     # Strip symbols
-panic = "abort"       # Abort on panic (no unwinding tables)
+panic = "unwind"      # Unwind on panic so we can see error messages
 incremental = false
+
+# Separate profile for wasm: maximum size optimization.
+# Use: cargo build --profile release-wasm
+[profile.release-wasm]
+inherits = "release"
+opt-level = "z"       # Maximum size optimization
+strip = "symbols"     # Strip symbols
+panic = "abort"       # Abort on panic instead of unwinding (drops unwind tables)
+# debug = 0 (inherited from release, no debug info)

@@ -1,19 +1,15 @@
-use crate::wz::asset_loaders::WzMapAsset;
+use crate::wz::asset_loaders::{WzMapAsset, WzPortalFramesAsset};
 use super::components::*;
 use super::events::*;
 use super::resources::*;
 use crate::layer::GameLayer;
-#[cfg(feature = "mob")]
 use crate::mob::events::SpawnMob;
-#[cfg(feature = "npc")]
 use crate::npc::events::SpawnNpc;
 use crate::physics::FootholdGraph;
 use bevy::{
     asset::{AssetEvent, AssetLoadFailedEvent},
-    asset::RenderAssetUsages,
     ecs::message::MessageReader,
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use std::collections::HashMap;
 use std::backtrace::Backtrace;
@@ -146,13 +142,15 @@ pub fn spawn_map(
     trigger: On<MapReady>,
     mut commands: Commands,
     assets: Res<Assets<WzMapAsset>>,
-    mut images: ResMut<Assets<Image>>,
+    mut image_assets: ResMut<Assets<Image>>,
     window: Query<&Window>,
     mut current_map: ResMut<CurrentMap>,
+    portal_frames: Res<PortalFrames>,
 ) {
     let ev = trigger.event();
     let asset = assets.get(&ev.handle).expect("WzMapAsset must be loaded");
-    let map = &asset.0;
+    let map = &asset.data;
+    let images = &asset.images;
 
     let old = std::mem::replace(&mut *current_map, CurrentMap(MapState::None));
     if let CurrentMap(MapState::Loaded { sprites, .. }) = old {
@@ -178,11 +176,10 @@ pub fn spawn_map(
     info!("{:?}", viewport);
 
     let mut sprites = Vec::new();
-    let mut image_cache = HashMap::new();
 
     for b in map.backgrounds.iter() {
-        let handle = load_map_image(&b.image_path, &mut image_cache, &mut images);
-        let tex_size = images.get(&handle).map(|i| i.size_f32()).unwrap_or_else(|| {
+        let handle = get_image_handle(images, &b.image_path);
+        let tex_size = image_assets.get(&handle).map(|i| i.size_f32()).unwrap_or_else(|| {
             warn!("spawn_backgrounds: image '{}' not found in assets, using (0,0)", b.image_path);
             Vec2::ZERO
         });
@@ -191,7 +188,7 @@ pub fn spawn_map(
         } else {
             GameLayer::Background.with_offset(b.index as f32)
         };
-        let mut ents = spawn_background_entity(b, &mut commands, z, viewport, tex_size, &mut image_cache, &mut images);
+        let mut ents = spawn_background_entity(b, &mut commands, z, viewport, tex_size, images);
         sprites.append(&mut ents);
     }
 
@@ -235,15 +232,19 @@ pub fn spawn_map(
         let tile_base = if layer.objs.is_empty() { 0.0 } else { obj_max_z + 1.0 };
 
         for obj in &layer.objs {
-            sprites.push(spawn_obj_entity(obj, &mut commands, layer_z + obj.z as f32, &mut image_cache, &mut images));
+            sprites.push(spawn_obj_entity(obj, &mut commands, layer_z + obj.z as f32, images));
         }
         for tile in &layer.tiles {
-            sprites.push(spawn_tile_entity(tile, &mut commands, layer_z + tile_base + tile.z as f32 + 0.5, &mut image_cache, &mut images));
+            sprites.push(spawn_tile_entity(tile, &mut commands, layer_z + tile_base + tile.z as f32 + 0.5, images));
         }
     }
 
     spawn_life(&map.life, &mut commands);
-    spawn_portals(&map.portals, &mut commands, &mut images, &mut sprites);
+    // Portal images are loaded directly from WZ tree (not part of map asset)
+    // TODO: move portal images into asset system
+    // We use a separate Assets<Image> for portal images since they're not
+    // part of the map asset's embedded images.
+    spawn_portals(&map.portals, &mut commands, &mut image_assets, &mut sprites, &portal_frames);
 
     info!("spawned {} sprites for map {}", sprites.len(), ev.path);
     *current_map = CurrentMap(MapState::Loaded {
@@ -257,7 +258,6 @@ fn spawn_life(life: &[wz::LifeSpawn], commands: &mut Commands) {
     for entry in life {
         let pos = Vec2::new(entry.pos.0, entry.pos.1);
         match entry.spawn_type.as_str() {
-            #[cfg(feature = "mob")]
             "m" => {
                 commands.trigger(SpawnMob {
                     mob_id: entry.id,
@@ -266,7 +266,6 @@ fn spawn_life(life: &[wz::LifeSpawn], commands: &mut Commands) {
                     z: 0,
                 });
             }
-            #[cfg(feature = "npc")]
             "n" => {
                 commands.trigger(SpawnNpc {
                     npc_id: entry.id,
@@ -281,58 +280,42 @@ fn spawn_life(life: &[wz::LifeSpawn], commands: &mut Commands) {
     }
 }
 
-// TODO: this is not optimal, improve and refactor.
+/// Startup system that loads portal animation frames from the asset system.
+pub fn init_portal_frames(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    assets: Res<Assets<WzPortalFramesAsset>>,
+    mut initialized: Local<bool>,
+) {
+    if *initialized {
+        return;
+    }
+    let handle = asset_server.load::<WzPortalFramesAsset>("wz://portal-frames.portal-frames");
+    if let Some(asset) = assets.get(&handle) {
+        commands.insert_resource(PortalFrames(asset.frames.clone()));
+        *initialized = true;
+        info!("Portal frames loaded: {} frames", asset.frames.len());
+    }
+}
+
 fn spawn_portals(
     portals: &[wz::PortalData],
     commands: &mut Commands,
     images: &mut Assets<Image>,
     sprites: &mut Vec<Entity>,
+    portal_frames: &PortalFrames,
 ) {
-    let base = wz::get_cached_base();
-    let pv_root = match base.at_path("Map/MapHelper.img/portal/game/pv") {
-        Ok(n) => n,
-        Err(_) => return,
-    };
-
-    let mut pv_children = pv_root.children();
-    pv_children.sort_by(|a, _, b, _| {
-        let ai = a.as_str().parse::<i32>().unwrap_or(0);
-        let bi = b.as_str().parse::<i32>().unwrap_or(0);
-        ai.cmp(&bi)
-    });
-
-    let mut frames = Vec::new();
-    for (_name, child) in &pv_children {
-        let origin = child
-            .try_get("origin")
-            .and_then(|n| n.read_origin(&child).ok())
-            .map(|o| Vec2::new(o.0, o.1))
-            .unwrap_or_default();
-
-        let dynamic_image = match child.extract_image() {
-            Ok(img) => img,
-            Err(_) => continue,
-        };
-        let rgba = dynamic_image.to_rgba8();
-        let (width, height) = rgba.dimensions();
-        let image = Image::new(
-            Extent3d { width, height, depth_or_array_layers: 1 },
-            TextureDimension::D2,
-            rgba.into_raw(),
-            TextureFormat::Rgba8Unorm,
-            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-        );
-
-        frames.push(MapAnimFrame {
-            image: images.add(image),
-            origin,
-            delay: 100,
-        });
-    }
-
-    if frames.is_empty() {
+    if portal_frames.0.is_empty() {
         return;
     }
+
+    let frames: Vec<MapAnimFrame> = portal_frames.0.iter().map(|pf| {
+        MapAnimFrame {
+            image: images.add(pf.image.clone()),
+            origin: pf.origin,
+            delay: pf.delay,
+        }
+    }).collect();
 
     for portal in portals {
         if portal.pt != 2 {
@@ -384,43 +367,26 @@ fn compute_bounds(
     }
 }
 
-fn load_map_image(
+fn get_image_handle(
+    images: &HashMap<String, Handle<Image>>,
     path: &str,
-    cache: &mut HashMap<String, Handle<Image>>,
-    images: &mut Assets<Image>,
 ) -> Handle<Image> {
-    if let Some(handle) = cache.get(path) {
-        return handle.clone();
-    }
-    let wz = wz::WzData::global();
-    let dynamic_image = wz.load_image(path).unwrap_or_else(|e| {
-        panic!("failed to load image at {path}: {e}")
-    });
-    let rgba = dynamic_image.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    let image = Image::new(
-        Extent3d { width, height, depth_or_array_layers: 1 },
-        TextureDimension::D2,
-        rgba.into_raw(),
-        TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    );
-    let handle = images.add(image);
-    cache.insert(path.to_string(), handle.clone());
-    handle
+    images.get(path).cloned().unwrap_or_else(|| {
+        warn!("get_image_handle: image not found in map asset: {path}");
+        Handle::default()
+    })
 }
 
 fn spawn_tile_entity(
     tile: &wz::TilePlacement,
     commands: &mut Commands,
     z: f32,
-    images: &mut HashMap<String, Handle<Image>>,
-    assets: &mut Assets<Image>,
+    images: &HashMap<String, Handle<Image>>,
 ) -> Entity {
     let pos = Vec2::new(tile.pos.0, tile.pos.1);
     let origin = Vec2::new(tile.origin.0, tile.origin.1);
     let base = pos - origin;
-    let handle = load_map_image(&tile.image_path, images, assets);
+    let handle = get_image_handle(images, &tile.image_path);
     let mut entity = commands.spawn((
         Name::new(format!("Tile({})", tile.z)),
         Sprite::from_image(handle),
@@ -430,7 +396,7 @@ fn spawn_tile_entity(
     if !tile.animation_frames.is_empty() {
         let frames: Vec<MapAnimFrame> = tile.animation_frames.iter().map(|f| {
             let origin = Vec2::new(f.origin.0, f.origin.1);
-            let handle = load_map_image(&f.image_path, images, assets);
+            let handle = get_image_handle(images, &f.image_path).clone();
             MapAnimFrame { image: handle, origin, delay: f.delay }
         }).collect();
         let delay = frames[0].delay.max(50);
@@ -450,13 +416,12 @@ fn spawn_obj_entity(
     obj: &wz::ObjPlacement,
     commands: &mut Commands,
     z: f32,
-    images: &mut HashMap<String, Handle<Image>>,
-    assets: &mut Assets<Image>,
+    images: &HashMap<String, Handle<Image>>,
 ) -> Entity {
     let pos = Vec2::new(obj.pos.0, obj.pos.1);
     let origin = Vec2::new(obj.origin.0, obj.origin.1);
     let base = pos - origin;
-    let handle = load_map_image(&obj.image_path, images, assets);
+    let handle = get_image_handle(images, &obj.image_path);
     let mut entity = commands.spawn((
         Name::new(format!("Obj({})", obj.z)),
         Sprite {
@@ -470,7 +435,7 @@ fn spawn_obj_entity(
     if !obj.animation_frames.is_empty() {
         let frames: Vec<MapAnimFrame> = obj.animation_frames.iter().map(|f| {
             let origin = Vec2::new(f.origin.0, f.origin.1);
-            let handle = load_map_image(&f.image_path, images, assets);
+            let handle = get_image_handle(images, &f.image_path).clone();
             MapAnimFrame { image: handle, origin, delay: f.delay }
         }).collect();
         let delay = frames[0].delay.max(50);
@@ -532,12 +497,11 @@ fn spawn_background_entity(
     z: f32,
     viewport: Vec2,
     tex_size: Vec2,
-    images: &mut HashMap<String, Handle<Image>>,
-    assets: &mut Assets<Image>,
+    images: &HashMap<String, Handle<Image>>,
 ) -> Vec<Entity> {
     let pos = Vec2::new(bg.pos.0, bg.pos.1);
     let origin = Vec2::new(bg.origin.0, bg.origin.1);
-    let handle = load_map_image(&bg.image_path, images, assets);
+    let handle = get_image_handle(images, &bg.image_path).clone();
 
     let tile_x = matches!(bg.btype, 1 | 3 | 4 | 6 | 7);
     let tile_y = matches!(bg.btype, 2 | 3 | 5 | 6 | 7);
@@ -558,7 +522,7 @@ fn spawn_background_entity(
         if !bg.animation_frames.is_empty() {
             let frames: Vec<MapAnimFrame> = bg.animation_frames.iter().map(|f| {
                 let origin = Vec2::new(f.origin.0, f.origin.1);
-                let handle = load_map_image(&f.image_path, images, assets);
+                let handle = get_image_handle(images, &f.image_path).clone();
                 MapAnimFrame { image: handle, origin, delay: f.delay }
             }).collect();
             let delay = frames[0].delay.max(50);
@@ -624,7 +588,7 @@ fn spawn_background_entity(
             if !bg.animation_frames.is_empty() {
                 let frames: Vec<MapAnimFrame> = bg.animation_frames.iter().map(|f| {
                     let origin = Vec2::new(f.origin.0, f.origin.1);
-                    let handle = load_map_image(&f.image_path, images, assets);
+                    let handle = get_image_handle(images, &f.image_path).clone();
                     MapAnimFrame { image: handle, origin, delay: f.delay }
                 }).collect();
                 let delay = frames[0].delay.max(50);

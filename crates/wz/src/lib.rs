@@ -5,11 +5,14 @@ pub mod data;
 pub mod source;
 pub mod node_trait;
 pub mod json_node;
+pub use json_node::JsonNode;
 
 pub use error::{WzError, NodeError};
 pub use vector2d::Vector2D;
 pub use node::{Node, NodeName, NodePayload};
+pub use node_trait::{WzNode, TryFromNode};
 pub use data::WzData;
+pub use data::{PortalFrameData, MapBundle, MobBundle, NpcBundle, ImageBundle};
 pub use data::common::{Foothold, AnimFrame};
 pub use data::map::*;
 pub use data::mob::*;

@@ -1,15 +1,10 @@
 pub mod asset_loaders;
 pub mod asset_source;
 
-use std::collections::HashMap;
-
 use bevy::{
-    asset::RenderAssetUsages,
     ecs::lifecycle::Add,
     ecs::observer::On,
-    ecs::system::Commands,
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     sprite::{Anchor, Sprite},
 };
 
@@ -19,39 +14,54 @@ pub fn set_sprite_bottom_left(trigger: On<Add, Sprite>, mut commands: Commands) 
         .insert(Anchor::BOTTOM_LEFT);
 }
 
-#[derive(Resource, Default)]
-pub struct WzImageCache {
-    cache: HashMap<String, Handle<Image>>,
-}
+/// Plugin that registers all WZ asset types and loaders.
+pub struct WzAssetPlugin;
 
-impl WzImageCache {
-    pub fn get(&self, path: &str) -> Option<Handle<Image>> {
-        self.cache.get(path).cloned()
-    }
+impl Plugin for WzAssetPlugin {
+    fn build(&self, app: &mut App) {
+        use asset_loaders::*;
 
-    pub fn get_or_load(
-        &mut self,
-        path: &str,
-        images: &mut Assets<Image>,
-    ) -> Handle<Image> {
-        if let Some(handle) = self.cache.get(path) {
-            return handle.clone();
-        }
-        let wz = wz::WzData::global();
-        let dynamic_image = wz.load_image(path).unwrap_or_else(|e| {
-            panic!("failed to load image at {path}: {e}")
-        });
-        let rgba = dynamic_image.to_rgba8();
-        let (width, height) = rgba.dimensions();
-        let image = Image::new(
-            Extent3d { width, height, depth_or_array_layers: 1 },
-            TextureDimension::D2,
-            rgba.into_raw(),
-            TextureFormat::Rgba8Unorm,
-            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-        );
-        let handle = images.add(image);
-        self.cache.insert(path.to_string(), handle.clone());
-        handle
+        // Image loader (wzimg)
+        // NOTE: Image is already init_asset'd by ImagePlugin (part of DefaultPlugins).
+        // We only register our custom loader.
+        app.init_asset_loader::<WzImageLoader>();
+
+        // UI sprite asset (image + origin bundled)
+        app.init_asset::<WzUiSpriteAsset>()
+            .init_asset_loader::<WzUiSpriteLoader>();
+
+        // Singleton startup data assets
+        app.init_asset::<WzPhysicsAsset>()
+            .init_asset_loader::<WzPhysicsLoader>()
+            .init_asset::<WzZMapAsset>()
+            .init_asset_loader::<WzZMapLoader>()
+            .init_asset::<WzSkillDatabaseAsset>()
+            .init_asset_loader::<WzSkillDatabaseLoader>()
+            .init_asset::<WzJobCatalogAsset>()
+            .init_asset_loader::<WzJobCatalogLoader>()
+            .init_asset::<WzActionListsAsset>()
+            .init_asset_loader::<WzActionListsLoader>();
+
+        // Character data assets
+        app.init_asset::<WzCharBodyAsset>()
+            .init_asset_loader::<WzCharBodyLoader>()
+            .init_asset::<WzHairBodyAsset>()
+            .init_asset_loader::<WzHairBodyLoader>()
+            .init_asset::<WzEquipActionAsset>()
+            .init_asset_loader::<WzEquipActionLoader>()
+            .init_asset::<WzFaceExpressionAsset>()
+            .init_asset_loader::<WzFaceExpressionLoader>();
+
+        // UI bundle asset (caller-specified paths, single cacheable GET)
+        app.init_asset::<WzUiBundleAsset>()
+            .init_asset_loader::<WzUiBundleLoader>();
+
+        // Portal frames asset
+        app.init_asset::<WzPortalFramesAsset>()
+            .init_asset_loader::<WzPortalFramesLoader>();
+
+        // Logo frames asset (discovered at load time, nested dependencies)
+        app.init_asset::<WzImageFramesAsset>()
+            .init_asset_loader::<WzImageFramesLoader>();
     }
 }

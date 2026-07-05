@@ -22,9 +22,14 @@ pub struct WzAssetReader;
 impl ErasedAssetReader for WzAssetReader {
     fn read<'a>(
         &'a self,
-        _path: &'a Path,
+        path: &'a Path,
     ) -> BoxedFuture<'a, Result<Box<dyn Reader + 'a>, AssetReaderError>> {
-        Box::pin(async { Ok(Box::new(VecReader::new(Vec::new())) as Box<dyn Reader>) })
+        Box::pin(async move {
+            // All loaders bypass the reader and use WzData directly.
+            // Return empty data so the asset system still calls the loader.
+            // On wasm, we skip the fetch entirely to avoid spurious warnings.
+            Ok(Box::new(VecReader::new(Vec::new())) as Box<dyn Reader>)
+        })
     }
 
     fn read_meta<'a>(

@@ -21,7 +21,6 @@ impl Plugin for MobPlugin {
         app.init_asset::<WzMobAsset>()
             .init_asset_loader::<crate::wz::asset_loaders::WzMobLoader>()
             .insert_resource(MobAssetRegistry::new(self.cache_capacity))
-            .init_resource::<crate::wz::WzImageCache>()
             .insert_resource(PendingSpawns::default())
             .register_type::<MobId>()
             .add_systems(

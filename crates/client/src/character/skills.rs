@@ -64,49 +64,41 @@ pub struct SkillDatabase {
 }
 
 impl SkillDatabase {
-    pub fn load(wz: &wz::WzData) -> Self {
-        let db = match wz.load_skill_database() {
-            Ok(db) => Some(db),
-            Err(e) => {
-                warn!("SkillDatabase::load: failed to load skill database: {e}, using empty");
-                None
-            }
-        };
+    /// Build from the raw WZ skill database (no WzData call).
+    pub fn from_raw(db: &wz::SkillDatabase) -> Self {
         let mut skills = HashMap::new();
 
-        if let Some(db) = db {
-            for (id, entry) in &db.skills {
-                skills.insert(*id, SkillEntry {
-                    id: entry.id,
-                    skill_type: match entry.skill_type {
-                        wz::SkillType::Passive => SkillType::Passive,
-                        wz::SkillType::Active => SkillType::Active,
-                        wz::SkillType::AttackProc => SkillType::AttackProc,
-                        wz::SkillType::Special => SkillType::Special,
-                    },
-                    name: entry.name.clone(),
-                    desc: entry.desc.clone(),
-                    levels: entry.levels.iter().map(|(k, v)| (*k, SkillLevelData {
-                        damage: v.damage, mp_con: v.mp_con, hp_con: v.hp_con,
-                        x: v.x, y: v.y, time: v.time, prop: v.prop,
-                        pad: v.pad, mad: v.mad, pdd: v.pdd, mdd: v.mdd,
-                        acc: v.acc, eva: v.eva, speed: v.speed, jump: v.jump,
-                        hs: v.hs.clone(),
-                    })).collect(),
-                    action: entry.action.clone(),
-                    prepare_action: entry.prepare_action.clone(),
-                    effect_frames: Vec::new(),
-                    hit_frames: Vec::new(),
-                    keydown_frames: Vec::new(),
-                    icon: Handle::default(),
-                    icon_disabled: Handle::default(),
-                    icon_mouse_over: Handle::default(),
-                    req: entry.req.clone(),
-                    master_level: entry.master_level,
-                    invisible: entry.invisible,
-                    skill_type_raw: entry.skill_type_raw,
-                });
-            }
+        for (id, entry) in &db.skills {
+            skills.insert(*id, SkillEntry {
+                id: entry.id,
+                skill_type: match entry.skill_type {
+                    wz::SkillType::Passive => SkillType::Passive,
+                    wz::SkillType::Active => SkillType::Active,
+                    wz::SkillType::AttackProc => SkillType::AttackProc,
+                    wz::SkillType::Special => SkillType::Special,
+                },
+                name: entry.name.clone(),
+                desc: entry.desc.clone(),
+                levels: entry.levels.iter().map(|(k, v)| (*k, SkillLevelData {
+                    damage: v.damage, mp_con: v.mp_con, hp_con: v.hp_con,
+                    x: v.x, y: v.y, time: v.time, prop: v.prop,
+                    pad: v.pad, mad: v.mad, pdd: v.pdd, mdd: v.mdd,
+                    acc: v.acc, eva: v.eva, speed: v.speed, jump: v.jump,
+                    hs: v.hs.clone(),
+                })).collect(),
+                action: entry.action.clone(),
+                prepare_action: entry.prepare_action.clone(),
+                effect_frames: Vec::new(),
+                hit_frames: Vec::new(),
+                keydown_frames: Vec::new(),
+                icon: Handle::default(),
+                icon_disabled: Handle::default(),
+                icon_mouse_over: Handle::default(),
+                req: entry.req.clone(),
+                master_level: entry.master_level,
+                invisible: entry.invisible,
+                skill_type_raw: entry.skill_type_raw,
+            });
         }
 
         SkillDatabase { skills }
