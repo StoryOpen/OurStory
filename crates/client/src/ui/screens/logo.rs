@@ -3,6 +3,7 @@ use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 
 use crate::ui::UiState;
+use crate::ui::screens::logo;
 use crate::ui::screens::logo::LogoPhase::{Nexon, Wizet};
 use crate::wz::asset_loaders::WzImageFramesAsset;
 
@@ -144,7 +145,7 @@ pub fn on_logo_loaded(
 pub fn update_logo_animation(
     time: Res<Time>,
     phase_state: Option<ResMut<LogoPhaseState>>,
-    mut logo_entities: ResMut<LogoEntities>,
+    logo_entities: ResMut<LogoEntities>,
     mut timer: ResMut<LogoTimer>,
     mut logo_query: Query<(Entity, &mut LogoAnim)>,
     mut sprite_query: Query<&mut ImageNode, With<LogoSprite>>,
@@ -198,7 +199,7 @@ pub fn handle_logo_click(
     mut next_state: ResMut<NextState<UiState>>,
     buttons: Res<ButtonInput<MouseButton>>,
     phase_state: Option<ResMut<LogoPhaseState>>,
-    mut logo_entities: ResMut<LogoEntities>,
+    logo_entities: ResMut<LogoEntities>,
     mut commands: Commands,
 ) {
     if !buttons.just_pressed(MouseButton::Left) {
@@ -208,14 +209,12 @@ pub fn handle_logo_click(
         return;
     };
     match phase_state.phase {
-        LogoPhase::Wizet => {
-            phase_state.phase = LogoPhase::Nexon;
-        }
         LogoPhase::Nexon => {
-            if let Some(e) = logo_entities.nexon {
-                commands.entity(e).despawn();
-            }
-            commands.remove_resource::<LogoPhaseState>();
+            phase_state.phase = LogoPhase::Wizet;
+            commands.entity(logo_entities.nexon.unwrap()).despawn();
+        }
+        LogoPhase::Wizet => {
+            commands.entity(logo_entities.wizet.unwrap()).despawn();
             next_state.set(UiState::Login);
         }
     }

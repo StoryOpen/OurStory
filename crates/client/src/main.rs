@@ -142,6 +142,7 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
+    commands.insert_resource(ClearColor(Color::WHITE));
     let viewport_height = camera::resources::BaseResolution::default().height;
     commands.spawn((
         Name::new("MainCamera"),
