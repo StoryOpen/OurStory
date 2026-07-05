@@ -216,8 +216,12 @@ fn is_handle_image(ty: &Type) -> bool {
     false
 }
 
-/// Load an image from a WZ node and return a Handle<Image> via LoadContext.
-fn build_image_load() -> proc_macro2::TokenStream {
+/// Build an inline expression to load an image from a WZ node.
+/// Evaluates to `Result<Handle<Image>, wz::WzError>`.
+/// Build an inline expression to load an image from a WZ node into Handle<Image>.
+/// Requires `load_context`, `node`, and `label_prefix` in scope.
+/// The expression uses `?` internally, so the enclosing function must return Result.
+fn build_image_load_expr() -> proc_macro2::TokenStream {
     quote! {
         {
             let label = format!("{}/{}", label_prefix, node.name());
@@ -249,6 +253,7 @@ fn build_image_load() -> proc_macro2::TokenStream {
 }
 
 /// Check if type is `Vec2`
+#[allow(dead_code)]
 fn is_vec2(ty: &Type) -> bool {
     if let Type::Path(TypePath { path, .. }) = ty {
         path.is_ident("Vec2")
@@ -322,6 +327,7 @@ fn is_scalar(ty: &Type) -> bool {
 }
 
 /// Check if type is a known scalar that can use TryFromNode directly
+#[allow(dead_code)]
 fn is_try_from_scalar(ty: &Type) -> bool {
     if let Type::Path(TypePath { path, .. }) = ty {
         let s = path.get_ident().map(|i| i.to_string());
@@ -377,7 +383,7 @@ fn build_field_load(field: &syn::Field) -> proc_macro2::TokenStream {
 
     // #[wz(image)] — Handle<Image>
     if has_wz_attr(field, "image") {
-        let load_code = build_image_load();
+        let load_code = build_image_load_expr();
         return quote! { #field_name: #load_code };
     }
 
@@ -401,7 +407,7 @@ fn build_field_load(field: &syn::Field) -> proc_macro2::TokenStream {
             return build_option_scalar(field_name, &child_name, inner);
         } else if is_handle_image(inner) {
             // Option<Handle<Image>> — try to load image, None if not present
-            let image_load = build_image_load();
+            let image_load = build_image_load_expr();
             return quote! {
                 #field_name: {
                     if node.has_image_data() {
@@ -415,6 +421,31 @@ fn build_field_load(field: &syn::Field) -> proc_macro2::TokenStream {
             // Option<SomeStruct> — try to load child, None if missing
             return build_option_nested(field_name, &child_name, inner);
         }
+    }
+
+    // #[wz(children_images)] — Vec<Handle<Image>>, each child is a PNG node
+    if has_wz_attr(field, "children_images") {
+        let load_expr = build_image_load_expr();
+        return quote! {
+            #field_name: {
+                let mut items: Vec<_> = node.children()
+                    .into_iter()
+                    .filter_map(|(key, child)| {
+                        let key_str = key.to_string();
+                        key_str.parse::<u32>().ok().map(|idx| (idx, child, key_str))
+                    })
+                    .collect();
+                items.sort_by_key(|(idx, _, _)| *idx);
+                items.into_iter()
+                    .map(|(_idx, child, key_str)| {
+                        let prefix = format!("{}/{}", label_prefix, key_str);
+                        let node = &child;
+                        let label_prefix = prefix.as_str();
+                        (|| -> Result<_, wz::WzError> { Ok(#load_expr) })()
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+            }
+        };
     }
 
     // #[wz(children)] or #[wz(container_children)] — iterate current node's children

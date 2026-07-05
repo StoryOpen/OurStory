@@ -762,11 +762,12 @@ impl AssetLoader for WzPortalFramesLoader {
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Contains handles for all logo animation frame images.
-/// Loaded via `asset_server.load::<WzLogoFramesAsset>("wz://Logo.wzlogo")`.
-/// Each frame image is embedded as a labeled sub-asset; listening for
-/// `AssetEvent::LoadedWithDependencies` tells you when all frames are ready.
-#[derive(Asset, TypePath, Debug)]
+/// Contains handles for all logo animation frame images.
+/// Loaded via `asset_server.load::<WzImageFramesAsset>("wz://UI/Logo/Wizet.frames")`.
+/// Each frame image is embedded as a labeled sub-asset.
+#[derive(Asset, TypePath, Debug, wz_derive::WzAsset)]
 pub struct WzImageFramesAsset {
+    #[wz(children_images)]
     pub frames: Vec<Handle<Image>>,
 }
 
@@ -793,54 +794,21 @@ impl AssetLoader for WzImageFramesLoader {
         load_context: &mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
         let raw = load_context.path().path().to_str().expect("image frames path to be provided");
-        // Strip ".frames" extension, then convert "UI/Logo/Wizet" to "UI/Logo.img/Wizet"
+        let raw = raw.strip_prefix("wz://").unwrap_or(raw);
         let raw = raw.strip_suffix(".frames").unwrap_or(raw);
         let (dir, name) = raw.rsplit_once('/').unwrap_or((raw, ""));
         let wz_path = format!("{dir}.img/{name}");
 
-        let frames_keys = discover_frame_keys(&wz_path).await?;
-        let frames = embed_frames(&wz_path, &frames_keys, load_context).await?;
+        let source = wz::source::default_source();
+        let node = source.node(&wz_path).await?;
 
-        Ok(WzImageFramesAsset { frames })
+        crate::wz::WzAsset::wz_build(&node, load_context, "")
+            .map_err(Into::into)
     }
 
     fn extensions(&self) -> &[&str] {
         &["frames"]
     }
-}
-
-/// Discover child keys under `parent_path` by querying the WZ source.
-async fn discover_frame_keys(
-    parent_path: &str,
-) -> Result<Vec<String>, ImageFramesLoaderError> {
-    let source = wz::source::default_source();
-    let node = source.json_node(parent_path).await?;
-    let mut keys: Vec<String> = node.children().into_keys().collect();
-    keys.sort_by(|a, b| {
-        let na: i32 = a.parse().unwrap_or(0);
-        let nb: i32 = b.parse().unwrap_or(0);
-        na.cmp(&nb)
-    });
-    Ok(keys)
-}
-
-/// Load each frame image by key and embed as a labeled asset in the load context.
-/// Calls `default_source()` per iteration so the `&dyn WzSource` reference is not
-/// held across `.await` points (required for `Send` futures).
-async fn embed_frames(
-    parent_path: &str,
-    keys: &[String],
-    load_context: &mut LoadContext<'_>,
-) -> Result<Vec<Handle<Image>>, ImageFramesLoaderError> {
-    let mut frames = Vec::new();
-    for name in keys {
-        let full_path = format!("{parent_path}/{name}");
-        let dyn_img = wz::source::default_source().image_dynamic(&full_path).await?;
-        let bevy_img = dyn_to_bevy_image(&dyn_img);
-        let handle = load_context.add_labeled_asset(name.clone(), bevy_img);
-        frames.push(handle);
-    }
-    Ok(frames)
 }
 
 
