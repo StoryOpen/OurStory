@@ -758,8 +758,8 @@ fn build_children_hashmap(
     }
 }
 
-/// Generate the wz_build function for a struct
-fn generate_wz_child_impl(input: &DeriveInput) -> proc_macro2::TokenStream {
+/// Generate the full WzAsset trait impl (CONST, path method, wz_build)
+fn generate_wz_asset_impl(input: &DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
     let fields = match &input.data {
         Data::Struct(data) => match &data.fields {
@@ -773,15 +773,31 @@ fn generate_wz_child_impl(input: &DeriveInput) -> proc_macro2::TokenStream {
         }
     };
 
-    let mut field_inits = Vec::new();
+    let ext = struct_attr_value(input, "ext").unwrap_or_else(|| {
+        // Fall back to snake_case of the struct name without "Asset" suffix
+        let s = name.to_string();
+        s.strip_suffix("Asset").unwrap_or(&s).to_lowercase()
+    });
+    let path_template = struct_attr_value(input, "path").unwrap_or_else(|| ".".to_string());
 
+    // Generate field initializers for wz_build
+    let mut field_inits = Vec::new();
     for field in fields {
         let init = build_field_load(field);
         field_inits.push(init);
     }
 
+    // Generate path conversion logic
+    let path_logic = build_path_method(&path_template, &ext);
+
     quote! {
         impl crate::wz::WzAsset for #name {
+            const EXTENSION: &'static str = #ext;
+
+            fn asset_path_to_wz_path(asset_path: &str) -> String {
+                #path_logic
+            }
+
             fn wz_build(
                 node: &wz::Node,
                 load_context: &mut bevy::asset::LoadContext<'_>,
@@ -795,99 +811,53 @@ fn generate_wz_child_impl(input: &DeriveInput) -> proc_macro2::TokenStream {
     }
 }
 
-/// Generate an AssetLoader struct and impl for the top-level type
-fn generate_asset_loader(input: &DeriveInput, ext: &str, path_template: &str) -> proc_macro2::TokenStream {
-    let name = &input.ident;
-    let loader_name = format_ident!("{}Loader", name);
-    let error_name = format_ident!("{}LoaderError", name);
-
-    // Build path template logic
-    let path_logic = build_path_template(path_template);
-
-    quote! {
-        #[derive(Debug, thiserror::Error)]
-        pub enum #error_name {
-            #[error("WZ error: {0}")]
-            Wz(#[from] wz::WzError),
-            #[error("WZ source error: {0}")]
-            Source(#[from] wz::source::WzSourceError),
-            #[error("IO error: {0}")]
-            Io(#[from] std::io::Error),
-        }
-
-        #[derive(Default, bevy::prelude::TypePath)]
-        pub struct #loader_name;
-
-        impl bevy::asset::AssetLoader for #loader_name {
-            type Asset = #name;
-            type Settings = ();
-            type Error = #error_name;
-
-            async fn load(
-                &self,
-                _reader: &mut dyn bevy::asset::io::Reader,
-                _settings: &(),
-                load_context: &mut bevy::asset::LoadContext<'_>,
-            ) -> Result<Self::Asset, Self::Error> {
-                let asset_path = load_context.path().path().to_string_lossy().to_string();
-                let stripped = asset_path
-                    .strip_prefix("wz://")
-                    .unwrap_or(&asset_path);
-                let stripped = stripped
-                    .strip_suffix(concat!(".", #ext))
-                    .unwrap_or(stripped);
-
-                let wz_path = #path_logic;
-
-                let source = wz::source::default_source();
-                let node = source.node(&wz_path).await?;
-
-                Ok(crate::wz::WzAsset::wz_build(&node, load_context, "")?)
-            }
-
-            fn extensions(&self) -> &[&str] {
-                &[#ext]
-            }
-        }
-    }
-}
-
-/// Build code that constructs the WZ path from the asset path.
-/// Supports `{id}` placeholder extracted from the asset path.
-fn build_path_template(template: &str) -> proc_macro2::TokenStream {
-    if template.contains("{id}") {
-        quote! {
+/// Build the path conversion method body.
+fn build_path_method(template: &str, ext: &str) -> proc_macro2::TokenStream {
+    if template == "." {
+        // Just strip prefix and extension
+        return quote! {
             {
-                let id_str = stripped
-                    .trim_end_matches(".img")
-                    .rsplit('/')
-                    .next()
-                    .and_then(|s| s.parse::<i32>().ok())
-                    .unwrap_or(0);
-                format!(#template, id = id_str)
+                let s = asset_path
+                    .strip_prefix("wz://").unwrap_or(asset_path)
+                    .strip_suffix(concat!(".", #ext)).unwrap_or(asset_path);
+                s.to_string()
             }
-        }
-    } else {
-        quote! { stripped.to_string() }
+        };
     }
+
+    if template.contains("{id}") {
+        return quote! {
+            {
+                let s = asset_path
+                    .strip_prefix("wz://").unwrap_or(asset_path)
+                    .strip_suffix(concat!(".", #ext)).unwrap_or(asset_path);
+                let id = s.trim_end_matches(".img").rsplit('/').next()
+                    .and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
+                format!(#template, id = id)
+            }
+        };
+    }
+
+    if template.contains("{leaf}") {
+        // Special: split stripped path at last '/', dir+leaf
+        return quote! {
+            {
+                let s = asset_path
+                    .strip_prefix("wz://").unwrap_or(asset_path)
+                    .strip_suffix(concat!(".", #ext)).unwrap_or(asset_path);
+                let (dir, leaf) = s.rsplit_once('/').unwrap_or(("", s));
+                format!(#template, dir = dir, leaf = leaf)
+            }
+        };
+    }
+
+    // Literal path — ignore asset_path entirely
+    quote! { #template.to_string() }
 }
 
 /// Generate the complete output for the derive macro
 fn wz_asset_impl(input: &DeriveInput) -> proc_macro2::TokenStream {
-    let child_impl = generate_wz_child_impl(input);
-
-    let ext = struct_attr_value(input, "asset_ext");
-    let path_template = struct_attr_value(input, "path_template");
-
-    if let (Some(ext), Some(path_template)) = (&ext, &path_template) {
-        let loader_impl = generate_asset_loader(input, ext, path_template);
-        quote! {
-            #child_impl
-            #loader_impl
-        }
-    } else {
-        child_impl
-    }
+    generate_wz_asset_impl(input)
 }
 
 #[proc_macro_derive(WzAsset, attributes(wz))]

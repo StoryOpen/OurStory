@@ -4,7 +4,8 @@ pub mod events;
 use bevy::prelude::*;
 
 use crate::GameSet;
-use crate::wz::asset_loaders::{MobAsset, MobAssetLoader};
+use crate::wz::asset_loaders::MobAsset;
+use crate::wz::WzAssetLoader;
 
 pub struct MobPlugin {
     pub cache_capacity: usize,
@@ -19,7 +20,7 @@ impl Default for MobPlugin {
 impl Plugin for MobPlugin {
     fn build(&self, app: &mut App) {
         app.init_asset::<MobAsset>()
-            .init_asset_loader::<MobAssetLoader>()
+            .init_asset_loader::<WzAssetLoader<MobAsset>>()
             .insert_resource(MobAssetRegistry::new(self.cache_capacity))
             .insert_resource(PendingSpawns::default())
             .register_type::<MobId>()

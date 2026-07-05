@@ -3,7 +3,8 @@ pub mod events;
 
 use bevy::prelude::*;
 
-use crate::wz::asset_loaders::{NpcAsset, NpcAssetLoader};
+use crate::wz::asset_loaders::NpcAsset;
+use crate::wz::WzAssetLoader;
 use crate::GameSet;
 
 pub struct NpcPlugin {
@@ -19,7 +20,7 @@ impl Default for NpcPlugin {
 impl Plugin for NpcPlugin {
     fn build(&self, app: &mut App) {
         app.init_asset::<NpcAsset>()
-            .init_asset_loader::<NpcAssetLoader>()
+            .init_asset_loader::<WzAssetLoader<NpcAsset>>()
             .insert_resource(NpcAssetRegistry::new(self.cache_capacity))
             .insert_resource(PendingNpcSpawns::default())
             .register_type::<NpcId>()

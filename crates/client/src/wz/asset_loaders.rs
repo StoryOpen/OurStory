@@ -494,46 +494,13 @@ impl AssetLoader for WzFaceExpressionLoader {
 /// Loaded via `asset_server.load::<WzUiSpriteAsset>("wz://path.wzuisprite")`.
 /// The image is embedded as a labeled sub-asset.
 #[derive(Asset, TypePath, Debug, wz_derive::WzAsset)]
+#[wz(ext = "wzuisprite", path = ".")]
 pub struct WzUiSpriteAsset {
     #[wz(image)]
     pub image: Handle<Image>,
     #[wz(default)]
     #[wz(origin)]
     pub origin: Vec2,
-}
-
-#[derive(Debug, Error)]
-pub enum UiSpriteLoaderError {
-    #[error("WZ error: {0}")]
-    WzError(#[from] wz::WzError),
-    #[error("WZ source error: {0}")]
-    WzSource(#[from] wz::source::WzSourceError),
-}
-
-#[derive(Default, TypePath)]
-pub struct WzUiSpriteLoader;
-
-impl AssetLoader for WzUiSpriteLoader {
-    type Asset = WzUiSpriteAsset;
-    type Settings = ();
-    type Error = UiSpriteLoaderError;
-
-    async fn load(
-        &self,
-        _reader: &mut dyn Reader,
-        _settings: &(),
-        load_context: &mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let asset_path = load_context.path().path().to_string_lossy().to_string();
-        let wz_path = parse_asset_path(&asset_path, ".wzuisprite");
-        let source = wz::source::default_source();
-        let node = source.node(wz_path).await?;
-        crate::wz::WzAsset::wz_build(&node, load_context, "").map_err(Into::into)
-    }
-
-    fn extensions(&self) -> &[&str] {
-        &["wzuisprite"]
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -596,7 +563,7 @@ impl AssetLoader for WzMapLoader {
 // ── MobAsset (derive-based) ──
 
 #[derive(Asset, TypePath, Debug, wz_derive::WzAsset)]
-#[wz(asset_ext = "mob", path_template = "Mob/{id:07}.img")]
+#[wz(ext = "mob", path = "Mob/{id:07}.img")]
 pub struct MobAsset {
     pub id: i32,
     pub info: MobInfo,
@@ -651,7 +618,7 @@ pub struct MobPart {
 // ── NpcAsset (derive-based) ──
 
 #[derive(Asset, TypePath, Debug, wz_derive::WzAsset)]
-#[wz(asset_ext = "npc", path_template = "Npc/{id:07}.img")]
+#[wz(ext = "npc", path = "Npc/{id:07}.img")]
 pub struct NpcAsset {
     pub id: i32,
     #[wz(children(skip = ["info"], require_child = "0"))]
@@ -678,6 +645,7 @@ pub struct NpcFrame {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[derive(Asset, TypePath, Debug, wz_derive::WzAsset)]
+#[wz(ext = "portal-frames", path = "Map/MapHelper.img/portal/game/pv")]
 pub struct WzPortalFramesAsset {
     #[wz(children(skip = []))]
     pub frames: Vec<PortalFrame>,
@@ -693,94 +661,20 @@ pub struct PortalFrame {
     pub delay: u32,
 }
 
-#[derive(Default, TypePath)]
-pub struct WzPortalFramesLoader;
-
-#[derive(Debug, Error)]
-pub enum PortalFramesLoaderError {
-    #[error("WZ error: {0}")]
-    WzError(#[from] wz::WzError),
-    #[error("WZ source error: {0}")]
-    WzSource(#[from] wz::source::WzSourceError),
-}
-
-impl AssetLoader for WzPortalFramesLoader {
-    type Asset = WzPortalFramesAsset;
-    type Settings = ();
-    type Error = PortalFramesLoaderError;
-
-    async fn load(
-        &self,
-        _reader: &mut dyn Reader,
-        _settings: &(),
-        load_context: &mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let source = wz::source::default_source();
-        let node = source.node("Map/MapHelper.img/portal/game/pv").await?;
-        crate::wz::WzAsset::wz_build(&node, load_context, "").map_err(Into::into)
-    }
-
-    fn extensions(&self) -> &[&str] {
-        &["portal-frames"]
-    }
-}
-
-
 // ═══════════════════════════════════════════════════════════════════════
 //  WzLogoFramesAsset — loads all logo animation frames from the Nexon
 //  and Wizet subdirectories, discovered at load time.
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Contains handles for all logo animation frame images.
-/// Contains handles for all logo animation frame images.
 /// Loaded via `asset_server.load::<WzImageFramesAsset>("wz://UI/Logo/Wizet.frames")`.
 /// Each frame image is embedded as a labeled sub-asset.
 #[derive(Asset, TypePath, Debug, wz_derive::WzAsset)]
+#[wz(ext = "frames", path = "{dir}.img/{leaf}")]
 pub struct WzImageFramesAsset {
     #[wz(children_images)]
     pub frames: Vec<Handle<Image>>,
 }
-
-#[derive(Debug, Error)]
-pub enum ImageFramesLoaderError {
-    #[error("WZ error: {0}")]
-    WzError(#[from] wz::WzError),
-    #[error("WZ source error: {0}")]
-    WzSource(#[from] wz::source::WzSourceError),
-}
-
-#[derive(Default, TypePath)]
-pub struct WzImageFramesLoader;
-
-impl AssetLoader for WzImageFramesLoader {
-    type Asset = WzImageFramesAsset;
-    type Settings = ();
-    type Error = ImageFramesLoaderError;
-
-    async fn load(
-        &self,
-        _reader: &mut dyn Reader,
-        _settings: &(),
-        load_context: &mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let raw = load_context.path().path().to_str().expect("image frames path to be provided");
-        let raw = raw.strip_prefix("wz://").unwrap_or(raw);
-        let raw = raw.strip_suffix(".frames").unwrap_or(raw);
-        let (dir, name) = raw.rsplit_once('/').unwrap_or((raw, ""));
-        let wz_path = format!("{dir}.img/{name}");
-
-        let source = wz::source::default_source();
-        let node = source.node(&wz_path).await?;
-
-        crate::wz::WzAsset::wz_build(&node, load_context, "")
-            .map_err(Into::into)
-    }
-
-    fn extensions(&self) -> &[&str] {
-        &["frames"]
-    }
-}
-
 
 // ═══════════════════════════════════════════════════════════════════════
 //  WzUiBundleAsset — a set of UI images requested by caller-specified
