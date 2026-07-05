@@ -301,7 +301,7 @@ pub fn init_portal_frames(
 fn spawn_portals(
     portals: &[wz::PortalData],
     commands: &mut Commands,
-    images: &mut Assets<Image>,
+    _images: &mut Assets<Image>,
     sprites: &mut Vec<Entity>,
     portal_frames: &PortalFrames,
 ) {
@@ -311,7 +311,7 @@ fn spawn_portals(
 
     let frames: Vec<MapAnimFrame> = portal_frames.0.iter().map(|pf| {
         MapAnimFrame {
-            image: images.add(pf.image.clone()),
+            image: pf.image.clone(),
             origin: pf.origin,
             delay: pf.delay,
         }

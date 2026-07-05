@@ -492,11 +492,13 @@ impl AssetLoader for WzFaceExpressionLoader {
 
 /// A UI sprite asset that bundles the image with its origin (pivot point).
 /// Loaded via `asset_server.load::<WzUiSpriteAsset>("wz://path.wzuisprite")`.
-/// The image is embedded as a labeled sub-asset; reading `.image` gives a valid
-/// Handle<Image> as soon as the WzUiSpriteAsset resolves.
-#[derive(Asset, TypePath, Debug)]
+/// The image is embedded as a labeled sub-asset.
+#[derive(Asset, TypePath, Debug, wz_derive::WzAsset)]
 pub struct WzUiSpriteAsset {
+    #[wz(image)]
     pub image: Handle<Image>,
+    #[wz(default)]
+    #[wz(origin)]
     pub origin: Vec2,
 }
 
@@ -524,24 +526,9 @@ impl AssetLoader for WzUiSpriteLoader {
     ) -> Result<Self::Asset, Self::Error> {
         let asset_path = load_context.path().path().to_string_lossy().to_string();
         let wz_path = parse_asset_path(&asset_path, ".wzuisprite");
-
         let source = wz::source::default_source();
-
-        // Load image and embed as labeled sub-asset
-        let dyn_img = source.image_dynamic(wz_path).await?;
-        let image = dyn_to_bevy_image(&dyn_img);
-        let image_handle = load_context.add_labeled_asset("image".to_string(), image);
-
-        // Load origin
-        let origin = match wz::source::load_origin(wz_path).await {
-            Ok(v) => Vec2::new(v.0, v.1),
-            Err(e) => {
-                warn!("WzUiSpriteLoader: origin not found for '{wz_path}': {e}, using ZERO");
-                Vec2::ZERO
-            }
-        };
-
-        Ok(WzUiSpriteAsset { image: image_handle, origin })
+        let node = source.node(wz_path).await?;
+        crate::wz::WzAsset::wz_build(&node, load_context, "").map_err(Into::into)
     }
 
     fn extensions(&self) -> &[&str] {
@@ -690,15 +677,19 @@ pub struct NpcFrame {
 //  WzPortalFramesAsset — portal animation frames (global, loaded once)
 // ═══════════════════════════════════════════════════════════════════════
 
-#[derive(Asset, TypePath, Debug)]
+#[derive(Asset, TypePath, Debug, wz_derive::WzAsset)]
 pub struct WzPortalFramesAsset {
+    #[wz(children(skip = []))]
     pub frames: Vec<PortalFrame>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, wz_derive::WzAsset)]
 pub struct PortalFrame {
-    pub image: Image,
+    #[wz(image)]
+    pub image: Handle<Image>,
+    #[wz(origin)]
     pub origin: Vec2,
+    #[wz(default)]
     pub delay: u32,
 }
 
@@ -709,8 +700,6 @@ pub struct WzPortalFramesLoader;
 pub enum PortalFramesLoaderError {
     #[error("WZ error: {0}")]
     WzError(#[from] wz::WzError),
-    #[error("image error: {0}")]
-    Image(#[from] image::ImageError),
     #[error("WZ source error: {0}")]
     WzSource(#[from] wz::source::WzSourceError),
 }
@@ -724,30 +713,11 @@ impl AssetLoader for WzPortalFramesLoader {
         &self,
         _reader: &mut dyn Reader,
         _settings: &(),
-        _load_context: &mut LoadContext<'_>,
+        load_context: &mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
-        let frames_data = wz::source::load_portal_frames().await?;
-
-        let mut frames = Vec::with_capacity(frames_data.len());
-        for fd in &frames_data {
-            let dyn_img = image::load_from_memory(&fd.png_data)?;
-            let rgba = dyn_img.to_rgba8();
-            let (width, height) = rgba.dimensions();
-            let image = Image::new(
-                Extent3d { width, height, depth_or_array_layers: 1 },
-                TextureDimension::D2,
-                rgba.into_raw(),
-                TextureFormat::Rgba8Unorm,
-                RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-            );
-            frames.push(PortalFrame {
-                image,
-                origin: Vec2::new(fd.origin.0, fd.origin.1),
-                delay: fd.delay,
-            });
-        }
-
-        Ok(WzPortalFramesAsset { frames })
+        let source = wz::source::default_source();
+        let node = source.node("Map/MapHelper.img/portal/game/pv").await?;
+        crate::wz::WzAsset::wz_build(&node, load_context, "").map_err(Into::into)
     }
 
     fn extensions(&self) -> &[&str] {
