@@ -4,7 +4,7 @@ pub mod events;
 use bevy::prelude::*;
 
 use crate::GameSet;
-use crate::wz::asset_loaders::WzMobAsset;
+use crate::wz::asset_loaders::{MobAsset, MobAssetLoader};
 
 pub struct MobPlugin {
     pub cache_capacity: usize,
@@ -18,8 +18,8 @@ impl Default for MobPlugin {
 
 impl Plugin for MobPlugin {
     fn build(&self, app: &mut App) {
-        app.init_asset::<WzMobAsset>()
-            .init_asset_loader::<crate::wz::asset_loaders::WzMobLoader>()
+        app.init_asset::<MobAsset>()
+            .init_asset_loader::<MobAssetLoader>()
             .insert_resource(MobAssetRegistry::new(self.cache_capacity))
             .insert_resource(PendingSpawns::default())
             .register_type::<MobId>()
@@ -41,7 +41,7 @@ pub struct PendingSpawns(pub Vec<events::SpawnMob>);
 
 #[derive(Resource)]
 pub struct MobAssetRegistry {
-    entries: Vec<(i32, Handle<WzMobAsset>)>,
+    entries: Vec<(i32, Handle<MobAsset>)>,
     capacity: usize,
 }
 
@@ -53,14 +53,14 @@ impl MobAssetRegistry {
         }
     }
 
-    pub fn get_or_load(&mut self, mob_id: i32, asset_server: &AssetServer) -> Handle<WzMobAsset> {
+    pub fn get_or_load(&mut self, mob_id: i32, asset_server: &AssetServer) -> Handle<MobAsset> {
         if let Some(pos) = self.entries.iter().position(|(id, _)| *id == mob_id) {
             let (_, handle) = self.entries.remove(pos);
             self.entries.push((mob_id, handle.clone()));
             return handle;
         }
         let path = format!("wz://Mob/{:07}.img.mob", mob_id);
-        let handle = asset_server.load::<WzMobAsset>(&path);
+        let handle = asset_server.load::<MobAsset>(&path);
         self.entries.push((mob_id, handle.clone()));
         if self.entries.len() > self.capacity {
             self.entries.remove(0);
@@ -68,7 +68,7 @@ impl MobAssetRegistry {
         handle
     }
 
-    pub fn peek(&self, mob_id: &i32) -> Option<&Handle<WzMobAsset>> {
+    pub fn peek(&self, mob_id: &i32) -> Option<&Handle<MobAsset>> {
         self.entries
             .iter()
             .find(|(id, _)| id == mob_id)

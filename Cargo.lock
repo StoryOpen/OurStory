@@ -2151,6 +2151,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "wz",
+ "wz-derive",
 ]
 
 [[package]]
@@ -7018,6 +7019,15 @@ dependencies = [
  "serde",
  "serde_json",
  "wz_reader",
+]
+
+[[package]]
+name = "wz-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

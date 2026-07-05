@@ -550,10 +550,10 @@ impl AssetLoader for WzUiSpriteLoader {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  Map / Mob / NPC assets (existing, kept with images embedded)
+//  Map / Mob / NPC assets
 // ═══════════════════════════════════════════════════════════════════════
 
-// ── WzMapAsset ──
+// ── WzMapAsset (manual — complex cross-referenced path construction) ──
 
 #[derive(Asset, TypePath, Debug)]
 pub struct WzMapAsset {
@@ -606,110 +606,84 @@ impl AssetLoader for WzMapLoader {
     }
 }
 
-// ── WzMobAsset ──
+// ── MobAsset (derive-based) ──
 
-#[derive(Asset, TypePath, Debug)]
-pub struct WzMobAsset {
-    pub data: Arc<wz::MobData>,
-    pub images: HashMap<String, Handle<Image>>,
+#[derive(Asset, TypePath, Debug, wz_derive::WzAsset)]
+#[wz(asset_ext = "mob", path_template = "Mob/{id:07}.img")]
+pub struct MobAsset {
+    pub id: i32,
+    pub info: MobInfo,
+    #[wz(children(skip = ["info"], require_child = "0"))]
+    pub actions: HashMap<String, MobAction>,
 }
 
-#[derive(Debug, Error)]
-pub enum MobLoaderError {
-    #[error("WZ error: {0}")]
-    WzError(#[from] wz::WzError),
-    #[error("WZ source error: {0}")]
-    WzSource(#[from] wz::source::WzSourceError),
+#[derive(Debug, Clone, wz_derive::WzAsset)]
+pub struct MobInfo {
+    pub level: i32,
+    #[wz(rename = "maxHP")]     pub max_hp: i32,
+    #[wz(rename = "maxMP")]     pub max_mp: i32,
+    pub exp: i32,
+    #[wz(rename = "PADamage")]   pub pad: i32,
+    #[wz(rename = "PDDamage")]   pub pdd: i32,
+    #[wz(rename = "MADamage")]   pub mad: i32,
+    #[wz(rename = "MDDamage")]   pub mdd: i32,
+    pub acc: i32,
+    pub eva: i32,
+    pub speed: i32,
+    #[wz(rename = "bodyAttack")] pub body_attack: i32,
+    pub undead: bool,
+    pub pushed: i32,
+    #[wz(rename = "mobType")]    pub mob_type: i32,
+    #[wz(rename = "summonType")] pub summon_type: i32,
+    #[wz(rename = "elemAttr")]   pub elem_attr: Option<String>,
+    pub fs: Option<f32>,
 }
 
-#[derive(Default, TypePath)]
-pub struct WzMobLoader;
-
-impl AssetLoader for WzMobLoader {
-    type Asset = WzMobAsset;
-    type Settings = ();
-    type Error = MobLoaderError;
-
-    async fn load(
-        &self,
-        _reader: &mut dyn Reader,
-        _settings: &(),
-        load_context: &mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let asset_path = load_context.path().path().to_string_lossy().to_string();
-        let wz_path = parse_asset_path(&asset_path, ".mob");
-
-        let mob_id = wz_path
-            .trim_end_matches(".img")
-            .rsplit('/')
-            .next()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or_else(|| {
-                warn!("WzMobLoader: failed to parse mob ID from '{}', using 0", wz_path);
-                0
-            });
-
-        let bundle = wz::source::load_mob_bundle(mob_id).await?;
-        let images = png_images_to_bevy(&bundle.images, load_context);
-        Ok(WzMobAsset { data: Arc::new(bundle.data), images })
-    }
-
-    fn extensions(&self) -> &[&str] {
-        &["mob"]
-    }
+#[derive(Debug, Clone, wz_derive::WzAsset)]
+pub struct MobAction {
+    pub frames: Vec<MobFrame>,
 }
 
-// ── WzNpcAsset ──
-
-#[derive(Asset, TypePath, Debug)]
-pub struct WzNpcAsset {
-    pub data: Arc<wz::NpcData>,
-    pub images: HashMap<String, Handle<Image>>,
+#[derive(Debug, Clone, wz_derive::WzAsset)]
+pub struct MobFrame {
+    #[wz(default)]
+    pub delay: u32,
+    #[wz(children(skip = ["delay", "face", "z"], require_child = "origin"))]
+    pub parts: Vec<MobPart>,
 }
 
-#[derive(Debug, Error)]
-pub enum NpcLoaderError {
-    #[error("WZ error: {0}")]
-    WzError(#[from] wz::WzError),
-    #[error("WZ source error: {0}")]
-    WzSource(#[from] wz::source::WzSourceError),
+#[derive(Debug, Clone, wz_derive::WzAsset)]
+pub struct MobPart {
+    pub name: String,
+    #[wz(image)]
+    pub image: Handle<Image>,
+    #[wz(origin)]
+    pub origin: Vec2,
 }
 
-#[derive(Default, TypePath)]
-pub struct WzNpcLoader;
+// ── NpcAsset (derive-based) ──
 
-impl AssetLoader for WzNpcLoader {
-    type Asset = WzNpcAsset;
-    type Settings = ();
-    type Error = NpcLoaderError;
+#[derive(Asset, TypePath, Debug, wz_derive::WzAsset)]
+#[wz(asset_ext = "npc", path_template = "Npc/{id:07}.img")]
+pub struct NpcAsset {
+    pub id: i32,
+    #[wz(children(skip = ["info"], require_child = "0"))]
+    pub actions: HashMap<String, NpcAction>,
+}
 
-    async fn load(
-        &self,
-        _reader: &mut dyn Reader,
-        _settings: &(),
-        load_context: &mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let asset_path = load_context.path().path().to_string_lossy().to_string();
-        let wz_path = parse_asset_path(&asset_path, ".npc");
+#[derive(Debug, Clone, wz_derive::WzAsset)]
+pub struct NpcAction {
+    pub frames: Vec<NpcFrame>,
+}
 
-        let npc_id = wz_path
-            .trim_end_matches(".img")
-            .rsplit('/')
-            .next()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or_else(|| {
-                warn!("WzNpcLoader: failed to parse npc ID from '{}', using 0", wz_path);
-                0
-            });
-
-        let bundle = wz::source::load_npc_bundle(npc_id).await?;
-        let images = png_images_to_bevy(&bundle.images, load_context);
-        Ok(WzNpcAsset { data: Arc::new(bundle.data), images })
-    }
-
-    fn extensions(&self) -> &[&str] {
-        &["npc"]
-    }
+#[derive(Debug, Clone, wz_derive::WzAsset)]
+pub struct NpcFrame {
+    #[wz(default)]
+    pub delay: u32,
+    #[wz(image)]
+    pub image: Handle<Image>,
+    #[wz(origin)]
+    pub origin: Vec2,
 }
 
 // ═══════════════════════════════════════════════════════════════════════

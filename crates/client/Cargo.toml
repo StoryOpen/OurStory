@@ -39,6 +39,7 @@ bevy = { version = "0.19.0", default-features = false, features = [
     "bevy_remote",
 ] }
 wz = { path = "../wz" }
+wz-derive = { path = "../wz-derive" }
 wasm-bindgen-futures = "0.4"
 bincode = { version = "2.0.1", features = ["serde"] }
 # Minimal image: only PNG decoder (no gif, jpeg, webp, tiff, etc.)

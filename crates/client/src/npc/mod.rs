@@ -3,7 +3,7 @@ pub mod events;
 
 use bevy::prelude::*;
 
-use crate::wz::asset_loaders::WzNpcAsset;
+use crate::wz::asset_loaders::{NpcAsset, NpcAssetLoader};
 use crate::GameSet;
 
 pub struct NpcPlugin {
@@ -18,8 +18,8 @@ impl Default for NpcPlugin {
 
 impl Plugin for NpcPlugin {
     fn build(&self, app: &mut App) {
-        app.init_asset::<WzNpcAsset>()
-            .init_asset_loader::<crate::wz::asset_loaders::WzNpcLoader>()
+        app.init_asset::<NpcAsset>()
+            .init_asset_loader::<NpcAssetLoader>()
             .insert_resource(NpcAssetRegistry::new(self.cache_capacity))
             .insert_resource(PendingNpcSpawns::default())
             .register_type::<NpcId>()
@@ -37,7 +37,7 @@ impl Plugin for NpcPlugin {
 
 #[derive(Resource)]
 pub struct NpcAssetRegistry {
-    entries: Vec<(i32, Handle<WzNpcAsset>)>,
+    entries: Vec<(i32, Handle<NpcAsset>)>,
     capacity: usize,
 }
 
@@ -53,14 +53,14 @@ impl NpcAssetRegistry {
         &mut self,
         npc_id: i32,
         asset_server: &AssetServer,
-    ) -> Handle<WzNpcAsset> {
+    ) -> Handle<NpcAsset> {
         if let Some(pos) = self.entries.iter().position(|(id, _)| *id == npc_id) {
             let (_, handle) = self.entries.remove(pos);
             self.entries.push((npc_id, handle.clone()));
             return handle;
         }
         let path = format!("wz://Npc/{:07}.img.npc", npc_id);
-        let handle = asset_server.load::<WzNpcAsset>(&path);
+        let handle = asset_server.load::<NpcAsset>(&path);
         self.entries.push((npc_id, handle.clone()));
         if self.entries.len() > self.capacity {
             self.entries.remove(0);
@@ -68,7 +68,7 @@ impl NpcAssetRegistry {
         handle
     }
 
-    pub fn peek(&self, npc_id: &i32) -> Option<&Handle<WzNpcAsset>> {
+    pub fn peek(&self, npc_id: &i32) -> Option<&Handle<NpcAsset>> {
         self.entries
             .iter()
             .find(|(id, _)| id == npc_id)

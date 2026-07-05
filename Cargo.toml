@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/client",
     "crates/wz",
+    "crates/wz-derive",
     "crates/wz-cli",
     "crates/protocol",
     "crates/server-core",
