@@ -8,14 +8,12 @@ use crate::GameSet;
 use bevy::prelude::*;
 
 pub struct MapPlugin {
-    pub start_map: Option<String>,
     pub cache_capacity: usize,
 }
 
 impl Default for MapPlugin {
     fn default() -> Self {
         Self {
-            start_map: Some("Map/Map/Map1/100010000.img".into()),
             cache_capacity: 5,
         }
     }
@@ -50,12 +48,5 @@ impl Plugin for MapPlugin {
             )
             .add_observer(systems::handle_request_map)
             .add_observer(systems::spawn_map);
-
-        if let Some(path) = &self.start_map {
-            let p = path.clone();
-            app.add_systems(Startup, move |mut commands: Commands| {
-                commands.trigger(events::RequestMap(p.clone()));
-            });
-        }
     }
 }
