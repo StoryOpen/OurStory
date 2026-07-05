@@ -1,3 +1,5 @@
+use bevy::asset::AssetEvent;
+use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 use bevy::text::{EditableText, TextCursorStyle};
 
@@ -9,79 +11,57 @@ const FRAME_H: f32 = 600.0;
 const WINDOW_W: f32 = 1024.0;
 const WINDOW_H: f32 = 768.0;
 
-// ── Pending load state ──
+// ── Button definitions ──
 
-/// All image paths needed by the login screen, hardcoded.
-const LOGIN_PATHS: &[&str] = &[
+const BUTTON_NAMES: &[&str] = &[
+    "BtLogin",
+    "BtHomePage",
+    "BtNew",
+    "BtQuit",
+    "BtEmailSave",
+    "BtEmailLost",
+    "BtPasswdLost",
+    "BtGuestLogin",
+    "BtLoginIDLost",
+    "BtLoginIDSave",
+];
+
+const BUTTON_STATES: &[&str] = &["normal", "mouseOver", "pressed", "disabled"];
+
+const STANDALONE_IMAGES: &[&str] = &[
     "UI/Login.img/Common/frame",
     "UI/Login.img/Title/MSTitle",
     "UI/Login.img/Common/shadow/0",
-    "UI/Login.img/Title/BtLogin/normal/0",
-    "UI/Login.img/Title/BtLogin/mouseOver/0",
-    "UI/Login.img/Title/BtLogin/pressed/0",
-    "UI/Login.img/Title/BtLogin/disabled/0",
-    "UI/Login.img/Title/BtHomePage/normal/0",
-    "UI/Login.img/Title/BtHomePage/mouseOver/0",
-    "UI/Login.img/Title/BtHomePage/pressed/0",
-    "UI/Login.img/Title/BtHomePage/disabled/0",
-    "UI/Login.img/Title/BtNew/normal/0",
-    "UI/Login.img/Title/BtNew/mouseOver/0",
-    "UI/Login.img/Title/BtNew/pressed/0",
-    "UI/Login.img/Title/BtNew/disabled/0",
-    "UI/Login.img/Title/BtQuit/normal/0",
-    "UI/Login.img/Title/BtQuit/mouseOver/0",
-    "UI/Login.img/Title/BtQuit/pressed/0",
-    "UI/Login.img/Title/BtQuit/disabled/0",
-    "UI/Login.img/Title/BtEmailSave/normal/0",
-    "UI/Login.img/Title/BtEmailSave/mouseOver/0",
-    "UI/Login.img/Title/BtEmailSave/pressed/0",
-    "UI/Login.img/Title/BtEmailSave/disabled/0",
-    "UI/Login.img/Title/BtEmailLost/normal/0",
-    "UI/Login.img/Title/BtEmailLost/mouseOver/0",
-    "UI/Login.img/Title/BtEmailLost/pressed/0",
-    "UI/Login.img/Title/BtEmailLost/disabled/0",
-    "UI/Login.img/Title/BtPasswdLost/normal/0",
-    "UI/Login.img/Title/BtPasswdLost/mouseOver/0",
-    "UI/Login.img/Title/BtPasswdLost/pressed/0",
-    "UI/Login.img/Title/BtPasswdLost/disabled/0",
-    "UI/Login.img/Title/BtGuestLogin/normal/0",
-    "UI/Login.img/Title/BtGuestLogin/mouseOver/0",
-    "UI/Login.img/Title/BtGuestLogin/pressed/0",
-    "UI/Login.img/Title/BtGuestLogin/disabled/0",
-    "UI/Login.img/Title/BtLoginIDLost/normal/0",
-    "UI/Login.img/Title/BtLoginIDLost/mouseOver/0",
-    "UI/Login.img/Title/BtLoginIDLost/pressed/0",
-    "UI/Login.img/Title/BtLoginIDLost/disabled/0",
-    "UI/Login.img/Title/BtLoginIDSave/normal/0",
-    "UI/Login.img/Title/BtLoginIDSave/mouseOver/0",
-    "UI/Login.img/Title/BtLoginIDSave/pressed/0",
-    "UI/Login.img/Title/BtLoginIDSave/disabled/0",
     "UI/Login.img/Title/check/0",
     "UI/Login.img/Title/check/1",
 ];
 
 fn build_bundle_path() -> String {
-    format!("wz://bundle-paths/{}.wzbundle", LOGIN_PATHS.join(","))
+    let mut paths: Vec<String> = STANDALONE_IMAGES.iter().map(|s| s.to_string()).collect();
+    for btn in BUTTON_NAMES {
+        for state in BUTTON_STATES {
+            paths.push(format!("UI/Login.img/Title/{btn}/{state}/0"));
+        }
+    }
+    format!("wz://bundle-paths/{}.wzbundle", paths.join(","))
 }
+
+// ── Pending load state ──
 
 #[derive(Resource)]
 pub struct PendingLoginScreen {
     bundle_handle: Handle<WzUiBundleAsset>,
-    spawned: bool,
 }
 
-fn image_from_bundle(
-    path: &str,
-    bundle: &WzUiBundleAsset,
-) -> Handle<Image> {
+/// Pre-loaded checkbox images so toggling doesn't re-fetch from the network.
+#[derive(Resource)]
+pub struct LoginCheckImages {
+    pub unchecked: Handle<Image>,
+    pub checked: Handle<Image>,
+}
+
+fn image_from_bundle(path: &str, bundle: &WzUiBundleAsset) -> Handle<Image> {
     bundle.images.get(path).cloned().unwrap_or_default()
-}
-
-fn origin_from_bundle(
-    path: &str,
-    bundle: &WzUiBundleAsset,
-) -> Vec2 {
-    bundle.origins.get(path).copied().unwrap_or(Vec2::ZERO)
 }
 
 fn button_from_bundle(
@@ -103,30 +83,28 @@ fn button_from_bundle(
 pub fn start_login_load(commands: &mut Commands, asset_server: &AssetServer) {
     let path = build_bundle_path();
     let bundle_handle = asset_server.load::<WzUiBundleAsset>(&path);
-    commands.insert_resource(PendingLoginScreen {
-        bundle_handle,
-        spawned: false,
-    });
+    commands.insert_resource(PendingLoginScreen { bundle_handle });
 }
 
-// ── Check readiness system ──
+// ── Check readiness (event-driven, matching logo.rs pattern) ──
 
 pub fn check_login_ready(
     mut commands: Commands,
-    mut pending: Option<ResMut<PendingLoginScreen>>,
+    pending: Option<Res<PendingLoginScreen>>,
+    mut events: MessageReader<AssetEvent<WzUiBundleAsset>>,
     bundle_assets: Res<Assets<WzUiBundleAsset>>,
 ) {
-    let Some(ref mut pending) = pending else { return };
-    if pending.spawned {
-        return;
+    let Some(pending) = pending else { return };
+    for event in events.read() {
+        if let AssetEvent::LoadedWithDependencies { id } = event {
+            if pending.bundle_handle.id() == *id {
+                info!("All login screen assets loaded, spawning UI");
+                spawn_login_screen(&mut commands, &bundle_assets, &pending.bundle_handle);
+                commands.remove_resource::<PendingLoginScreen>();
+                return;
+            }
+        }
     }
-    if !bundle_assets.contains(&pending.bundle_handle) {
-        return;
-    }
-
-    info!("All login screen assets loaded, spawning UI");
-    spawn_login_screen(&mut commands, &bundle_assets, &pending.bundle_handle);
-    pending.spawned = true;
 }
 
 // ── Spawn (called once assets are ready) ──
@@ -155,7 +133,14 @@ fn spawn_login_screen(
 
     let frame_image = image_from_bundle("UI/Login.img/Common/frame", bundle);
     let title_image = image_from_bundle("UI/Login.img/Title/MSTitle", bundle);
-    let check_unchecked_image = image_from_bundle("UI/Login.img/Title/check/0", bundle);    let shadow_image = image_from_bundle("UI/Login.img/Common/shadow/0", bundle);
+    let shadow_image = image_from_bundle("UI/Login.img/Common/shadow/0", bundle);
+    let check_unchecked = image_from_bundle("UI/Login.img/Title/check/0", bundle);
+    let check_checked = image_from_bundle("UI/Login.img/Title/check/1", bundle);
+
+    commands.insert_resource(LoginCheckImages {
+        unchecked: check_unchecked.clone(),
+        checked: check_checked,
+    });
 
     commands
         .spawn((
@@ -219,7 +204,6 @@ fn spawn_login_screen(
                 120.0,
                 20.0,
                 "Email",
-                true,
                 UiEmailInput,
             );
 
@@ -243,7 +227,6 @@ fn spawn_login_screen(
                 120.0,
                 20.0,
                 "Password",
-                false,
                 UiPasswordInput,
             );
 
@@ -272,7 +255,7 @@ fn spawn_login_screen(
                     top: Val::Px(checkbox_top),
                     ..default()
                 },
-                ImageNode::from(check_unchecked_image),
+                ImageNode::from(check_unchecked),
                 UiLoginCheckbox(false),
             ));
 
@@ -385,7 +368,6 @@ fn spawn_text_input(
     width: f32,
     height: f32,
     placeholder: &str,
-    _is_email: bool,
     marker: impl Component,
 ) {
     parent

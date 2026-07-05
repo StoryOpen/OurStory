@@ -9,6 +9,7 @@ use bevy::prelude::*;
 use crate::GameSet;
 use components::{UiButton, UiLoginCheckbox, UiLoginScreen};
 use loading::LoadingState;
+use screens::login::LoginCheckImages;
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum UiState {
     #[default]
@@ -53,9 +54,14 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 Update,
+                screens::login::check_login_ready
+                    .run_if(in_state(UiState::Login))
+                    .in_set(GameSet::Ui),
+            )
+            .add_systems(
+                Update,
                 (
                     handle_checkbox_toggle,
-                    screens::login::check_login_ready,
                     windows::hud::check_hud_ready,
                     windows::stat::check_stat_ready,
                 )
@@ -78,6 +84,8 @@ fn enter_login(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 fn exit_login(mut commands: Commands, query: Query<Entity, With<UiLoginScreen>>) {
+    commands.remove_resource::<screens::login::PendingLoginScreen>();
+    commands.remove_resource::<screens::login::LoginCheckImages>();
     for entity in &query {
         commands.entity(entity).despawn();
     }
@@ -164,18 +172,18 @@ fn handle_login_button_click(
 fn handle_checkbox_toggle(
     interaction_query: Query<(&Interaction, &UiButton)>,
     mut checkbox_query: Query<(&mut UiLoginCheckbox, &mut ImageNode)>,
-    asset_server: Res<AssetServer>,
+    check_images: Option<Res<LoginCheckImages>>,
 ) {
+    let Some(check_images) = check_images else { return };
     for (interaction, button) in &interaction_query {
         if *interaction == Interaction::Pressed && button.name == "BtEmailSave" {
             for (mut checkbox, mut image_node) in &mut checkbox_query {
                 checkbox.0 = !checkbox.0;
-                let path = if checkbox.0 {
-                    "UI/Login.img/Title/check/1"
+                image_node.image = if checkbox.0 {
+                    check_images.checked.clone()
                 } else {
-                    "UI/Login.img/Title/check/0"
+                    check_images.unchecked.clone()
                 };
-                image_node.image = asset_server.load::<Image>(format!("wz://{path}.wzimg"));
                 info!("Email save checkbox toggled: {}", checkbox.0);
             }
         }
