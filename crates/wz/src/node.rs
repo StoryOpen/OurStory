@@ -49,13 +49,11 @@ impl Node {
 
         let segments: Vec<&str> = path.split('/').collect();
 
-        if segments.len() == 1 && !path.ends_with(".img") {
-            return Ok(self.try_get(path).ok_or_else(|| WzError::NodeNotFound(path.to_string()))?);
-        }
-
         let mut current = {
             let guard = self.wz_node.read().map_err(|_| WzError::LockPoisoned)?;
-            guard.at(segments[0]).ok_or_else(|| WzError::NodeNotFound(path.to_string()))?
+            guard
+                .at(segments[0])
+                .ok_or_else(|| WzError::NodeNotFound(path.to_string()))?
         };
 
         if segments[0].ends_with(".img") {
@@ -65,7 +63,9 @@ impl Node {
         for &segment in &segments[1..] {
             current = {
                 let guard = current.read().map_err(|_| WzError::LockPoisoned)?;
-                guard.at(segment).ok_or_else(|| WzError::NodeNotFound(path.to_string()))?
+                guard
+                    .at(segment)
+                    .ok_or_else(|| WzError::NodeNotFound(path.to_string()))?
             };
 
             if segment.ends_with(".img") {
@@ -265,7 +265,7 @@ impl Node {
     pub fn read_pos(&self) -> Result<Vector2D, WzError> {
         let x: f32 = self.at_path("x")?.try_into()?;
         let y: f32 = self.at_path("y")?.try_into()?;
-        Ok(Vector2D(x, -(y as f32)))
+        Ok(Vector2D { x, y: -(y as f32) })
     }
 
     pub fn read_origin(&self, img_node: &Node) -> Result<Vector2D, WzError> {
@@ -287,13 +287,13 @@ impl Node {
             }
         }
 
-        Ok(Vector2D(x as f32, y_f))
+        Ok(Vector2D { x: x as f32, y: y_f })
     }
 
     pub fn read_pos_n(&self, n: u8) -> Result<Vector2D, WzError> {
         let x: f32 = self.at_path(&format!("x{n}"))?.try_into()?;
         let y: f32 = self.at_path(&format!("y{n}"))?.try_into()?;
-        Ok(Vector2D(x as f32, -(y as f32)))
+        Ok(Vector2D { x: x as f32, y: -(y as f32) })
     }
 
     pub fn get_or<T: TryFrom<Node, Error = WzError>>(&self, path: &str, default: T) -> T {
@@ -321,32 +321,19 @@ impl Node {
             .unwrap_or_else(|_| panic!("required child '{path}' type mismatch"))
     }
 
-    pub fn resolve_relative(&self, rel_path: &str) -> Result<Node, WzError> {
-        let current_path = self.path();
-        let mut segs: Vec<&str> = current_path.split('/').collect();
-        segs.pop();
-        for part in rel_path.split('/') {
-            match part {
-                ".." => { segs.pop(); }
-                "." => {}
-                _ => segs.push(part),
-            }
-        }
-        let absolute = segs.join("/");
-        crate::resolve_base_node().at_path(&absolute)
-    }
-
     #[cfg(feature = "image-data")]
     pub fn extract_image(&self) -> Result<DynamicImage, WzError> {
         if let Some(inlink_node) = self.try_get("_inlink") {
             let path: String = inlink_node.try_into()?;
-            let resolved = self.resolve_relative(&path)?;
-            return resolved.extract_image();
+            let target = wz_reader::util::node_util::resolve_inlink(&path, &self.wz_node)
+                .ok_or_else(|| WzError::NodeNotFound(format!("_inlink not found: {path}")))?;
+            return Node::from(target).extract_image();
         }
         if let Some(outlink_node) = self.try_get("_outlink") {
             let path: String = outlink_node.try_into()?;
-            let resolved = crate::resolve_base_node().at_path(&path)?;
-            return resolved.extract_image();
+            let target = wz_reader::util::node_util::resolve_outlink(&path, &self.wz_node, true)
+                .ok_or_else(|| WzError::NodeNotFound(format!("_outlink not found: {path}")))?;
+            return Node::from(target).extract_image();
         }
 
         let guard = self.wz_node.read().map_err(|_| WzError::LockPoisoned)?;

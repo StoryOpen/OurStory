@@ -2140,6 +2140,7 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_asset",
  "bincode",
  "console_error_panic_hook",
  "image",

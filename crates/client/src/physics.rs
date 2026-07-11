@@ -2,38 +2,54 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 
-use wz::Foothold;
-use crate::wz::asset_loaders::WzPhysicsAsset;
-use crate::ui::loading::LoadingState;
 use crate::GameSet;
 
-#[derive(Resource)]
-pub struct PhysicsConstants(pub Arc<wz::PhysicsConstants>);
+/// Stand-in for `wz::Foothold` (the WZ foothold type is not implemented yet).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Foothold {
+    pub id: i32,
+    pub next_id: Option<i32>,
+    pub prev_id: Option<i32>,
+    pub force: i32,
+    pub group: i32,
+    pub layer: u8,
+    pub x1: f32,
+    pub y1: f32,
+    pub x2: f32,
+    pub y2: f32,
+}
 
-/// System that checks if the WzPhysicsAsset has been loaded and inserts
-/// the PhysicsConstants resource. Runs as a startup system.
-pub fn init_physics_from_asset(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    assets: Res<Assets<WzPhysicsAsset>>,
-    mut initialized: Local<bool>,
-    mut loading_state: Option<ResMut<LoadingState>>,
-) {
-    if *initialized {
-        return;
-    }
-    // Use a fixed path for the physics asset
-    let handle = asset_server.load::<WzPhysicsAsset>("wz://physics.physics");
-    if let Some(asset) = assets.get(&handle) {
-        commands.insert_resource(PhysicsConstants(asset.0.clone()));
-        *initialized = true;
-        if let Some(ref mut loading) = loading_state {
-            loading.physics_loaded = true;
-            loading.ready = loading.physics_loaded && loading.zmap_loaded;
+impl Foothold {
+    pub fn y_at(&self, x: f32) -> f32 {
+        let dx = self.x2 - self.x1;
+        if dx.abs() < EPSILON {
+            return self.y1;
         }
-        info!("Physics constants loaded from asset");
+        self.y1 + (x - self.x1) * (self.y2 - self.y1) / dx
     }
 }
+
+/// Stand-in for `wz::PhysicsConstants` (not implemented yet).
+#[derive(Clone, Default)]
+pub struct PhysicsConstantValues {
+    pub jump_speed: f32,
+    pub walk_speed: f32,
+    pub walk_drag: f32,
+    pub min_friction: f32,
+    pub max_friction: f32,
+    pub slip_force: f32,
+    pub slip_speed: f32,
+    pub walk_force: f32,
+    pub gravity_acc: f32,
+    pub fall_speed: f32,
+    pub float_drag2: f32,
+    pub float_coefficient: f32,
+    pub fly_force: f32,
+    pub fly_speed: f32,
+}
+
+#[derive(Resource)]
+pub struct PhysicsConstants(pub Arc<PhysicsConstantValues>);
 
 pub const PHYSICS_DT: f32 = 1.0 / 100.0;
 pub const EPSILON: f32 = 0.00001;
@@ -114,7 +130,6 @@ impl Plugin for PhysicsPlugin {
         app.init_resource::<PhysicsAccumulator>()
             .register_type::<PhysicsState>()
             .configure_sets(Update, PhysicsSet::Simulate)
-            .add_systems(Startup, init_physics_from_asset)
             .add_systems(
                 Update,
                 (
@@ -159,7 +174,7 @@ pub fn physics_update(
 fn step_physics(
     ps: &mut PhysicsState,
     graph: Option<&FootholdGraph>,
-    constants: &wz::PhysicsConstants,
+    constants: &PhysicsConstantValues,
     dt: f32,
 ) {
     if ps.jump_request {
@@ -179,7 +194,7 @@ fn step_physics(
     }
 }
 
-fn do_jump(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants: &wz::PhysicsConstants) {
+fn do_jump(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants: &PhysicsConstantValues) {
     if !ps.on_fh { return; }
 
     if ps.down {
@@ -230,7 +245,7 @@ fn do_jump(ps: &mut PhysicsState, graph: Option<&FootholdGraph>, constants: &wz:
 fn update_on_fh(
     ps: &mut PhysicsState,
     graph: Option<&FootholdGraph>,
-    constants: &wz::PhysicsConstants,
+    constants: &PhysicsConstantValues,
     dt: f32,
 ) {
     let graph = match graph {
@@ -360,7 +375,7 @@ fn handle_fh_exit_left(ps: &mut PhysicsState, graph: &FootholdGraph, idx: usize,
 fn update_in_air(
     ps: &mut PhysicsState,
     graph: Option<&FootholdGraph>,
-    constants: &wz::PhysicsConstants,
+    constants: &PhysicsConstantValues,
     dt: f32,
 ) {
     if ps.enable_gravity {
@@ -442,7 +457,7 @@ fn update_in_air(
     ps.y = to_y;
 }
 
-fn apply_free_movement(ps: &mut PhysicsState, constants: &wz::PhysicsConstants, dt: f32) {
+fn apply_free_movement(ps: &mut PhysicsState, constants: &PhysicsConstantValues, dt: f32) {
     if ps.left {
         ps.vx -= constants.fly_force / SHOE_MASS * dt;
         ps.vx = ps.vx.max(-constants.fly_speed);

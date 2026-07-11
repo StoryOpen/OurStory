@@ -18,7 +18,7 @@ struct PlayerEntry {
 }
 
 struct MobEntry {
-    mob_id: i32,
+    ob_id: i32,
     template_id: i32,
     position: Position,
     hp: i32,

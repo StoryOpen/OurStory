@@ -3,7 +3,6 @@ pub mod events;
 pub mod resources;
 pub mod systems;
 
-use crate::wz::asset_loaders::{WzMapAsset, WzMapLoader};
 use crate::GameSet;
 use bevy::prelude::*;
 
@@ -21,16 +20,12 @@ impl Default for MapPlugin {
 
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.init_asset::<WzMapAsset>()
-            .init_asset_loader::<WzMapLoader>()
-            .insert_resource(resources::MapCache::new(self.cache_capacity))
-            .insert_resource(resources::CurrentMap(resources::MapState::None))
+        app.insert_resource(resources::CurrentMap(resources::MapState::None))
             .insert_resource(resources::PortalFrames::default())
-            .add_systems(Startup, systems::init_portal_frames)
+            .add_systems(Startup, systems::load_default_map)
             .add_systems(
                 Update,
                 (
-                    systems::on_asset_loaded,
                     systems::tick_map_animations,
                     systems::tick_move_effects,
                     (
@@ -46,7 +41,6 @@ impl Plugin for MapPlugin {
                         .in_set(GameSet::Visuals),
                 ),
             )
-            .add_observer(systems::handle_request_map)
-            .add_observer(systems::spawn_map);
+            .add_systems(Update, systems::poll_loaded_map);
     }
 }

@@ -75,13 +75,13 @@ impl JsonNode {
     pub fn read_pos(&self) -> Result<Vector2D, WzError> {
         let x: f32 = self.at_path("x")?.try_into()?;
         let y: f32 = self.at_path("y")?.try_into()?;
-        Ok(Vector2D(x, -(y as f32)))
+        Ok(Vector2D { x, y: -(y as f32) })
     }
 
     pub fn read_pos_n(&self, n: u8) -> Result<Vector2D, WzError> {
         let x: f32 = self.at_path(&format!("x{n}"))?.try_into()?;
         let y: f32 = self.at_path(&format!("y{n}"))?.try_into()?;
-        Ok(Vector2D(x as f32, -(y as f32)))
+        Ok(Vector2D { x: x as f32, y: -(y as f32) })
     }
 
     pub fn get_or<T: TryFrom<JsonNode, Error = WzError>>(&self, path: &str, default: T) -> T {
@@ -121,7 +121,7 @@ impl JsonNode {
         let origin = self.at_path("origin")?;
         let x: f32 = origin.at_path("x")?.try_into().unwrap_or(0.0);
         let y: f32 = origin.at_path("y")?.try_into().unwrap_or(0.0);
-        Ok(Vector2D(x, y))
+        Ok(Vector2D { x, y })
     }
 
     pub fn extract_image(&self) -> Result<DynamicImage, WzError> {

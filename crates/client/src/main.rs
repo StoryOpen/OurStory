@@ -1,25 +1,19 @@
 mod camera;
-mod character;
 mod input;
 mod layer;
 mod physics;
 mod wz;
 
 mod map;
-mod mob;
-mod npc;
 mod ui;
 
 use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 use camera::CameraPlugin;
-use character::CharacterPlugin;
 use input::InputPlugin;
 use wz::asset_source::WzAssetSourcePlugin;
 
 use map::MapPlugin;
-use mob::MobPlugin;
-use npc::NpcPlugin;
 use ui::UiPlugin;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -65,20 +59,16 @@ fn build_app(title: &str) -> App {
                 .chain(),
         );
 
-    app.add_plugins(CharacterPlugin);
     app.add_plugins(CameraPlugin)
         .add_plugins(InputPlugin)
         .add_plugins(physics::PhysicsPlugin);
     app.add_plugins(MapPlugin::default());
-    app.add_plugins(MobPlugin::default());
-    app.add_plugins(NpcPlugin::default());
     app.add_plugins(UiPlugin);
 
     app.add_observer(wz::set_sprite_bottom_left);
 
     app
 }
-
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
@@ -91,7 +81,9 @@ fn main() {
             let origin = w.location().origin().ok()?;
             let doc = w.document()?;
             // Check for <base href> tag (used in dev deployment to set API path)
-            let base_href = doc.query_selector("base").ok()?
+            let base_href = doc
+                .query_selector("base")
+                .ok()?
                 .and_then(|el| el.get_attribute("href"));
             let api_path = match base_href.as_deref() {
                 // Root deployment: API is at /wz/... (same origin)
@@ -118,11 +110,8 @@ fn main() {
     // Note: ::wz refers to the external wz crate (local mod wz shadows it)
     ::wz::WzData::init_wasm(api_base_url);
 
-    build_app("OurStory")
-    .add_systems(Startup, setup)
-    .run();
+    build_app("OurStory").add_systems(Startup, setup).run();
 }
-
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
@@ -135,10 +124,10 @@ fn main() {
     };
 
     build_app(&title)
-    .add_plugins(bevy::remote::RemotePlugin::default())
-    .add_plugins(bevy::remote::http::RemoteHttpPlugin::default())
-    .add_systems(Startup, setup)
-    .run();
+        .add_plugins(bevy::remote::RemotePlugin::default())
+        .add_plugins(bevy::remote::http::RemoteHttpPlugin::default())
+        .add_systems(Startup, setup)
+        .run();
 }
 
 fn setup(mut commands: Commands) {

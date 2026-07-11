@@ -346,6 +346,25 @@ fn is_vector2d(ty: &Type) -> bool {
     }
 }
 
+/// Per-element conversion for a collection whose element type is `inner`.
+/// Scalars and `Vector2D` implement `TryFromNode` (they have no `wz_build`),
+/// so they are converted with `TryFromNode`; everything else is assumed to be a
+/// `WzAsset` and built with `wz_build`.
+fn collection_elem_expr(inner: &Type) -> proc_macro2::TokenStream {
+    if is_scalar(inner) || is_vector2d(inner) {
+        quote! { <#inner as wz::TryFromNode<wz::Node>>::try_from_node(child) }
+    } else {
+        quote! { <#inner>::wz_build(&child, load_context, &sub_label) }
+    }
+}
+
+/// Whether a collection element is built via `wz_build` (i.e. a `WzAsset`
+/// struct) as opposed to `TryFromNode` (scalar / `Vector2D`). Controls
+/// whether the `sub_label` binding is needed.
+fn collection_is_struct(inner: &Type) -> bool {
+    !(is_scalar(inner) || is_vector2d(inner))
+}
+
 /// Get the struct-level attribute value
 fn struct_attr_value(input: &DeriveInput, key: &str) -> Option<String> {
     for attr in &input.attrs {
@@ -613,6 +632,12 @@ fn build_named_vec(
     child_name: &str,
     inner: &Type,
 ) -> proc_macro2::TokenStream {
+    let sub_label = if collection_is_struct(inner) {
+        quote! { let sub_label = format!("{}/{}/{}", label_prefix, #child_name, key_str); }
+    } else {
+        quote! {}
+    };
+    let elem = collection_elem_expr(inner);
     quote! {
         #field_name: {
             let parent = node.at_path(#child_name)?;
@@ -627,8 +652,8 @@ fn build_named_vec(
             items.sort_by_key(|(idx, _, _)| *idx);
             items.into_iter()
                 .map(|(idx, child, key_str)| {
-                    let sub_label = format!("{}/{}/{}", label_prefix, #child_name, key_str);
-                    <#inner>::wz_build(&child, load_context, &sub_label)
+                    #sub_label
+                    #elem
                 })
                 .collect::<Result<Vec<_>, _>>()?
         }
@@ -640,6 +665,12 @@ fn build_named_hashmap(
     child_name: &str,
     inner: &Type,
 ) -> proc_macro2::TokenStream {
+    let sub_label = if collection_is_struct(inner) {
+        quote! { let sub_label = format!("{}/{}/{}", label_prefix, #child_name, key_str); }
+    } else {
+        quote! {}
+    };
+    let elem = collection_elem_expr(inner);
     quote! {
         #field_name: {
             let parent = node.at_path(#child_name)?;
@@ -647,8 +678,8 @@ fn build_named_hashmap(
                 .into_iter()
                 .map(|(key, child)| {
                     let key_str = key.to_string();
-                    let sub_label = format!("{}/{}/{}", label_prefix, #child_name, key_str);
-                    let val = <#inner>::wz_build(&child, load_context, &sub_label)?;
+                    #sub_label
+                    let val = #elem?;
                     Ok((key_str, val))
                 })
                 .collect::<Result<_, wz::WzError>>()?
@@ -672,6 +703,12 @@ fn build_children_vec(
     } else {
         quote! {}
     };
+    let sub_label = if collection_is_struct(inner) {
+        quote! { let sub_label = format!("{}/{}", label_prefix, key_str); }
+    } else {
+        quote! {}
+    };
+    let elem = collection_elem_expr(inner);
 
     if numeric_only {
         return quote! {
@@ -689,8 +726,8 @@ fn build_children_vec(
                 items.sort_by_key(|(idx, _, _)| *idx);
                 items.into_iter()
                     .map(|(_idx, child, key_str)| {
-                        let sub_label = format!("{}/{}", label_prefix, key_str);
-                        <#inner>::wz_build(&child, load_context, &sub_label)
+                        #sub_label
+                        #elem
                     })
                     .collect::<Result<Vec<_>, _>>()?
             }
@@ -712,8 +749,8 @@ fn build_children_vec(
             items.sort_by_key(|(idx, _, _)| *idx);
             items.into_iter()
                 .map(|(_idx, child, key_str)| {
-                    let sub_label = format!("{}/{}", label_prefix, key_str);
-                    <#inner>::wz_build(&child, load_context, &sub_label)
+                    #sub_label
+                    #elem
                 })
                 .collect::<Result<Vec<_>, _>>()?
         }
@@ -734,6 +771,12 @@ fn build_children_hashmap(
     } else {
         quote! {}
     };
+    let sub_label = if collection_is_struct(inner) {
+        quote! { let sub_label = format!("{}/{}", label_prefix, key_str); }
+    } else {
+        quote! {}
+    };
+    let elem = collection_elem_expr(inner);
 
     quote! {
         #field_name: {
@@ -744,8 +787,8 @@ fn build_children_hashmap(
                     let key_str = key.to_string();
                     if skip_names.contains(&key_str.as_str()) { return None; }
                     #require_check
-                    let sub_label = format!("{}/{}", label_prefix, key_str);
-                    match <#inner>::wz_build(&child, load_context, &sub_label) {
+                    #sub_label
+                    match #elem {
                         Ok(val) => Some((key_str, val)),
                         Err(e) => {
                             bevy::log::warn!("skipping child '{}': {}", key_str, e);

@@ -1,24 +1,5 @@
-## Coordinate System
-
-Use the following methods to read position, offsets, vectors, etc when applicable
-
-- `TryFrom<Node> for Vector2D` reads WZ `Vector2D` values
-- `Node::read_pos()` reads scalar `x`/`y` children
-- `Node::read_origin()` reads Vector2D for the origin of the sprite
-- `Node::read_pos_n(n)` reads `x{n}`/`y{n}` (footholds, areas)
-
-**Origins** are local pixel offsets from the sprite's bottom-left corner. 
-
-**Footholds:** `Foothold.{x1,y1,x2,y2}` are world-space. 
-
-
-## Client — Character Rendering (`crates/client/src/character/`)
-
-The character module composites MapleStory character sprites (body, head, hair, face, equipment) with animation and correct z-ordering.
-
-### Key components
-
-- **Z-ordering** — `Base.wz/zmap.img` defines 151 z-layer names in file order. Lower zmap index = front (higher Bevy z). `ZMap::depth()` inverts the index: `bevy_z = (150 - index) + 50`, giving a z-range of 50–200 (above map tiles at z=0–2). `load_zmap()` uses `WzImage::resolve_children()` for deterministic file-order iteration (WZ reader stores children in a HashMap).
+## coding styles
+keep concise comments, if the code is explanatory, do not add repeating comments.
 
 
 ## Remote Inspection (BRP)
@@ -109,6 +90,3 @@ The one-time setup (systemd unit, nginx locations) is handled automatically and 
 ### Release deployment
 
 Push a `v*` tag to trigger the GitHub Actions workflows (`.github/workflows/deploy-server.yml` and `deploy-wasm-client.yml`), which deploy to the **prod** slots.
-
----
-

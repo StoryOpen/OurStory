@@ -1,5 +1,6 @@
 pub mod asset_loaders;
 pub mod asset_source;
+pub mod map;
 
 use std::marker::PhantomData;
 use bevy::{
@@ -75,7 +76,7 @@ impl<A: WzAsset + TypePath + Asset + 'static> AssetLoader for WzAssetLoader<A> {
         let asset_path = load_context.path().path().to_string_lossy().to_string();
         let wz_path = A::asset_path_to_wz_path(&asset_path);
         let source = wz::source::default_source();
-        let node = source.node(&wz_path).await?;
+        let node = source.node(&wz_path)?;
         Ok(A::wz_build(&node, load_context, "")?)
     }
 
@@ -96,45 +97,10 @@ pub struct WzAssetPlugin;
 impl Plugin for WzAssetPlugin {
     fn build(&self, app: &mut App) {
         use asset_loaders::*;
-
-        // Image loader (wzimg) — returns raw Image, not WzAsset
-        app.init_asset_loader::<WzImageLoader>();
+        use crate::wz::map::WzMapAsset;
 
         // WzAsset types — all use the generic WzAssetLoader
-        app.init_asset::<WzUiSpriteAsset>()
-            .init_asset_loader::<WzAssetLoader<WzUiSpriteAsset>>();
-
-        // Singleton startup data assets
-        app.init_asset::<WzPhysicsAsset>()
-            .init_asset_loader::<WzPhysicsLoader>()
-            .init_asset::<WzZMapAsset>()
-            .init_asset_loader::<WzZMapLoader>()
-            .init_asset::<WzSkillDatabaseAsset>()
-            .init_asset_loader::<WzSkillDatabaseLoader>()
-            .init_asset::<WzJobCatalogAsset>()
-            .init_asset_loader::<WzJobCatalogLoader>()
-            .init_asset::<WzActionListsAsset>()
-            .init_asset_loader::<WzActionListsLoader>();
-
-        // Character data assets
-        app.init_asset::<WzCharBodyAsset>()
-            .init_asset_loader::<WzCharBodyLoader>()
-            .init_asset::<WzHairBodyAsset>()
-            .init_asset_loader::<WzHairBodyLoader>()
-            .init_asset::<WzEquipActionAsset>()
-            .init_asset_loader::<WzEquipActionLoader>()
-            .init_asset::<WzFaceExpressionAsset>()
-            .init_asset_loader::<WzFaceExpressionLoader>();
-
-        // UI bundle asset (caller-specified paths)
-        app.init_asset::<WzUiBundleAsset>()
-            .init_asset_loader::<WzUiBundleLoader>();
-
-        // WzAsset-based loaders
-        app.init_asset::<WzPortalFramesAsset>()
-            .init_asset_loader::<WzAssetLoader<WzPortalFramesAsset>>();
-
-        app.init_asset::<WzImageFramesAsset>()
-            .init_asset_loader::<WzAssetLoader<WzImageFramesAsset>>();
+        app.init_asset::<WzMapAsset>()
+            .init_asset_loader::<WzAssetLoader<WzMapAsset>>();
     }
 }
