@@ -4,6 +4,7 @@ mod layer;
 mod physics;
 mod wz;
 
+mod animation;
 mod map;
 mod ui;
 
@@ -57,7 +58,8 @@ fn build_app(title: &str) -> App {
                 GameSet::Visuals,
             )
                 .chain(),
-        );
+        )
+        .add_systems(Update, animation::tick_animations.in_set(GameSet::Animation));
 
     app.add_plugins(CameraPlugin)
         .add_plugins(InputPlugin)

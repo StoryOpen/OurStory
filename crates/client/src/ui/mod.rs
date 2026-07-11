@@ -26,6 +26,8 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<UiState>()
             .insert_resource(LoadingState::default())
+            .add_systems(OnEnter(UiState::Logo), enter_logo)
+            .add_systems(OnExit(UiState::Logo), exit_logo)
             .add_systems(OnEnter(UiState::Login), enter_login)
             .add_systems(OnExit(UiState::Login), exit_login)
             .add_systems(OnEnter(UiState::InGame), enter_ingame)
@@ -36,9 +38,27 @@ impl Plugin for UiPlugin {
             .add_systems(OnEnter(UiState::CharCreate), enter_placeholder)
             .add_systems(
                 Update,
+                screens::logo::handle_logo_click
+                    .run_if(in_state(UiState::Logo))
+                    .in_set(GameSet::Ui),
+            )
+            .add_systems(
+                Update,
                 (update_button_sprites, handle_login_button_click).in_set(GameSet::Ui),
             );
     }
+}
+
+fn enter_logo(commands: Commands, asset_server: Res<AssetServer>) {
+    screens::logo::start_logo_load(commands, asset_server);
+}
+
+fn exit_logo(
+    mut commands: Commands,
+    query: Query<Entity, Or<(With<screens::logo::NexonLogo>, With<screens::logo::WizetLogo>)>>,
+) {
+    commands.remove_resource::<screens::logo::PendingLogoLoad>();
+    screens::logo::despawn_logo_screen(commands, query);
 }
 
 fn enter_login() {}

@@ -1,5 +1,6 @@
 pub mod asset_loaders;
 pub mod asset_source;
+pub mod frames;
 pub mod map;
 
 use std::marker::PhantomData;
@@ -98,9 +99,13 @@ impl Plugin for WzAssetPlugin {
     fn build(&self, app: &mut App) {
         use asset_loaders::*;
         use crate::wz::map::WzMapAsset;
+        use crate::wz::frames::WzFrameAnimationAsset;
 
         // WzAsset types — all use the generic WzAssetLoader
         app.init_asset::<WzMapAsset>()
             .init_asset_loader::<WzAssetLoader<WzMapAsset>>();
+
+        app.init_asset::<WzFrameAnimationAsset>()
+            .init_asset_loader::<WzAssetLoader<WzFrameAnimationAsset>>();
     }
 }

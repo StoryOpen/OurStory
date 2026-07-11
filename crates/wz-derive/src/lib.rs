@@ -189,9 +189,27 @@ fn has_skip(field: &syn::Field) -> bool {
     has_wz_attr(field, "skip")
 }
 
-/// Check if field has `#[wz(default)]`
+/// Check if field has `#[wz(default)]` (flag only, or with a value)
 fn has_default(field: &syn::Field) -> bool {
     has_wz_attr(field, "default")
+}
+
+/// Get custom default expression from `#[wz(default = expr)]`, or None.
+fn get_default_value(field: &syn::Field) -> Option<syn::Expr> {
+    for attr in &field.attrs {
+        if attr.path().is_ident("wz") {
+            if let Ok(list) = attr.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated) {
+                for meta in &list {
+                    if meta.path().is_ident("default") {
+                        if let Meta::NameValue(nv) = meta {
+                            return Some(nv.value.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Check if type is `Handle<Image>`
@@ -414,7 +432,7 @@ fn build_field_load(field: &syn::Field) -> proc_macro2::TokenStream {
                     wz::WzError::NodeNotFound(format!("{}/origin", node.path()))
                 })?;
                 let v = origin_node.read_origin(node)?;
-                Vec2::new(v.0, v.1)
+                Vec2::new(v.x, v.y)
             }
         };
     }
@@ -501,17 +519,20 @@ fn build_field_load(field: &syn::Field) -> proc_macro2::TokenStream {
 
     // Scalar: i32, f32, String, bool, u32, u8
     if is_scalar(ty) {
-        return build_scalar_field(field_name, &name_str, ty, has_default(field));
+        let default_val = get_default_value(field);
+        return build_scalar_field(field_name, &name_str, ty, has_default(field), default_val.as_ref());
     }
 
     // Vector2D
     if is_vector2d(ty) {
-        return build_scalar_field(field_name, &name_str, ty, has_default(field));
+        let default_val = get_default_value(field);
+        return build_scalar_field(field_name, &name_str, ty, has_default(field), default_val.as_ref());
     }
 
     // Nested struct: T: WzChild
     let child_name = get_child_attr(field).unwrap_or_else(|| name_str.clone());
-    return build_nested_field(field_name, &child_name, has_default(field));
+    let default_val = get_default_value(field);
+    return build_nested_field(field_name, &child_name, has_default(field), default_val.as_ref());
 }
 
 fn build_scalar_field(
@@ -519,14 +540,18 @@ fn build_scalar_field(
     wz_child_name: &str,
     ty: &Type,
     use_default: bool,
+    default_value: Option<&syn::Expr>,
 ) -> proc_macro2::TokenStream {
-    // Check if this is a type that needs casting from i32 (u32, u8)
     let needs_cast = if let Type::Path(tp) = ty {
         let s = tp.path.get_ident().map(|i| i.to_string());
         matches!(s.as_deref(), Some("u32") | Some("u8"))
     } else { false };
 
     if use_default {
+        let fallback = match default_value {
+            Some(expr) => quote! { #expr },
+            None => quote! { Default::default() },
+        };
         if needs_cast {
             return quote! {
                 #field_name: {
@@ -536,7 +561,7 @@ fn build_scalar_field(
                             let v: i32 = <i32 as wz::TryFromNode<wz::Node>>::try_from_node(n).ok()?;
                             Some(v as #ty)
                         })
-                        .unwrap_or_default()
+                        .unwrap_or(#fallback)
                 }
             };
         }
@@ -547,7 +572,7 @@ fn build_scalar_field(
                     .and_then(|n| {
                         <#ty as wz::TryFromNode<wz::Node>>::try_from_node(n).ok()
                     })
-                    .unwrap_or_default()
+                    .unwrap_or(#fallback)
             }
         };
     }
@@ -601,8 +626,13 @@ fn build_nested_field(
     field_name: &syn::Ident,
     child_name: &str,
     use_default: bool,
+    default_value: Option<&syn::Expr>,
 ) -> proc_macro2::TokenStream {
     if use_default {
+        let fallback = match default_value {
+            Some(expr) => quote! { #expr },
+            None => quote! { Default::default() },
+        };
         return quote! {
             #field_name: {
                 node.at_path(#child_name)
@@ -611,7 +641,7 @@ fn build_nested_field(
                         let sub_label = format!("{}/{}", label_prefix, #child_name);
                         <_>::wz_build(&n, load_context, &sub_label).ok()
                     })
-                    .unwrap_or_default()
+                    .unwrap_or(#fallback)
             }
         };
     }
