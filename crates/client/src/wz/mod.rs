@@ -87,12 +87,6 @@ impl<A: WzAsset + TypePath + Asset + 'static> AssetLoader for WzAssetLoader<A> {
     }
 }
 
-pub fn set_sprite_bottom_left(trigger: On<Add, Sprite>, mut commands: Commands) {
-    commands
-        .entity(trigger.event().entity)
-        .insert(Anchor::BOTTOM_LEFT);
-}
-
 /// Plugin that registers all WZ asset types and loaders.
 pub struct WzAssetPlugin;
 
