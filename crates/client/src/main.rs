@@ -38,9 +38,10 @@ fn build_app(title: &str) -> App {
                     primary_window: Some(Window {
                         title: title.into(),
                         resolution: bevy::window::WindowResolution::new(
-                            camera::resources::BaseResolution::default().width as u32,
-                            camera::resources::BaseResolution::default().height as u32,
-                        ),
+                            camera::resources::BaseResolution::default().width as u32 * 2,
+                            camera::resources::BaseResolution::default().height as u32 * 2,
+                        )
+                        .with_scale_factor_override(2.0),
                         ..default()
                     }),
                     ..default()
@@ -66,9 +67,6 @@ fn build_app(title: &str) -> App {
         .add_plugins(physics::PhysicsPlugin);
     app.add_plugins(MapPlugin::default());
     app.add_plugins(UiPlugin);
-
-    app.add_observer(wz::set_sprite_bottom_left);
-
     app
 }
 
@@ -135,10 +133,18 @@ fn main() {
 fn setup(mut commands: Commands) {
     commands.insert_resource(ClearColor(Color::WHITE));
     let viewport_height = camera::resources::BaseResolution::default().height;
+    // MSAA is a per-camera component. Toggle via WZ_MSAA (off|2|4|8) for A/B GPU tests.
+    let msaa = match std::env::var("WZ_MSAA").ok().as_deref() {
+        Some("off") => Msaa::Off,
+        Some("2") => Msaa::Sample2,
+        Some("8") => Msaa::Sample8,
+        _ => Msaa::Sample4,
+    };
     commands.spawn((
         Name::new("MainCamera"),
         Camera2d,
         camera::resources::MainCamera,
+        msaa,
         Projection::Orthographic(OrthographicProjection {
             scaling_mode: ScalingMode::FixedVertical { viewport_height },
             ..OrthographicProjection::default_2d()

@@ -12,8 +12,8 @@ pub struct BaseResolution {
 impl Default for BaseResolution {
     fn default() -> Self {
         Self {
-            width: 1024.0,
-            height: 768.0,
+            width: 800.0,
+            height: 600.0,
         }
     }
 }
