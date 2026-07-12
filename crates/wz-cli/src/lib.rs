@@ -274,6 +274,34 @@ pub fn export_node(node: &WzNodeArc, output_dir: &Path) -> Result<(), Box<dyn st
     Err("node is not a PNG or sound, and has no resolvable link".into())
 }
 
+/// Recursively export a node and all of its descendant PNG/sound leaves,
+/// mirroring the WZ tree as a directory structure under `output_dir`.
+/// A leaf PNG/sound is exported directly into `output_dir`; a container node
+/// recurses into a per-child subdirectory.
+pub fn export_recursive(
+    node: &WzNodeArc,
+    output_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if wz_reader::property::get_image(node).is_ok() {
+        return export_node(node, output_dir);
+    }
+    {
+        let guard = node.read().map_err(|e| format!("lock error: {e}"))?;
+        if guard.try_as_sound().is_some() {
+            return export_node(node, output_dir);
+        }
+    }
+    if let Some(target) = resolve_link_target(node) {
+        return export_recursive(&target, output_dir);
+    }
+    std::fs::create_dir_all(output_dir)?;
+    for (name, child) in get_children(node) {
+        let child_dir = output_dir.join(&name);
+        export_recursive(&child, &child_dir)?;
+    }
+    Ok(())
+}
+
 pub fn schema_tree(node: &WzNodeArc, depth: usize) -> serde_json::Value {
     fn build(node: &WzNodeArc, depth: usize) -> serde_json::Value {
         let guard = node.read().unwrap();

@@ -12,6 +12,8 @@ pub struct WzFrameAsset {
     pub z: i32,
     #[wz(default = 100)]
     pub delay: i32,
+    pub a0: Option<i32>,
+    pub a1: Option<i32>,
     #[wz(image)]
     pub image: Handle<Image>,
 }
@@ -23,4 +25,5 @@ pub struct WzFrameAsset {
 pub struct WzFrameAnimationAsset {
     #[wz(children(numeric_only))]
     pub frames: Vec<WzFrameAsset>,
+    pub repeat: Option<i32>,
 }

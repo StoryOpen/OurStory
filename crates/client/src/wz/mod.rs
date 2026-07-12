@@ -1,5 +1,6 @@
 pub mod asset_loaders;
 pub mod asset_source;
+pub mod button_asset;
 pub mod frames;
 pub mod map;
 
@@ -97,7 +98,6 @@ pub struct WzAssetPlugin;
 
 impl Plugin for WzAssetPlugin {
     fn build(&self, app: &mut App) {
-        use asset_loaders::*;
         use crate::wz::map::WzMapAsset;
         use crate::wz::frames::WzFrameAnimationAsset;
 

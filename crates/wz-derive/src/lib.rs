@@ -179,6 +179,56 @@ fn get_child_attr(field: &syn::Field) -> Option<String> {
     None
 }
 
+/// Get a field-level re-root path from `#[wz(path = "...")]`.
+/// Unlike `child` (which navigates one child of the current node), `path`
+/// re-roots the whole field subtree: the field (and its nested children)
+/// resolve from this path instead, until a deeper `path` re-roots again.
+fn get_field_path(field: &syn::Field) -> Option<String> {
+    for attr in &field.attrs {
+        if attr.path().is_ident("wz") {
+            if let Ok(list) = attr.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated) {
+                for meta in &list {
+                    if let Meta::NameValue(nv) = meta {
+                        if nv.path.is_ident("path") {
+                            if let Expr::Lit(el) = &nv.value {
+                                if let Lit::Str(s) = &el.lit {
+                                    return Some(s.value());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Resolve a child/sub-path node (R2): try an absolute lookup via the WZ
+/// source first, then fall back to a relative `at_path` from the current node.
+/// Emits a `Result<Node, WzError>` (uses `?`); the surrounding `node` variable
+/// is the current resolution context.
+fn wz_resolve(child: &str) -> proc_macro2::TokenStream {
+    let c = syn::LitStr::new(child, proc_macro2::Span::call_site());
+    quote! {
+        match wz::source::default_source().node(#c) {
+            Ok(__n) => __n,
+            Err(_) => node.at_path(#c).map_err(|_| wz::WzError::NodeNotFound(#c.to_string()))?,
+        }
+    }
+}
+
+/// `Option` variant of `wz_resolve` (uses `.ok()` instead of `?`).
+fn wz_resolve_opt(child: &str) -> proc_macro2::TokenStream {
+    let c = syn::LitStr::new(child, proc_macro2::Span::call_site());
+    quote! {
+        match wz::source::default_source().node(#c) {
+            Ok(__n) => Some(__n),
+            Err(_) => node.at_path(#c).ok(),
+        }
+    }
+}
+
 /// Check if field has `#[wz(container_children)]` (deprecated; same as children without skip)
 fn has_container_children(field: &syn::Field) -> bool {
     has_wz_attr(field, "container_children")
@@ -407,27 +457,48 @@ fn struct_attr_value(input: &DeriveInput, key: &str) -> Option<String> {
 }
 
 /// Build the wz_build code for a single field.
-/// Returns (field_init_code) — the expression to assign to this field.
+/// Returns the field initializer expression (rhs of `field: <expr>`).
 fn build_field_load(field: &syn::Field) -> proc_macro2::TokenStream {
     let field_name = field.ident.as_ref().unwrap();
     let name_str = wz_name(field);
 
+    // Child name comes from `#[wz(child = "...")]` or `#[wz(path = "...")]`
+    // (re-root), falling back to the field's snake/camel name.
+    let explicit = get_child_attr(field).or_else(|| get_field_path(field));
+    let child_name = explicit.clone().unwrap_or_else(|| name_str.clone());
+
     if has_skip(field) {
-        return quote! { #field_name: Default::default() };
+        return quote! { Default::default() };
     }
 
     let ty = &field.ty;
 
-    // #[wz(image)] — Handle<Image>
+    // #[wz(image)] — Handle<Image>. Honors an explicit child/path to navigate to.
     if has_wz_attr(field, "image") {
+        let nav = if let Some(c) = &explicit {
+            let resolve = wz_resolve(c);
+            quote! { let node = #resolve; }
+        } else {
+            quote! {}
+        };
         let load_code = build_image_load_expr();
-        return quote! { #field_name: #load_code };
+        return quote! { { #nav #load_code } };
     }
 
     // #[wz(origin)] — Vec2
     if has_wz_attr(field, "origin") {
+        if let Some(dv) = get_default_value(field) {
+            return quote! {
+                {
+                    node.try_get("origin")
+                        .and_then(|n| n.read_origin(node).ok())
+                        .map(|v| Vec2::new(v.x, v.y))
+                        .unwrap_or(#dv)
+                }
+            };
+        }
         return quote! {
-            #field_name: {
+            {
                 let origin_node = node.try_get("origin").ok_or_else(|| {
                     wz::WzError::NodeNotFound(format!("{}/origin", node.path()))
                 })?;
@@ -439,14 +510,13 @@ fn build_field_load(field: &syn::Field) -> proc_macro2::TokenStream {
 
     // Option<T>
     if let Some(inner) = is_option(ty) {
-        let child_name = get_child_attr(field).unwrap_or_else(|| name_str.clone());
         if is_scalar(inner) || is_vector2d(inner) {
             return build_option_scalar(field_name, &child_name, inner);
         } else if is_handle_image(inner) {
             // Option<Handle<Image>> — try to load image, None if not present
             let image_load = build_image_load_expr();
             return quote! {
-                #field_name: {
+                {
                     if node.has_image_data() {
                         Some(#image_load)
                     } else {
@@ -463,8 +533,15 @@ fn build_field_load(field: &syn::Field) -> proc_macro2::TokenStream {
     // #[wz(children_images)] — Vec<Handle<Image>>, each child is a PNG node
     if has_wz_attr(field, "children_images") {
         let load_expr = build_image_load_expr();
+        let base = if explicit.is_some() {
+            let resolve = wz_resolve(child_name.as_str());
+            quote! { let node = #resolve; }
+        } else {
+            quote! {}
+        };
         return quote! {
-            #field_name: {
+            {
+                #base
                 let mut items: Vec<_> = node.children()
                     .into_iter()
                     .filter_map(|(key, child)| {
@@ -490,53 +567,51 @@ fn build_field_load(field: &syn::Field) -> proc_macro2::TokenStream {
         let skip_list = get_children_skip(field);
         let numeric_only = has_children_numeric_only(field);
         let require_child = get_children_require_child(field);
-        let skip_fields: Vec<String> = {
-            // Also skip fields that are already defined on this struct (like "delay")
-            // We can't easily get sibling field names here; rely on explicit skip list
-            skip_list
+        let base = if explicit.is_some() {
+            let resolve = wz_resolve(child_name.as_str());
+            quote! { let node = #resolve; }
+        } else {
+            quote! {}
         };
-
-        if let Some(inner) = is_vec(ty) {
-            return build_children_vec(field_name, inner, &skip_fields, numeric_only, require_child.as_deref());
-        }
-        if let Some(inner) = is_hashmap_string(ty) {
-            return build_children_hashmap(field_name, inner, &skip_fields, require_child.as_deref());
-        }
-        return quote! { compile_error!("#[wz(children)] only supports Vec<T> or HashMap<String, T>"); };
+        let children_tokens = if let Some(inner) = is_vec(ty) {
+            build_children_vec(field_name, inner, &skip_list, numeric_only, require_child.as_deref())
+        } else if let Some(inner) = is_hashmap_string(ty) {
+            build_children_hashmap(field_name, inner, &skip_list, require_child.as_deref())
+        } else {
+            quote! { compile_error!("#[wz(children)] only supports Vec<T> or HashMap<String, T>"); }
+        };
+        return quote! { { #base #children_tokens } };
     }
 
     // Vec<T> — navigate to named child, then iterate
     if let Some(inner) = is_vec(ty) {
-        let child_name = get_child_attr(field).unwrap_or_else(|| name_str.clone());
         return build_named_vec(field_name, &child_name, inner);
     }
 
     // HashMap<String, T> — navigate to named child, then iterate
     if let Some(inner) = is_hashmap_string(ty) {
-        let child_name = get_child_attr(field).unwrap_or_else(|| name_str.clone());
         return build_named_hashmap(field_name, &child_name, inner);
     }
 
     // Scalar: i32, f32, String, bool, u32, u8
     if is_scalar(ty) {
         let default_val = get_default_value(field);
-        return build_scalar_field(field_name, &name_str, ty, has_default(field), default_val.as_ref());
+        return build_scalar_field(field_name, &child_name, ty, has_default(field), default_val.as_ref());
     }
 
     // Vector2D
     if is_vector2d(ty) {
         let default_val = get_default_value(field);
-        return build_scalar_field(field_name, &name_str, ty, has_default(field), default_val.as_ref());
+        return build_scalar_field(field_name, &child_name, ty, has_default(field), default_val.as_ref());
     }
 
     // Nested struct: T: WzChild
-    let child_name = get_child_attr(field).unwrap_or_else(|| name_str.clone());
     let default_val = get_default_value(field);
     return build_nested_field(field_name, &child_name, has_default(field), default_val.as_ref());
 }
 
 fn build_scalar_field(
-    field_name: &syn::Ident,
+    _field_name: &syn::Ident,
     wz_child_name: &str,
     ty: &Type,
     use_default: bool,
@@ -547,6 +622,9 @@ fn build_scalar_field(
         matches!(s.as_deref(), Some("u32") | Some("u8"))
     } else { false };
 
+    let resolve = wz_resolve(wz_child_name);
+    let resolve_opt = wz_resolve_opt(wz_child_name);
+
     if use_default {
         let fallback = match default_value {
             Some(expr) => quote! { #expr },
@@ -554,9 +632,8 @@ fn build_scalar_field(
         };
         if needs_cast {
             return quote! {
-                #field_name: {
-                    node.at_path(#wz_child_name)
-                        .ok()
+                {
+                    #resolve_opt
                         .and_then(|n| {
                             let v: i32 = <i32 as wz::TryFromNode<wz::Node>>::try_from_node(n).ok()?;
                             Some(v as #ty)
@@ -566,12 +643,9 @@ fn build_scalar_field(
             };
         }
         return quote! {
-            #field_name: {
-                node.at_path(#wz_child_name)
-                    .ok()
-                    .and_then(|n| {
-                        <#ty as wz::TryFromNode<wz::Node>>::try_from_node(n).ok()
-                    })
+            {
+                #resolve_opt
+                    .and_then(|n| <#ty as wz::TryFromNode<wz::Node>>::try_from_node(n).ok())
                     .unwrap_or(#fallback)
             }
         };
@@ -579,42 +653,42 @@ fn build_scalar_field(
 
     if needs_cast {
         return quote! {
-            #field_name: {
-                let child = node.at_path(#wz_child_name)?;
-                let v: i32 = <i32 as wz::TryFromNode<wz::Node>>::try_from_node(child)?;
+            {
+                let __child = #resolve;
+                let v: i32 = <i32 as wz::TryFromNode<wz::Node>>::try_from_node(__child)?;
                 v as #ty
             }
         };
     }
 
     quote! {
-        #field_name: {
-            let child = node.at_path(#wz_child_name)?;
-            <#ty as wz::TryFromNode<wz::Node>>::try_from_node(child)?
+        {
+            let __child = #resolve;
+            <#ty as wz::TryFromNode<wz::Node>>::try_from_node(__child)?
         }
     }
 }
 
 fn build_option_scalar(
-    field_name: &syn::Ident,
+    _field_name: &syn::Ident,
     child_name: &str,
     inner: &Type,
 ) -> proc_macro2::TokenStream {
+    let resolve_opt = wz_resolve_opt(child_name);
     quote! {
-        #field_name: node.at_path(#child_name)
-            .ok()
+        #resolve_opt
             .and_then(|n| <#inner as wz::TryFromNode<wz::Node>>::try_from_node(n).ok())
     }
 }
 
 fn build_option_nested(
-    field_name: &syn::Ident,
+    _field_name: &syn::Ident,
     child_name: &str,
     inner: &Type,
 ) -> proc_macro2::TokenStream {
+    let resolve_opt = wz_resolve_opt(child_name);
     quote! {
-        #field_name: node.at_path(#child_name)
-            .ok()
+        #resolve_opt
             .and_then(|n| {
                 let sub_label = format!("{}/{}", label_prefix, #child_name);
                 #inner::wz_build(&n, load_context, &sub_label).ok()
@@ -623,20 +697,21 @@ fn build_option_nested(
 }
 
 fn build_nested_field(
-    field_name: &syn::Ident,
+    _field_name: &syn::Ident,
     child_name: &str,
     use_default: bool,
     default_value: Option<&syn::Expr>,
 ) -> proc_macro2::TokenStream {
+    let resolve = wz_resolve(child_name);
+    let resolve_opt = wz_resolve_opt(child_name);
     if use_default {
         let fallback = match default_value {
             Some(expr) => quote! { #expr },
             None => quote! { Default::default() },
         };
         return quote! {
-            #field_name: {
-                node.at_path(#child_name)
-                    .ok()
+            {
+                #resolve_opt
                     .and_then(|n| {
                         let sub_label = format!("{}/{}", label_prefix, #child_name);
                         <_>::wz_build(&n, load_context, &sub_label).ok()
@@ -646,19 +721,16 @@ fn build_nested_field(
         };
     }
     quote! {
-        #field_name: {
-            let child = node.at_path(#child_name)
-                .map_err(|_| wz::WzError::NodeNotFound(
-                    format!("{}/{}", node.path(), #child_name)
-                ))?;
+        {
+            let __child = #resolve;
             let sub_label = format!("{}/{}", label_prefix, #child_name);
-            <_>::wz_build(&child, load_context, &sub_label)?
+            <_>::wz_build(&__child, load_context, &sub_label)?
         }
     }
 }
 
 fn build_named_vec(
-    field_name: &syn::Ident,
+    _field_name: &syn::Ident,
     child_name: &str,
     inner: &Type,
 ) -> proc_macro2::TokenStream {
@@ -668,9 +740,10 @@ fn build_named_vec(
         quote! {}
     };
     let elem = collection_elem_expr(inner);
+    let parent = wz_resolve(child_name);
     quote! {
-        #field_name: {
-            let parent = node.at_path(#child_name)?;
+        {
+            let parent = #parent;
             let mut items: Vec<_> = parent
                 .children()
                 .into_iter()
@@ -690,11 +763,75 @@ fn build_named_vec(
     }
 }
 
+/// Recursively count how many `HashMap<String, _>` wrappers are around `ty`.
+fn hashmap_depth(ty: &Type) -> usize {
+    if let Some(inner) = is_hashmap_string(ty) {
+        1 + hashmap_depth(inner)
+    } else {
+        0
+    }
+}
+
+/// Generate the inner body for nested `HashMap<String, ...>` fields.
+/// At each HashMap level, emits a `for` loop + `HashMap::new()`.
+/// At the leaf, emits `<T>::wz_build(...)?` whose `?` propagates through
+/// all enclosing statements to the outermost `.map()` closure.
+///
+/// `child_var` is the expression for the node whose children we iterate.
+fn build_hashmap_nest(
+    inner: &Type,
+    child_var: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    if let Some(sub_inner) = is_hashmap_string(inner) {
+        let inner_block = build_hashmap_nest(sub_inner, &quote! { inner_child });
+        quote! {
+            {
+                let mut map = std::collections::HashMap::new();
+                for (inner_key, inner_child) in #child_var.children() {
+                    let inner_key_str = inner_key.to_string();
+                    let val = #inner_block;
+                    map.insert(inner_key_str, val);
+                }
+                map
+            }
+        }
+    } else {
+        quote! { <#inner>::wz_build(&#child_var, load_context, &sub_label)? }
+    }
+}
+
 fn build_named_hashmap(
-    field_name: &syn::Ident,
+    _field_name: &syn::Ident,
     child_name: &str,
     inner: &Type,
 ) -> proc_macro2::TokenStream {
+    let parent = wz_resolve(child_name);
+    let depth = hashmap_depth(inner);
+
+    if depth > 0 {
+        // Nested HashMap<String, HashMap<String, ..., T>>.
+        // Generate a chain of `for` loops inside the `.map()` closure.
+        let inner_body = build_hashmap_nest(inner, &quote! { child });
+        let sub_label = if collection_is_struct(inner) {
+            quote! { let sub_label = format!("{}/{}/{}", label_prefix, #child_name, key_str); }
+        } else {
+            quote! {}
+        };
+        return quote! {
+            {
+                let parent = #parent;
+                parent.children()
+                    .into_iter()
+                    .map(|(key, child)| {
+                        let key_str = key.to_string();
+                        #sub_label
+                        Ok((key_str, #inner_body))
+                    })
+                    .collect::<Result<_, wz::WzError>>()?
+            }
+        };
+    }
+
     let sub_label = if collection_is_struct(inner) {
         quote! { let sub_label = format!("{}/{}/{}", label_prefix, #child_name, key_str); }
     } else {
@@ -702,8 +839,8 @@ fn build_named_hashmap(
     };
     let elem = collection_elem_expr(inner);
     quote! {
-        #field_name: {
-            let parent = node.at_path(#child_name)?;
+        {
+            let parent = #parent;
             parent.children()
                 .into_iter()
                 .map(|(key, child)| {
@@ -718,7 +855,7 @@ fn build_named_hashmap(
 }
 
 fn build_children_vec(
-    field_name: &syn::Ident,
+    _field_name: &syn::Ident,
     inner: &Type,
     skip_list: &[String],
     numeric_only: bool,
@@ -740,55 +877,35 @@ fn build_children_vec(
     };
     let elem = collection_elem_expr(inner);
 
+    let body = quote! {
+        let skip_names: &[&str] = &[#(#skip_elems),*];
+        let mut items: Vec<_> = node.children()
+            .into_iter()
+            .filter_map(|(key, child)| {
+                let key_str = key.to_string();
+                if skip_names.contains(&key_str.as_str()) { return None; }
+                #require_check
+                key_str.parse::<u32>().ok().map(|idx| (idx, child, key_str))
+            })
+            .collect();
+        items.sort_by_key(|(idx, _, _)| *idx);
+        items.into_iter()
+            .map(|(_idx, child, key_str)| {
+                #sub_label
+                #elem
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+
     if numeric_only {
-        return quote! {
-            #field_name: {
-                let skip_names: &[&str] = &[#(#skip_elems),*];
-                let mut items: Vec<_> = node.children()
-                    .into_iter()
-                    .filter_map(|(key, child)| {
-                        let key_str = key.to_string();
-                        if skip_names.contains(&key_str.as_str()) { return None; }
-                        #require_check
-                        key_str.parse::<u32>().ok().map(|idx| (idx, child, key_str))
-                    })
-                    .collect();
-                items.sort_by_key(|(idx, _, _)| *idx);
-                items.into_iter()
-                    .map(|(_idx, child, key_str)| {
-                        #sub_label
-                        #elem
-                    })
-                    .collect::<Result<Vec<_>, _>>()?
-            }
-        };
+        return quote! { { #body } };
     }
 
-    quote! {
-        #field_name: {
-            let skip_names: &[&str] = &[#(#skip_elems),*];
-            let mut items: Vec<_> = node.children()
-                .into_iter()
-                .filter_map(|(key, child)| {
-                    let key_str = key.to_string();
-                    if skip_names.contains(&key_str.as_str()) { return None; }
-                    #require_check
-                    key_str.parse::<u32>().ok().map(|idx| (idx, child, key_str))
-                })
-                .collect();
-            items.sort_by_key(|(idx, _, _)| *idx);
-            items.into_iter()
-                .map(|(_idx, child, key_str)| {
-                    #sub_label
-                    #elem
-                })
-                .collect::<Result<Vec<_>, _>>()?
-        }
-    }
+    quote! { { #body } }
 }
 
 fn build_children_hashmap(
-    field_name: &syn::Ident,
+    _field_name: &syn::Ident,
     inner: &Type,
     skip_list: &[String],
     require_child: Option<&str>,
@@ -808,27 +925,27 @@ fn build_children_hashmap(
     };
     let elem = collection_elem_expr(inner);
 
-    quote! {
-        #field_name: {
-            let skip_names: &[&str] = &[#(#skip_elems),*];
-            node.children()
-                .into_iter()
-                .filter_map(|(key, child)| {
-                    let key_str = key.to_string();
-                    if skip_names.contains(&key_str.as_str()) { return None; }
-                    #require_check
-                    #sub_label
-                    match #elem {
-                        Ok(val) => Some((key_str, val)),
-                        Err(e) => {
-                            bevy::log::warn!("skipping child '{}': {}", key_str, e);
-                            None
-                        }
+    let body = quote! {
+        let skip_names: &[&str] = &[#(#skip_elems),*];
+        node.children()
+            .into_iter()
+            .filter_map(|(key, child)| {
+                let key_str = key.to_string();
+                if skip_names.contains(&key_str.as_str()) { return None; }
+                #require_check
+                #sub_label
+                match #elem {
+                    Ok(val) => Some((key_str, val)),
+                    Err(e) => {
+                        bevy::log::warn!("skipping child '{}': {}", key_str, e);
+                        None
                     }
-                })
-                .collect()
-        }
-    }
+                }
+            })
+            .collect()
+    };
+
+    quote! { { #body } }
 }
 
 /// Generate the full WzAsset trait impl (CONST, path method, wz_build)
@@ -856,8 +973,9 @@ fn generate_wz_asset_impl(input: &DeriveInput) -> proc_macro2::TokenStream {
     // Generate field initializers for wz_build
     let mut field_inits = Vec::new();
     for field in fields {
+        let ident = field.ident.as_ref().unwrap();
         let init = build_field_load(field);
-        field_inits.push(init);
+        field_inits.push(quote! { #ident: #init });
     }
 
     // Generate path conversion logic

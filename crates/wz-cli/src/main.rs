@@ -279,7 +279,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Export { path, output } => {
             let node = resolve_path(&base, path).ok_or("path not found")?;
-            export_node(&node, output)?;
+            export_recursive(&node, output)?;
         }
         Commands::Schema { path, depth, json } => {
             let node = resolve_path(&base, path).ok_or("path not found")?;
