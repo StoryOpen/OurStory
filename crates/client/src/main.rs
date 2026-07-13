@@ -1,6 +1,7 @@
 mod camera;
 mod input;
 mod layer;
+mod picking;
 mod physics;
 mod wz;
 
@@ -12,6 +13,7 @@ use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 use camera::CameraPlugin;
 use input::InputPlugin;
+use picking::PickingPlugin;
 use wz::asset_source::WzAssetSourcePlugin;
 
 use map::MapPlugin;
@@ -37,11 +39,7 @@ fn build_app(title: &str) -> App {
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: title.into(),
-                        resolution: bevy::window::WindowResolution::new(
-                            camera::resources::BaseResolution::default().width as u32 * 2,
-                            camera::resources::BaseResolution::default().height as u32 * 2,
-                        )
-                        .with_scale_factor_override(2.0),
+                        resolution: bevy::window::WindowResolution::new(1600, 1200),
                         ..default()
                     }),
                     ..default()
@@ -64,6 +62,7 @@ fn build_app(title: &str) -> App {
 
     app.add_plugins(CameraPlugin)
         .add_plugins(InputPlugin)
+        .add_plugins(PickingPlugin)
         .add_plugins(physics::PhysicsPlugin);
     app.add_plugins(MapPlugin::default());
     app.add_plugins(UiPlugin);

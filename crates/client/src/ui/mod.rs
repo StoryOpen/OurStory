@@ -25,6 +25,7 @@ impl Plugin for UiPlugin {
         app.init_state::<UiState>()
             .init_state::<LoginSection>()
             .init_state::<login::EnteringGame>()
+            .init_state::<login::LoginAssetsState>()
             .init_asset::<LoginAssets>()
             .init_asset_loader::<WzAssetLoader<LoginAssets>>()
             .insert_resource(LoadingState::default())
@@ -42,6 +43,14 @@ impl Plugin for UiPlugin {
             .add_systems(OnEnter(UiState::Login), login::enter_login)
             .add_systems(OnExit(UiState::Login), login::exit_login)
             .add_systems(
+                Update,
+                login::watch_login_assets
+                    .run_if(in_state(UiState::Login))
+                    .in_set(GameSet::Ui),
+            )
+            .add_systems(OnEnter(login::LoginAssetsState::Loaded), login::spawn_login_screen)
+            .add_systems(OnExit(UiState::Login), login::reset_login_assets_state)
+            .add_systems(
                 OnEnter(login::EnteringGame::Idle),
                 login::enter_enter_game.run_if(in_state(login::EnteringGame::EnteringGame)),
             )
@@ -56,12 +65,12 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (
-                    login::on_login_assets_loaded,
                     login::camera_pan_system,
                     login::update_button_hover,
                     login::handle_button_click,
                     login::fade_to_game.run_if(in_state(login::EnteringGame::EnteringGame)),
                     login::apply_login_fade,
+                    login::diagnose_login_spawn,
                 )
                     .run_if(in_state(UiState::Login))
                     .in_set(GameSet::Ui),

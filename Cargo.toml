@@ -11,6 +11,9 @@ members = [
     "crates/wz-server",
 ]
 
+# `cargo run` from the workspace root builds & runs the client by default.
+default-members = ["crates/client"]
+
 
 [profile.dev]
 opt-level = 1

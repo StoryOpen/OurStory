@@ -6,6 +6,7 @@
 //! Flow: Logo → Login → InGame, with sub-states LoginSection and EnteringGame.
 //! All assets are loaded once via `LoginAssets` (rooted at `UI/Login.img`).
 
+use bevy::camera::ClearColorConfig;
 use bevy::camera::ScalingMode;
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
@@ -13,42 +14,44 @@ use bevy_asset::RenderAssetUsages;
 use std::collections::HashMap;
 use wz_derive::WzAsset;
 
-use crate::camera::resources::MainCamera;
+use crate::camera::resources::{BaseResolution, MainCamera};
+use crate::picking::Pickable;
 use crate::ui::UiState;
 use crate::ui::components::{UiButton, UiLoginScreen};
 use crate::wz::button_asset::WzButtonAsset;
 use crate::wz::frames::{WzFrameAnimationAsset, WzFrameAsset};
 
-// ── asset structs ────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, WzAsset)]
 pub struct LoginTitle {
-    #[wz(image, child = "MSTitle")]
-    pub ms_title: Handle<Image>,
+    #[wz(path = "Map/Back/login.img/back/11")]
+    pub background: WzFrameAsset,
     #[wz(path = "BtLogin")]
     pub bt_login: WzButtonAsset,
+    #[wz(path = "BtLoginIDSave")]
+    pub bt_login_save: WzButtonAsset,
+    #[wz(path = "BtLoginIDLost")]
+    pub bt_login_lost: WzButtonAsset,
+    #[wz(path = "BtPasswdLost")]
+    pub bt_password_lost: WzButtonAsset,
+    #[wz(path = "BtHomePage")]
+    pub bt_home_page: WzButtonAsset,
     #[wz(path = "BtNew")]
     pub bt_new: WzButtonAsset,
     #[wz(path = "BtQuit")]
     pub bt_quit: WzButtonAsset,
+    #[wz(path = "Map/Obj/login.img/Title")]
+    pub objs: HashMap<String, HashMap<String, WzFrameAnimationAsset>>,
 }
 
 #[derive(Clone, Debug, WzAsset)]
 pub struct LoginWorldSelect {
-    #[wz(image, child = "chBackgrn")]
-    pub background: Handle<Image>,
     #[wz(path = "BtGoworld")]
     pub bt_goworld: WzButtonAsset,
 }
 
 #[derive(Clone, Debug, WzAsset)]
 pub struct LoginCharSelect {
-    #[wz(image, child = "charInfo1")]
-    pub char_info1: Handle<Image>,
-    #[wz(image, child = "charInfo2")]
-    pub char_info2: Handle<Image>,
-    #[wz(image, child = "charInfo3")]
-    pub char_info3: Handle<Image>,
     #[wz(path = "BtSelect")]
     pub bt_select: WzButtonAsset,
     #[wz(path = "BtNew")]
@@ -57,14 +60,6 @@ pub struct LoginCharSelect {
 
 #[derive(Clone, Debug, WzAsset)]
 pub struct LoginNewChar {
-    #[wz(image, child = "statTb")]
-    pub stat_table: Handle<Image>,
-    #[wz(image, child = "charName")]
-    pub char_name: Handle<Image>,
-    #[wz(image, child = "charAlert")]
-    pub char_alert: Handle<Image>,
-    #[wz(image, child = "charSet")]
-    pub char_set: Handle<Image>,
     #[wz(path = "BtYes")]
     pub bt_yes: WzButtonAsset,
     #[wz(path = "BtNo")]
@@ -86,8 +81,6 @@ pub struct LoginAssets {
     pub char_select: LoginCharSelect,
     #[wz(child = "NewChar")]
     pub new_char: LoginNewChar,
-    #[wz(path = "Map/Obj/login.img/Title")]
-    pub login_obj: HashMap<String, HashMap<String, WzFrameAnimationAsset>>,
     #[wz(path = "Map/Obj/login.img/CharSelect")]
     pub char_select_obj: HashMap<String, HashMap<String, WzFrameAnimationAsset>>,
     #[wz(path = "Map/Obj/login.img/WorldSelect")]
@@ -96,20 +89,14 @@ pub struct LoginAssets {
     pub new_char_obj: HashMap<String, HashMap<String, WzFrameAnimationAsset>>,
 }
 
-pub const SECTION_H: f32 = 768.0;
-pub const CANVAS_W: f32 = 1024.0;
-pub const CANVAS_H: f32 = SECTION_H * 4.0;
-
 const PAN_DURATION: f32 = 0.4;
 const FADE_DURATION: f32 = 0.5;
 
-/// Render layer for screen-space entities (separate from the panning main camera).
 const SCREEN_LAYER: RenderLayers = RenderLayers::layer(1);
 
 #[derive(Component)]
 pub(crate) struct ScreenCamera;
 
-/// Marker for entities that render in screen space (fixed, not affected by camera pan).
 #[derive(Component)]
 pub(crate) struct ScreenEntity;
 
@@ -208,46 +195,116 @@ pub fn enter_enter_game(mut fade: ResMut<LoginFade>, mut lock: ResMut<LoginInput
     lock.0 = true;
 }
 
-/// Max seconds to wait for login assets before exiting on failure.
-const ASSET_LOAD_TIMEOUT: f32 = 15.0;
+/// Tracks whether the login screen's assets have finished loading.
+#[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub enum LoginAssetsState {
+    #[default]
+    Loading,
+    Loaded,
+}
 
-pub fn on_login_assets_loaded(
+/// Waits for the login assets to finish loading (via `AssetEvent`), then advances
+/// [`LoginAssetsState`] to `Loaded` (which spawns the screen exactly once via `OnEnter`).
+pub fn watch_login_assets(
+    handle: Res<LoginAssetsHandle>,
+    mut events: MessageReader<AssetEvent<LoginAssets>>,
+    mut next: ResMut<NextState<LoginAssetsState>>,
+) {
+    for event in events.read() {
+        if event.is_loaded_with_dependencies(handle.0.id()) {
+            info!(
+                "[login] LoginAssets loaded with dependencies (id={:?}); advancing LoginAssetsState -> Loaded",
+                handle.0.id()
+            );
+            next.set(LoginAssetsState::Loaded);
+        } else if matches!(event, AssetEvent::Added { .. } | AssetEvent::Modified { .. }) {
+            debug!("[login] asset event for other handle: {event:?}");
+        }
+    }
+}
+
+/// Spawns the full login screen. Runs once, on entering [`LoginAssetsState::Loaded`].
+pub fn spawn_login_screen(
     mut commands: Commands,
     handle: Res<LoginAssetsHandle>,
     assets: Res<Assets<LoginAssets>>,
-    images: Res<Assets<Image>>,
     login_section: Res<State<LoginSection>>,
-    time: Res<Time>,
-    mut elapsed: Local<f32>,
-    mut exit: MessageWriter<AppExit>,
+    base: Res<BaseResolution>,
 ) {
     let Some(root) = assets.get(&handle.0) else {
-        *elapsed += time.delta_secs();
-        if *elapsed > ASSET_LOAD_TIMEOUT {
-            error!("Login assets failed to load after {ASSET_LOAD_TIMEOUT}s, exiting");
-            exit.write(AppExit::Success);
-        }
+        error!(
+            "[login] spawn_login_screen: LoginAssets handle {:?} not present in Assets<LoginAssets> — early return, nothing spawned",
+            handle.0.id()
+        );
         return;
     };
+    info!("[login] spawn_login_screen: LoginAssets present, spawning sections");
     let section = login_section.get();
+    let section_h = base.height;
 
-    spawn_title_section(&mut commands, &images, &root.title);
-    spawn_world_select_section(&mut commands, &images, &root.world_select);
-    spawn_char_select_section(&mut commands, &images, &root.char_select);
-    spawn_new_char_section(&mut commands, &images, &root.new_char);
+    spawn_title_section(&mut commands, &root.title, section_h);
+    spawn_world_select_section(&mut commands, &root.world_select, section_h);
+    spawn_char_select_section(&mut commands, &root.char_select, section_h);
+    spawn_new_char_section(&mut commands, &root.new_char, section_h);
 
-    let y = section_y(section.index());
+    let y = section_y(section.index(), section_h);
     commands.insert_resource(PanState {
         start_y: y,
         target_y: y,
-        t: 1.0,
+        t: 0.0,
     });
 
-    spawn_screen_space_camera(&mut commands);
+    spawn_screen_space_camera(&mut commands, &*base);
+
+    // Fixed full-screen login frame; drawn on top by the screen-space camera and
+    // does not pan with the main camera.
+    spawn_screen_sprite(
+        &mut commands,
+        root.frame.image.clone(),
+        0.0,
+        base.height * 0.5,
+        0.0,
+    );
+
+    info!(
+        "[login] spawn_login_screen complete: spawned screen-space camera; world-space entities queued via commands (deferred)"
+    );
 }
 
-fn section_y(index: usize) -> f32 {
-    index as f32 * SECTION_H + SECTION_H * 0.5
+/// One-shot diagnostic: a few frames after the login assets load, count the
+/// entities actually present in the world so we can confirm spawning worked.
+/// Commands from `spawn_login_screen` are deferred, so we wait a few frames.
+pub fn diagnose_login_spawn(
+    mut frames: Local<u32>,
+    state: Res<State<LoginAssetsState>>,
+    main_cam: Query<Entity, With<MainCamera>>,
+    screen_cam: Query<Entity, With<ScreenCamera>>,
+    login_entities: Query<Entity, With<LoginEntity>>,
+    screen_entities: Query<Entity, With<ScreenEntity>>,
+) {
+    if *state.get() != LoginAssetsState::Loaded {
+        return;
+    }
+    *frames += 1;
+    if *frames != 5 {
+        return;
+    }
+    info!(
+        "[login] entity counts after load: MainCamera={}, ScreenCamera={}, LoginEntity(world)={}, ScreenEntity={}",
+        main_cam.iter().count(),
+        screen_cam.iter().count(),
+        login_entities.iter().count(),
+        screen_entities.iter().count(),
+    );
+}
+
+/// Resets asset-load state so re-entering the login screen spawns it again.
+pub fn reset_login_assets_state(mut next: ResMut<NextState<LoginAssetsState>>) {
+    next.set(LoginAssetsState::Loading);
+}
+
+fn section_y(index: usize, section_h: f32) -> f32 {
+    index as f32 * section_h
 }
 
 impl PanState {
@@ -284,10 +341,11 @@ pub fn camera_pan_system(
 pub fn on_login_section_changed(
     mut commands: Commands,
     section: Res<State<LoginSection>>,
+    base: Res<BaseResolution>,
     camera: Query<&Transform, With<MainCamera>>,
     mut lock: ResMut<LoginInputLock>,
 ) {
-    let y = section_y(section.get().index());
+    let y = section_y(section.get().index(), base.height);
     let start_y = camera.single().map(|t| t.translation.y).unwrap_or(y);
     commands.insert_resource(PanState::start_move(start_y, y));
     lock.0 = true;
@@ -370,15 +428,8 @@ pub fn handle_button_click(
     for (xf, rect, btn) in buttons.iter() {
         let center = xf.translation.truncate();
         if (world.x - center.x).abs() <= rect.0.x && (world.y - center.y).abs() <= rect.0.y {
+            // TEMP: no-op button actions.
             match btn.name.as_str() {
-                "BtLogin" => next_section.set(LoginSection::WorldSelect),
-                "BtGoworld" => next_section.set(LoginSection::CharSelect),
-                "BtSelect" | "BtNew" => next_section.set(LoginSection::CharCreate),
-                "BtYes" => next_phase.set(EnteringGame::EnteringGame),
-                "BtNo" => next_section.set(LoginSection::CharSelect),
-                "BtQuit" => {
-                    exit.write(AppExit::Success);
-                }
                 _ => {}
             }
             break;
@@ -407,8 +458,8 @@ pub fn apply_login_fade(fade: Res<LoginFade>, mut sprites: Query<&mut Sprite, Wi
     }
 }
 
-fn section_top(index: usize) -> f32 {
-    index as f32 * SECTION_H
+fn section_top(index: usize, section_h: f32) -> f32 {
+    index as f32 * section_h
 }
 
 fn first_frame(anim: &WzFrameAnimationAsset) -> Handle<Image> {
@@ -425,141 +476,186 @@ fn half_size_of(handle: &Handle<Image>, images: &Assets<Image>) -> Vec2 {
         .unwrap_or(Vec2::new(50.0, 25.0))
 }
 
-fn spawn_button(
-    commands: &mut Commands,
-    images: &Assets<Image>,
-    btn: &WzButtonAsset,
-    name: &str,
-    section: usize,
-    x: f32,
-    y: f32,
-) {
-    let normal = first_frame(&btn.normal);
-    let hs = half_size_of(&normal, images);
-    commands.spawn((
-        Name::new(format!("Btn_{name}")),
-        Sprite {
-            image: normal.clone(),
-            ..default()
-        },
-        Transform::from_xyz(x, section_top(section) + y, 1.0),
-        Visibility::default(),
-        ButtonRect(hs),
-        UiButton {
-            name: name.into(),
-            normal,
-            hover: first_frame(&btn.mouse_over),
-            pressed: first_frame(&btn.pressed),
-            disabled: first_frame(&btn.disabled),
-        },
-        LoginEntity,
-    ));
-}
-
-fn spawn_image(
-    commands: &mut Commands,
-    handle: &Handle<Image>,
-    name: &str,
-    section: usize,
-    x: f32,
-    y: f32,
-) {
-    commands.spawn((
-        Name::new(name.to_string()),
-        Sprite {
-            image: handle.clone(),
-            ..default()
-        },
-        Transform::from_xyz(x, section_top(section) + y, 0.0),
-        Visibility::default(),
-        LoginEntity,
-    ));
-}
-
-fn spawn_title_section(commands: &mut Commands, images: &Assets<Image>, title: &LoginTitle) {
-    let s = LoginSection::Login.index();
-    spawn_image(commands, &title.ms_title, "MSTitle", s, 112.0, 50.0);
-    spawn_button(
-        commands,
-        images,
-        &title.bt_login,
-        "BtLogin",
-        s,
-        400.0,
-        400.0,
-    );
-    spawn_button(commands, images, &title.bt_quit, "BtQuit", s, 400.0, 450.0);
-    spawn_button(commands, images, &title.bt_new, "BtNew", s, 450.0, 400.0);
-}
-
-fn spawn_world_select_section(
-    commands: &mut Commands,
-    images: &Assets<Image>,
-    ws: &LoginWorldSelect,
-) {
-    let s = LoginSection::WorldSelect.index();
-    spawn_image(commands, &ws.background, "chBackgrn", s, 0.0, 0.0);
-    spawn_button(
-        commands,
-        images,
-        &ws.bt_goworld,
-        "BtGoworld",
-        s,
-        400.0,
-        500.0,
-    );
-}
-
-fn spawn_char_select_section(
-    commands: &mut Commands,
-    images: &Assets<Image>,
-    cs: &LoginCharSelect,
-) {
-    let s = LoginSection::CharSelect.index();
-    spawn_image(commands, &cs.char_info1, "charInfo1", s, 0.0, 0.0);
-    spawn_image(commands, &cs.char_info2, "charInfo2", s, 100.0, 0.0);
-    spawn_image(commands, &cs.char_info3, "charInfo3", s, 200.0, 0.0);
-    spawn_button(commands, images, &cs.bt_select, "BtSelect", s, 400.0, 500.0);
-    spawn_button(commands, images, &cs.bt_new, "BtNew", s, 400.0, 600.0);
-}
-
-fn spawn_new_char_section(commands: &mut Commands, images: &Assets<Image>, nc: &LoginNewChar) {
-    let s = LoginSection::CharCreate.index();
-    spawn_image(commands, &nc.stat_table, "statTb", s, 0.0, 0.0);
-    spawn_image(commands, &nc.char_name, "charName", s, 100.0, 0.0);
-    spawn_image(commands, &nc.char_alert, "charAlert", s, 200.0, 0.0);
-    spawn_image(commands, &nc.char_set, "charSet", s, 300.0, 0.0);
-    spawn_button(commands, images, &nc.bt_yes, "BtYes", s, 400.0, 500.0);
-    spawn_button(commands, images, &nc.bt_no, "BtNo", s, 400.0, 550.0);
-    if let Some(first) = nc.dice.frames.first() {
-        commands.spawn((
-            Name::new("dice".to_string()),
-            Sprite {
-                image: first.image.clone(),
-                ..default()
-            },
-            Transform::from_xyz(200.0, section_top(s) + 600.0, 1.0),
+impl WzFrameAsset {
+    /// Spawn this frame's image as a static login entity.
+    pub(crate) fn spawn(self, world: &mut World, transform: Transform) {
+        world.spawn((
+            Name::new("Frame"),
+            Sprite { image: self.image, ..default() },
+            transform,
             Visibility::default(),
             LoginEntity,
         ));
     }
 }
 
+impl WzFrameAnimationAsset {
+    /// Spawn the first frame of this animation as a static login entity.
+    /// `name` is the logical id matched by inspection tools (BRP, etc.).
+    /// When `pickable` is false the entity is excluded from pointer picking.
+    pub(crate) fn spawn(self, world: &mut World, transform: Transform, name: &str, pickable: bool) {
+        let Some(first) = self.frames.into_iter().next() else { return; };
+        let bundle = (
+            Name::new(name.to_string()),
+            Sprite { image: first.image, ..default() },
+            transform,
+            Visibility::default(),
+            LoginEntity,
+        );
+        if pickable {
+            world.spawn((bundle, Pickable));
+        } else {
+            world.spawn(bundle);
+        }
+    }
+}
+
+impl WzButtonAsset {
+    /// Spawn this button (all four state frames) as an interactive login entity.
+    /// `name` is the logical id matched by click handling.
+    pub(crate) fn spawn(self, world: &mut World, transform: Transform, name: &str) {
+        let normal = first_frame(&self.normal);
+        let hs = {
+            let images = world.resource::<Assets<Image>>();
+            half_size_of(&normal, images)
+        };
+        world.spawn((
+            Name::new(format!("Btn_{name}")),
+            Sprite { image: normal.clone(), ..default() },
+            transform,
+            Visibility::default(),
+            ButtonRect(hs),
+            UiButton {
+                name: name.to_string(),
+                normal,
+                hover: first_frame(&self.mouse_over),
+                pressed: first_frame(&self.pressed),
+                disabled: first_frame(&self.disabled),
+            },
+            LoginEntity,
+            Pickable,
+        ));
+    }
+}
+
+fn spawn_title_section(
+    commands: &mut Commands,
+    title: &LoginTitle,
+    section_h: f32,
+) {
+    let s = LoginSection::Login.index();
+    let at = move |x: f32, y: f32, z: f32| Transform::from_xyz(x, section_top(s, section_h) + y, z);
+
+    let background = title.background.clone();
+    commands.queue(move |world: &mut World| background.spawn(world, at(-28.0, -9.0, 0.0)));
+
+    // Every button field in LoginTitle. Positions taken from the running game
+    // via BRP (real WZ layout); spawned at z=10 so they render in front.
+    for (btn, name, x, y) in [
+        (&title.bt_login, "BtLogin", 240.0, 54.333),
+        (&title.bt_login_save, "BtLoginIDSave", 57.333, -14.0),
+        (&title.bt_login_lost, "BtLoginIDLost", 167.333, -13.333),
+        (&title.bt_password_lost, "BtPasswordLost", 241.0, -14.0),
+        (&title.bt_home_page, "BtHomePage", 143.333, -67.0),
+        (&title.bt_new, "BtNew", 42.667, -69.333),
+        (&title.bt_quit, "BtQuit", 239.0, -68.333),
+    ] {
+        let btn = btn.clone();
+        let name = name.to_string();
+        commands.queue(move |world: &mut World| btn.spawn(world, at(x, y, 10.0), &name));
+    }
+
+    // objs groups: logo, effect, signboard — each maps sub-keys to a frame
+    // animation. logo/signboard use one group-level position; effect frames
+    // each have their own position (read from the running game via BRP).
+    for group in ["logo", "effect", "signboard"] {
+        let Some(anims) = title.objs.get(group) else { continue };
+        let pickable = false;
+        for (key, anim) in anims {
+            let anim = anim.clone();
+            let name = format!("{group}/{key}");
+            let (x, y) = match (group, key.as_str()) {
+                ("logo", _) => (14.333, 165.667),
+                ("signboard", _) => (109.0, -29.0),
+                ("effect", "0") => (212.333, 151.0),
+                ("effect", "1") => (219.333, 90.999),
+                ("effect", "2") => (166.667, 142.333),
+                ("effect", "3") => (166.333, 104.667),
+                ("effect", "4") => (211.0, 109.667),
+                ("effect", "5") => (248.333, 76.667),
+                _ => (0.0, 0.0),
+            };
+            commands.queue(move |world: &mut World| anim.spawn(world, at(x, y, 2.0), &name, pickable));
+        }
+    }
+}
+
+fn spawn_world_select_section(
+    commands: &mut Commands,
+    ws: &LoginWorldSelect,
+    section_h: f32,
+) {
+    let s = LoginSection::WorldSelect.index();
+    let at = move |x: f32, y: f32, z: f32| Transform::from_xyz(x, section_top(s, section_h) + y, z);
+    let bt_goworld = ws.bt_goworld.clone();
+    commands.queue(move |world: &mut World| {
+        bt_goworld.spawn(world, at(400.0, 500.0, 1.0), "BtGoworld")
+    });
+}
+
+fn spawn_char_select_section(
+    commands: &mut Commands,
+    cs: &LoginCharSelect,
+    section_h: f32,
+) {
+    let s = LoginSection::CharSelect.index();
+    let at = move |x: f32, y: f32, z: f32| Transform::from_xyz(x, section_top(s, section_h) + y, z);
+    let bt_select = cs.bt_select.clone();
+    commands.queue(move |world: &mut World| {
+        bt_select.spawn(world, at(400.0, 500.0, 1.0), "BtSelect")
+    });
+    let bt_new = cs.bt_new.clone();
+    commands.queue(move |world: &mut World| bt_new.spawn(world, at(400.0, 600.0, 1.0), "BtNew"));
+}
+
+fn spawn_new_char_section(
+    commands: &mut Commands,
+    nc: &LoginNewChar,
+    section_h: f32,
+) {
+    let s = LoginSection::CharCreate.index();
+    let at = move |x: f32, y: f32, z: f32| Transform::from_xyz(x, section_top(s, section_h) + y, z);
+    let bt_yes = nc.bt_yes.clone();
+    commands.queue(move |world: &mut World| {
+        bt_yes.spawn(world, at(400.0, 500.0, 1.0), "BtYes")
+    });
+    let bt_no = nc.bt_no.clone();
+    commands.queue(move |world: &mut World| bt_no.spawn(world, at(400.0, 550.0, 1.0), "BtNo"));
+    let dice = nc.dice.clone();
+    commands.queue(move |world: &mut World| dice.spawn(world, at(200.0, 600.0, 1.0), "dice", true));
+}
+
 // ── screen-space helpers ──────────────────────────────────────────────────
 
-fn spawn_screen_space_camera(commands: &mut Commands) {
+fn spawn_screen_space_camera(commands: &mut Commands, base: &BaseResolution) {
     commands.spawn((
         Name::new("ScreenSpaceCamera"),
         Camera2d,
         ScreenCamera,
+        Camera {
+            // Draw on top of the main camera without clearing its output.
+            clear_color: ClearColorConfig::None,
+            order: 1,
+            ..default()
+        },
         Projection::Orthographic(OrthographicProjection {
             scaling_mode: ScalingMode::FixedVertical {
-                viewport_height: SECTION_H,
+                viewport_height: base.height,
             },
             ..OrthographicProjection::default_2d()
         }),
         SCREEN_LAYER,
-        Transform::from_xyz(0.0, SECTION_H * 0.5, 100.0),
+        Transform::from_xyz(0.0, base.height * 0.5, 100.0),
     ));
 }
 
